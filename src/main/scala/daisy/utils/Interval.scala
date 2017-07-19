@@ -4,6 +4,7 @@ package daisy
 package utils
 
 import Rational._
+import daisy.lang.Identifiers.Identifier
 
 object Interval {
 
@@ -94,6 +95,37 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
 
   }
 
+  def ^(n: Interval): Interval = {
+    assert(n.xlo > Rational.one)
+//    System.out.println(s"to the power of $n int? " + n.xlo.isValidInt)
+//    assert(n.xlo.isValidInt && n.xhi.isValidInt)
+    //fixme remove this assertion when we will allow expressions in power
+    assert(n.xlo == n.xhi)
+    var x = this
+    for (i <- 1 until n.xlo.intValue()){
+      x = x * this
+    }
+    x
+  }
+
+  /**
+    * Compares 2 intervals by width
+    * @param i2 the second interval to compare with
+    * @return
+    */
+  def >(i2: Interval): Boolean = {
+    this.width > i2.width
+  }
+
+  /**
+    * Checks whether 2 intervals are equal
+    * @param y - interval to compare with
+    * @return true/ false
+    */
+  def equals(y: Interval): Boolean = {
+    this.xlo == y.xlo && this.xhi == y.xhi
+  }
+
   def inverse: Interval = Interval(one, one) / this
 
   def squareRoot: Interval = {
@@ -110,5 +142,28 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
 
   def toBigString = "[%.18g, %.18g]".format(xlo.toDouble, xhi.toDouble)
   override def toString = "[%s, %s]".format(xlo.toDouble, xhi.toDouble)
+
+  // divide the initial interval for two and return the tuple
+  def getBinaryDivision: (Interval, Interval) = (Interval(this.xlo, this.mid), Interval(this.mid, this.xhi))
+
+  /**
+    * Divides the interval to predefined number of subintervals
+    * @param limit - amount of subintervals to get
+    * @return list of subintervals
+    */
+  def divide(limit: Integer): List[Interval] = {
+    val step = this.width./(Rational(limit))
+    List.tabulate(limit)(n => Interval(this.xlo.+(step.*(Rational(n))), this.xlo.+(step.*(Rational(n + 1)))))
+  }
+
+  /**
+    * Extends interval by predefined parameter.
+    * E.g. [0].extendBy(0.1)
+    * will return interval [-0.1, 0.1]
+    * @param parameter positive value for which the bounds of original interval will be changed
+    * @return extended interval
+    */
+  def extendBy(parameter: Rational) =
+    Interval(this.xlo.-(parameter), this.xhi.+(parameter))
 
 }

@@ -34,5 +34,12 @@ object Sampler {
       })
     }
 
+    def nextString: Map[Identifier, String] = {
+      ranges.map({
+        case (x, Interval(a, b)) =>
+          (x -> (lowerBounds(x) + random.nextDouble * diameter(x)).toString)
+      })
+    }
+
   }
 }

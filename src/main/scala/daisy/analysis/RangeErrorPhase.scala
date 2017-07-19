@@ -16,7 +16,7 @@ import lang.Identifiers._
   Prerequisites:
     - SpecsProcessingPhase
  */
-object RangeErrorPhase extends DaisyPhase with RoundoffEvaluators with IntervalSubdivision {
+object RangeErrorPhase extends DaisyPhase with ErrorFunctions {
 
   override val name = "range-error phase"
   override val description = "Computes ranges and absolute errors"
@@ -37,6 +37,10 @@ object RangeErrorPhase extends DaisyPhase with RoundoffEvaluators with IntervalS
 
   var reporter: Reporter = null
 
+  // Var for error functions
+  // trackRoundoffErrs and uniformPrecision assigned below in run
+  attachToTree = true
+
   override def run(ctx: Context, prg: Program): (Context, Program) = {
     reporter = ctx.reporter
     reporter.info(s"\nStarting $name")
@@ -47,8 +51,9 @@ object RangeErrorPhase extends DaisyPhase with RoundoffEvaluators with IntervalS
     var errorMethod = "affine"   // only one supported so far
 
     var trackInitialErrs = true
-    var trackRoundoffErrs = true
 
+    // setting trait variables
+    trackRoundoffErrs = true
     var uniformPrecision: Precision = Float64
 
     // process relevant options
@@ -87,13 +92,11 @@ object RangeErrorPhase extends DaisyPhase with RoundoffEvaluators with IntervalS
 
     val fncsToConsider: Seq[String] = functionsToConsider(ctx, prg)
 
-    val res: Map[Identifier, (Rational, Interval)] = prg.defs.filter(fnc =>
-      !fnc.precondition.isEmpty &&
-      !fnc.body.isEmpty &&
-      fncsToConsider.contains(fnc.id.toString)).map(fnc => {
+    for (fnc <- prg.defs)
+      if (!fnc.precondition.isEmpty && !fnc.body.isEmpty && fncsToConsider.contains(fnc.id.toString)){
 
       reporter.info("analyzing fnc: " + fnc.id)
-      val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
+      val inputValMap: Map[Identifier, Interval] = ctx.inputRanges(fnc.id)
 
       // If we track both input and roundoff errors, then we pre-compute
       // the roundoff errors for those variables that do not have a user-defined
@@ -101,14 +104,14 @@ object RangeErrorPhase extends DaisyPhase with RoundoffEvaluators with IntervalS
       val inputErrorMap: Map[Identifier, Rational] =
         if (trackInitialErrs && trackRoundoffErrs){
 
-          val inputErrs = ctx.specInputErrors(fnc.id)
+          val inputErrs = ctx.inputErrors(fnc.id)
           val allIDs = fnc.params.map(_.id).toSet
           val missingIDs = allIDs -- inputErrs.keySet
           inputErrs ++ missingIDs.map( id => (id -> uniformPrecision.absRoundoff(inputValMap(id))))
 
         } else if(trackInitialErrs) {
 
-          val inputErrs = ctx.specInputErrors(fnc.id)
+          val inputErrs = ctx.inputErrors(fnc.id)
           val allIDs = fnc.params.map(_.id).toSet
           val missingIDs = allIDs -- inputErrs.keySet
           inputErrs ++ missingIDs.map( id => (id -> zero))
@@ -128,38 +131,35 @@ object RangeErrorPhase extends DaisyPhase with RoundoffEvaluators with IntervalS
       // TODO: Interval-only based error estimation; should be a very quick fix
 
 
-      val (resError: Rational, resRange: Interval) = (rangeMethod, errorMethod) match {
+      (rangeMethod, errorMethod) match {
         case ("interval", "affine") =>
-          uniformRoundoff_IA_AA(fnc.body.get, inputValMap, inputErrorMap, uniformPrecision, trackRoundoffErrs)
+          errorIntervalAffine(fnc.body.get, inputValMap, inputErrorMap, uniformPrecision)
 
         case ("affine", "affine") =>
-          uniformRoundoff_AA_AA(fnc.body.get, inputValMap, inputErrorMap, uniformPrecision, trackRoundoffErrs)
+          errorAffineAffine(fnc.body.get, inputValMap, inputErrorMap, uniformPrecision)
 
         case ("smt", "affine") =>
-          uniformRoundoff_SMT_AA(fnc.body.get, inputValMap, inputErrorMap, uniformPrecision, trackRoundoffErrs)
+          errorSMTAffine(fnc.body.get, inputValMap, inputErrorMap, uniformPrecision)
 
         // default is to use the method that attaches the info to trees.
         case ("subdiv", _) =>
-          val tmp = doIntervalSubdivision( //evaluateSubdiv(
-              fnc.body.get, lang.TreeOps.freeVariablesOf(fnc.body.get),
+            evaluateSubdiv(
+              fnc.body.get,
               inputValMap,
               inputErrorMap,
               trackRoundoffErrs,
               uniformPrecision)
-          (tmp._2, tmp._1)
 
         case _ =>
           reporter.fatalError(s"Your combination of $rangeMethod and $errorMethod" +
             "for computing ranges and errors is not supported.")
-          null
       }
-      (fnc.id -> (resError, resRange))
-    }).toMap
+
+    }
 
     timer.stop
     ctx.reporter.info(s"Finished $name")
-    (ctx.copy(resultAbsoluteErrors = res.map(x => (x._1 -> x._2._1)),
-      resultRealRanges = res.map(x => (x._1 -> x._2._2))), prg)
+    (ctx, prg)
   }
 
 

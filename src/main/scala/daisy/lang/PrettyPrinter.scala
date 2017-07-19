@@ -100,6 +100,28 @@ class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boo
           pp(id, p)
         }
 
+      case Delta(id) =>
+        if (printTypes) {
+          sb.append("(")
+          pp(id, p)
+          sb.append(": ")
+          pp(id.getType, p)
+          sb.append(")")
+        } else {
+          pp(id, p)
+        }
+
+      case Epsilon(id) =>
+        if (printTypes) {
+          sb.append("(")
+          pp(id, p)
+          sb.append(": ")
+          pp(id.getType, p)
+          sb.append(")")
+        } else {
+          pp(id, p)
+        }
+
       case ValDef(id) =>
         pp(id, p)
 

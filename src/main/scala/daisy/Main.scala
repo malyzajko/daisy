@@ -19,15 +19,22 @@ object Main {
   val optionPrintToughSMTCalls = FlagOptionDef("print-tough-smt-calls",
     "If enabled, will print those SMT queries to file which take longer.")
 
+  val optionSolver = ChoiceOptionDef("solver", "smt solver to use for smt range analysis",
+    Set("dreal", "dReal", "z3"), "z3")
+
   val globalOptions: Set[CmdLineOptionDef[Any]] = Set(
     FlagOptionDef("help",       "Show this message."),
     FlagOptionDef("dynamic",    "Run dynamic analysis."),
+    FlagOptionDef("relative", "Run experimental relative phase"),
+    FlagOptionDef("taylor", "Run experimental taylor simplification phase"),
+    FlagOptionDef("relabs", "Run experimental relative through absolute error phase"),
     //ParamOptionDef("timeout",   "Timeout in ms.", "1000"),
     ListOptionDef("debug",      "For which sections to print debug info.",
       List("analysis","solver")),
     FlagOptionDef("codegen",    "Generate code (as opposed to just doing analysis)."),
     optionFunctions,
-    optionPrintToughSMTCalls
+    optionPrintToughSMTCalls,
+    optionSolver
   )
 
   /*
@@ -37,6 +44,9 @@ object Main {
   lazy val allComponents : Set[DaisyPhase] = Set(
     analysis.SpecsProcessingPhase,
     analysis.RangeErrorPhase,
+    analysis.RelativeErrorPhase,
+    analysis.TaylorErrorPhase,
+    analysis.RelThroughAbsPhase,
     backend.CodeGenerationPhase,
     transform.SSATransformerPhase,
     analysis.DynamicPhase,
@@ -185,6 +195,16 @@ object Main {
       analysis.RangeErrorPhase andThen
       InfoPhase andThen
       backend.CodeGenerationPhase
+    } else if (ctx.hasFlag("relative")) {
+      analysis.SpecsProcessingPhase andThen
+      analysis.RelativeErrorPhase
+    } else if (ctx.hasFlag("taylor")) {
+      analysis.SpecsProcessingPhase andThen
+      analysis.TaylorErrorPhase andThen
+        InfoPhase
+    } else if (ctx.hasFlag("relabs")) {
+      analysis.SpecsProcessingPhase andThen
+        analysis.RelThroughAbsPhase
     } else {
       analysis.SpecsProcessingPhase andThen
       analysis.RangeErrorPhase andThen

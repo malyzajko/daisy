@@ -15,57 +15,41 @@ object FinitePrecision {
     // if it's an integer, it's definitely representable
     if (r.isWhole) {
       true
+    } else if (prec == DoubleDouble || prec == QuadDouble) {
+      // don't want to deal with those huge number here right now,
+      // so return the safe answer
+      false
     } else {
-      prec match {
-        case DoubleDouble | QuadDouble => false
-        case Fixed(_) => false
-        case Float32 | Float64 =>
+      val nominator = r.n.abs
+      val denominator = r.d.abs
 
-        val nominator = r.n.abs
-        val denominator = r.d.abs
+      val (nomBound, denomBound) = (prec: @unchecked) match {
+        case Float32 =>
+          // 2^23 - 1, 2^8 -1
+          (8388607l, 255l)
+        case Float64 =>
+          // 2^52 - 1, 2^11 -1
+          (4503599627370496l, 2047l)
+      }
 
-        val (nomBound, denomBound) = (prec: @unchecked) match {
-          case Float32 =>
-            // 2^23 - 1, 2^8 -1
-            (8388607l, 255l)
-          case Float64 =>
-            // 2^52 - 1, 2^11 -1
-            (4503599627370496l, 2047l)
-        }
+      if (nominator <= nomBound && denominator <= denomBound) {
+        val exponent: Double = math.log(denominator.toDouble) / math.log(2)
 
-        if (nominator <= nomBound && denominator <= denomBound) {
-          val exponent: Double = math.log(denominator.toDouble) / math.log(2)
-
-          if (exponent.isWhole) {
-            // maybe the log computations isn't sound due to roundoffs, let's sanity check:
-            assert(math.pow(2, exponent) == denominator)
-            true
-          } else {
-            false
-          }
-
+        if (exponent.isWhole) {
+          // maybe the log computations isn't sound due to roundoffs, let's sanity check:
+          assert(math.pow(2, exponent) == denominator)
+          true
         } else {
           false
         }
+
+      } else {
+        false
       }
     }
   }
 
-  private def allPrec: List[Precision] = List(Float32, Float64, DoubleDouble, QuadDouble)
-
-  def getUpperBound(lhs: Precision, rhs: Precision): Precision = (lhs, rhs) match {
-    case (Fixed(a), Fixed(b)) if (a == b) => lhs
-    case (Fixed(a), Fixed(b)) =>
-      throw new Exception("mixed-precision currently unsupported for fixed-points")
-    case _ =>
-      if (allPrec.indexOf(lhs) <= allPrec.indexOf(rhs)) {
-        rhs
-      } else {
-        lhs
-      }
-  }
-
-  sealed abstract class Precision extends Ordered[Precision] {
+  sealed abstract class Precision {
     /* The range of values that are representable by this precision. */
     def range: (Rational, Rational)
 
@@ -96,11 +80,11 @@ object FinitePrecision {
       Rational.fromDouble(math.ulp(Rational.abs(r).floatValue)/2)
     }
 
-    def compare(that: Precision): Int = that match {
-      case Float32 => 0
-      case Float64 => -1
-      case DoubleDouble => -1
-    }
+    val machineEpsilon: Rational =
+      Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(24))
+
+    val denormalsError: Rational =
+      Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(150))
   }
 
   case object Float64 extends Precision {
@@ -118,11 +102,12 @@ object FinitePrecision {
       Rational.fromDouble(math.ulp(Rational.abs(r).doubleValue)/2)
     }
 
-    def compare(that: Precision): Int = that match {
-      case Float32 => 1
-      case Float64 => 0
-      case DoubleDouble => -1
-    }
+    // TODO: machine epsilon representation will be huge?! Can we approximate it, without much loss of accuracy? It is worth it?
+    val machineEpsilon: Rational =
+      Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(53))
+
+    val denormalsError: Rational =
+      Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(1075))
   }
 
   case object DoubleDouble extends Precision {
@@ -140,12 +125,6 @@ object FinitePrecision {
 
     def absRoundoff(r: Rational): Rational = {
       doubleDoubleEps * Rational.abs(r)
-    }
-
-    def compare(that: Precision): Int = that match {
-      case Float32 => 1
-      case Float64 => 1
-      case DoubleDouble => 0
     }
   }
 
@@ -165,7 +144,6 @@ object FinitePrecision {
     def absRoundoff(r: Rational): Rational = {
       quadDoubleEps * Rational.abs(r)
     }
-    def compare(that: Precision): Int = ???
   }
 
   /*
@@ -202,9 +180,6 @@ object FinitePrecision {
       assert(value >= 0)
       // TODO: don't we have to also subtract 1 for the sign?
       32 - Integer.numberOfLeadingZeros(value)
-    }
-    def compare(that: Precision): Int = that match {
-      case Fixed(x) => bitlength.compare(x)
     }
   }
 

@@ -10,13 +10,11 @@ package daisy
 package lang
 
 import scala.collection.immutable.Seq
-
 import TypeOps._
 import Types._
-import utils.Positioned
+import utils.{Interval, Positioned, Rational}
 import Identifiers._
-import utils.Rational
-import utils.FinitePrecision.Precision
+import utils.FinitePrecision.{Float64, Precision}
 
 object Trees {
 
@@ -99,6 +97,10 @@ object Trees {
     self: Expr =>
   }
 
+  /** Trait which allows to get and Identifier from the Expr*/
+  trait Identifiable {
+   def getId: Identifier
+  }
 
   /** Stands for an undefined Expr, similar to `???` or `null`
     *
@@ -182,12 +184,38 @@ object Trees {
     def deepCopy = Variable(id)
   }
 
+  /**
+    * Delta
+    * Should be a special subclass of the variable. Not inherited to enable the case distinction
+    */
+  // TODO Anastasiia: try to make it Variable Subclass and overcome case-to-case inheritance problem
+
+  case class Delta(id: Identifier) extends Expr with Terminal with NumAnnotation with Identifiable {
+    val getType = id.getType
+    def deepCopy = Delta(id)
+    def toVariable = Variable(id)
+    override def getId: Identifier = id
+  }
+
+  /**
+    * Epsilon
+    * Should be a special subclass of the variable. Not inherited to enable the case distinction
+    */
+  case class Epsilon(id: Identifier) extends Expr with Terminal with NumAnnotation with Identifiable {
+    val getType = id.getType
+    def deepCopy = Epsilon(id)
+    def toVariable = Variable(id)
+    override def getId: Identifier = id
+  }
+
+
+
   /** $encodingof `val ... = ...; ...`
     *
     * @param binder The identifier used in body, defined just after '''val'''
     * @param value The value assigned to the identifier, after the '''=''' sign
     * @param body The expression following the ``val ... = ... ;`` construct
-    * @see [[purescala.Constructors#let purescala's constructor let]]
+    * @see [[leon.purescala.Constructors#let purescala's constructor let]]
     */
   case class Let(binder: Identifier, value: Expr, body: Expr) extends Expr with NumAnnotation {
     val getType = {
@@ -394,12 +422,14 @@ object Trees {
 
   /** $encodingof `... +  ...` */
   case class Plus(lhs: Expr, rhs: Expr) extends Expr with NumAnnotation {
+    assert(lhs.getType == rhs.getType, "lhs: " + lhs.getType + ", rhs: " + rhs.getType)
     val getType = lhs.getType
     def deepCopy = Plus(lhs.deepCopy, rhs.deepCopy)
   }
 
   /** $encodingof `... -  ...` */
   case class Minus(lhs: Expr, rhs: Expr) extends Expr with NumAnnotation {
+    assert(lhs.getType == rhs.getType)
     val getType = lhs.getType
     def deepCopy = Minus(lhs.deepCopy, rhs.deepCopy)
   }
@@ -412,12 +442,14 @@ object Trees {
 
   /** $encodingof `... * ...` */
   case class Times(lhs: Expr, rhs: Expr) extends Expr with NumAnnotation {
+    assert(lhs.getType == rhs.getType)
     val getType = lhs.getType
     def deepCopy = Times(lhs.deepCopy, rhs.deepCopy)
   }
 
   /** $encodingof `... / ...` */
   case class Division(lhs: Expr, rhs: Expr) extends Expr with NumAnnotation {
+    assert(lhs.getType == rhs.getType, "lhs: " + lhs.getType + ", " + rhs.getType)
     val getType = lhs.getType
     def deepCopy = Division(lhs.deepCopy, rhs.deepCopy)
   }

@@ -27,6 +27,7 @@ object SSATransformerPhase extends DaisyPhase {
   override val name = "SSA transformer"
   override val description = "Transforms the function bodies into SSA form."
   override val definedOptions: Set[CmdLineOptionDef[Any]] = Set()
+  //implicit val debugSection = DebugSectionRanges
 
   var reporter: Reporter = null
 
@@ -36,7 +37,9 @@ object SSATransformerPhase extends DaisyPhase {
     reporter.info("\nStarting SSA transformation phase")
     val timer = ctx.timers.ssa.start
 
-    // need to replace function bodies, create a copy of the whole program
+    // we need to actually replace the function bodies,
+    // so we need to create a copy of the whole program
+
     val newDefs = prg.defs.map(fnc =>
       if (!fnc.body.isEmpty) {
 
@@ -47,6 +50,14 @@ object SSATransformerPhase extends DaisyPhase {
       } else {
         fnc
       })
+
+    // println("Original program:")
+    // println(prg)
+
+    // println("\nNew program:")
+    // println(lang.PrettyPrinter.withIDs(Program(prg.id, newDefs)))
+
+
 
     timer.stop
     reporter.info("Finished SSA transformation phase")
@@ -70,29 +81,11 @@ object SSATransformerPhase extends DaisyPhase {
 
       merge(lhs, rhs, recons)
 
-
+    // This is not ideal, because we are repeating computation
     case Let(id, value, body) =>
-      val ssaValue = toSSA(value)
+      val inlined = replace(Map((Variable(id) -> value)), body)
+      toSSA(inlined)
 
-      val ssaBody = toSSA(body)
-
-      val tmp = ssaValue match {
-        case l: Let => replaceBody(ssaValue, id, ssaBody)
-        case _ =>
-          Let(id, ssaValue, ssaBody)
-      }
-
-      tmp
-
-  }
-
-  private def replaceBody(expr: Expr, nextId: Identifier, nextBody: Expr): Expr = expr match {
-    case Let(id, value, x @ Let(id2, value2, body)) =>
-      Let(id, value, replaceBody(x, id, nextBody))
-
-    case Let(id, value, body) =>
-      Let(id, value,
-        Let(nextId, body, nextBody))
   }
 
   def merge(lhs: Expr, rhs: Expr, recons: (Seq[Expr]) => Expr): Expr = (lhs, rhs) match {

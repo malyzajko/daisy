@@ -18,6 +18,7 @@ case object DebugSectionSolver          extends DebugSection("solver",         1
 case object DebugSectionSMTRange        extends DebugSection("smt-range",      1 << 2)
 case object DebugSectionAnalysis        extends DebugSection("analysis",       1 << 3)
 case object DebugSectionBackend         extends DebugSection("backend",        1 << 4)
+case object DebugSectionTaylor          extends DebugSection("taylor",         1 << 5)
 //case object DebugSection
 
 object DebugSections {
@@ -26,7 +27,8 @@ object DebugSections {
     DebugSectionSolver,
     DebugSectionSMTRange,
     DebugSectionAnalysis,
-    DebugSectionBackend
+    DebugSectionBackend,
+    DebugSectionTaylor
   )
 
 }

@@ -149,6 +149,10 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     this * y.inverse
   }
 
+  //FIXME implement Pow for affine
+  def ^(n: AffineForm): AffineForm = {
+    ???
+  }
 
   def squareRoot: AffineForm = {
     var (a, b) = (toInterval.xlo, toInterval.xhi)

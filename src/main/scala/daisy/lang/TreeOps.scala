@@ -173,7 +173,7 @@ object TreeOps {
   }
 
   /** Returns the set of free variables in an expression */
-  def freeVariablesOf(expr: Expr): Set[Identifier] = {
+  def variablesOf(expr: Expr): Set[Identifier] = {
     fold[Set[Identifier]] {
       case (e, subs) =>
         val subvs = subs.flatten.toSet
@@ -186,15 +186,25 @@ object TreeOps {
     }(expr)
   }
 
-  /** Returns the set of all variables occuring in an expression */
-  def allVariablesOf(expr: Expr): Set[Identifier] = {
-    fold[Set[Identifier]] {
+  /** Returns the set of Delta variables in an expression */
+  def deltasOf(expr: Expr): Set[Delta] = {
+    fold[Set[Delta]] {
       case (e, subs) =>
         val subvs = subs.flatten.toSet
         e match {
-          case Variable(i) => subvs + i
-          //case Let(i, _, _) => subvs - i
-          //case Lambda(args, _) => subvs -- args.map(_.id)
+          case x @ Delta(i) => subvs + x
+          case _ => subvs
+        }
+    }(expr)
+  }
+
+  /** Returns the set of Epsilon variables in an expression */
+  def epsilonsOf(expr: Expr): Set[Epsilon] = {
+    fold[Set[Epsilon]] {
+      case (e, subs) =>
+        val subvs = subs.flatten.toSet
+        e match {
+          case x @ Epsilon(i) => subvs + x
           case _ => subvs
         }
     }(expr)

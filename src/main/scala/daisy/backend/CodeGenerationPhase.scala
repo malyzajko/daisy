@@ -129,7 +129,7 @@ object CodeGenerationPhase extends DaisyPhase {
    * @param fixed the (uniform) fixed-point precision to use
    // TODO: we also need to adjust the types, no?
    */
-  def toFixedPointCode(expr: Expr, fixed: Fixed): Expr = (expr: @unchecked) match {
+  private def toFixedPointCode(expr: Expr, fixed: Fixed): Expr = (expr: @unchecked) match {
     case x @ Variable(id) => fixed match {
       case Fixed(16) => Variable(id.changeType(Int32Type))
       case Fixed(32) => Variable(id.changeType(Int64Type))

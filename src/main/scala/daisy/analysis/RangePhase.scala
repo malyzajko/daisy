@@ -70,7 +70,7 @@ object RangePhase extends DaisyPhase {
         case "smt" =>
           evaluateSMT(fnc.body.get, Map.empty)
         case "subdiv" =>
-          evaluateSubdiv(fnc.body.get, ctx.specInputRanges(fnc.id), Map.empty)
+          evaluateSubdiv(fnc.body.get, ctx.inputRanges(fnc.id), Map.empty)
 
       }
 

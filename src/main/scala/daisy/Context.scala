@@ -28,23 +28,21 @@ case class Context(
   // but don't want to pollute the nice and clean trees.
   // If these get too many, move to their own "Summary".
   // indexed by FunDef.id
-  specInputRanges: Map[Identifier, Map[Identifier, Interval]] = Map(),
-  specInputErrors: Map[Identifier, Map[Identifier, Rational]] = Map(),
+  inputRanges: Map[Identifier, Map[Identifier, Interval]] = Map(),
+  inputErrors: Map[Identifier, Map[Identifier, Rational]] = Map(),
   // for now we only support a single result value, i.e. no tuples
   // this map is indexed by fnc.id -> potentially partial interval bound of result
   // and similar for the errors
-  specResultRangeBounds: Map[Identifier, PartialInterval] = Map(),
-  specResultErrorBounds: Map[Identifier, Rational] = Map(),
-
-  // the analysed/computed roundoff errors for each function
-  resultAbsoluteErrors: Map[Identifier, Rational] = Map(),
-  resultRealRanges: Map[Identifier, Interval] = Map()
+  resultRangeBounds: Map[Identifier, PartialInterval] = Map(),
+  resultErrorBounds: Map[Identifier, Rational] = Map()
+  //requiredOutputRanges: Map[Identifier, Map[Identifier, PartialInterval]] = Map(),
+  //requiredOutputErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
 ) {
 
   // on the first creation of a context, we also update the context variable
-  // in Z3Solver, so that it does not get forgotten.
-  if (solvers.Z3Solver.context == null) {
-    solvers.Z3Solver.context = this
+  // in Solver, so that it does not get forgotten.
+  if (!solvers.Solver.hasContext()) {
+    solvers.Solver.setContext(this)
   }
 
   def hasFlag(name: String): Boolean = {

@@ -62,7 +62,9 @@ class MPFRFloat(val bf: BigFloat) extends ScalaNumber with Ordered[MPFRFloat] {
   def isNaN: Boolean = bf.isNaN
   def isInfinite: Boolean = bf.isInfinite
 
-  override def toString: String = bf.toString
+  def toLongString: String = bf.toString
+  override def toString: String = this.toDoubleString
+
   def toDoubleString: String = {
     val longString = bf.toString.split('.')
     //assert(longString.length == 2, "failure: " + longString.toList)

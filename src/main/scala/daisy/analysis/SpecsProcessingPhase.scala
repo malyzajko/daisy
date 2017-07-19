@@ -121,8 +121,8 @@ object SpecsProcessingPhase extends DaisyPhase {
     reporter.debug("range bounds: " + resRanges.mkString("\n"))
     reporter.debug("error bounds: " + resErrors.mkString("\n"))
 
-    (ctx.copy(specInputRanges = allRanges, specInputErrors = allErrors,
-      specResultRangeBounds = resRanges, specResultErrorBounds = resErrors), prg)
+    (ctx.copy(inputRanges = allRanges, inputErrors = allErrors,
+      resultRangeBounds = resRanges, resultErrorBounds = resErrors), prg)
   }
 
 

@@ -10,13 +10,12 @@ package daisy
 package solvers
 
 import scala.collection.immutable.Seq
-
 import _root_.smtlib.interpreters.Z3Interpreter
-import _root_.smtlib.parser.Commands.{SetOption, AttributeOption}
-import _root_.smtlib.parser.Terms.{SKeyword, Attribute, SNumeral}
-
+import _root_.smtlib.parser.Commands.{AttributeOption, SetOption}
+import _root_.smtlib.parser.Terms._
 import lang.Trees.Expr
 
+// TODO has to be singleton
 object Z3Solver {
 
   // needs to be populated before the first call to checkSat, currently
@@ -26,6 +25,10 @@ object Z3Solver {
   val timeoutOption = AttributeOption(Attribute(
     SKeyword("timeout"), value = Some(SNumeral(1000))))
 
+  // TODO set the option properly!!!!!!!!
+  val decimalOption = AttributeOption(Attribute
+  (SKeyword("pp.decimal"), value = Some(SSymbol("true"))))
+
   def checkSat(query: Expr): Option[Boolean] = {
     val solver = new Z3Solver(context)
     solver.emit(SetOption(timeoutOption))
@@ -34,6 +37,21 @@ object Z3Solver {
     solver.free()
     res
   }
+
+def checkAndGetModel(query: Expr): Option[Model] = {
+  val solver = new Z3Solver(context)
+  solver.emit(SetOption(timeoutOption))
+  solver.emit(SetOption(decimalOption))
+  solver.assertConstraint(query)
+  val tmp = solver.checkSat
+  val res = tmp match {
+    case Some(true) => Some(solver.getModel)
+    case Some(false) => None
+    case None => None
+  }
+  solver.free()
+  res
+}
 
   // global counter of "Unknown"s or timeouts
   var unknownCounter = 0

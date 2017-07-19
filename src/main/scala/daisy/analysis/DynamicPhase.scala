@@ -44,6 +44,7 @@ object DynamicPhase extends DaisyPhase {
     ParamOptionDef("inputRangeFactor", "factor for scaling input ranges", inputRangeFactor.toString),
     FlagOptionDef("mpfr", "Use MPFR as the higher precision"),
     FlagOptionDef("log", "log results to file"),
+    FlagOptionDef("noRoundoff", "do not track roundoff errors for inputs"),
     ParamOptionDef("seed", "seed to use for random number generator", "System.currentTimeMillis")
     )
 
@@ -59,6 +60,7 @@ object DynamicPhase extends DaisyPhase {
     // make rationals default as they are a bit more reliable
     var useRationals = true
     var logToFile = false
+    var useRoundoff = true
     var seed = System.currentTimeMillis // 4783
 
     /* Process relevant options */
@@ -69,6 +71,7 @@ object DynamicPhase extends DaisyPhase {
 
       case FlagOption("mpfr") => useRationals = false
       case FlagOption("log") => logToFile = true
+      case FlagOption("noRoundoff") => useRoundoff = false
       case ParamOption("seed", value) => seed = value.toLong
       case _ =>
     }
@@ -105,8 +108,9 @@ object DynamicPhase extends DaisyPhase {
       val id = fnc.id
       val body = fnc.body.get
       reporter.info("evaluating " + id + "...")
+      reporter.info(s"expression is $body")
 
-      val inputRanges: Map[Identifier, Interval] = ctx.specInputRanges(id).map({
+      val inputRanges: Map[Identifier, Interval] = ctx.inputRanges(id).map({
         case (id, i) =>
           (id, Interval(i.mid - inputRangeFactor * i.radius,
                         i.mid + inputRangeFactor * i.radius))
@@ -123,15 +127,25 @@ object DynamicPhase extends DaisyPhase {
           //if (i % 10000 == 0) println (s"i: $i")  // showing progress
 
           // does not consider input roundoff errors
-          val dblInputs: Map[Identifier, Double] = sampler.next
-          val ratInputs: Map[Identifier, Rational] = dblInputs.map({
+          val strInputs: Map[Identifier, String] = sampler.nextString
+          val dblInputs: Map[Identifier, Double] = strInputs.map({
+            case (x, s) => (x -> s.toDouble)
+          })
+          val ratInputs: Map[Identifier, Rational] = if (useRoundoff)
+          // WITH input errors
+            strInputs.map({
+              case (x, s) => (x -> Rational.fromString(s))
+            })
+          else
+          // no input errors
+            dblInputs.map({
             case (x, d) => (x -> Rational.fromDouble(d))
             })
 
           val dblOutput: Double = evalDouble(body, dblInputs)
           val ratOutput: Rational = evalRational(body, ratInputs)
 
-          measurer.nextValues(dblOutput, ratOutput)
+          measurer.nextValues(dblOutput, ratOutput, ratInputs, dblInputs)
         }
 
         if (logToFile) {
@@ -158,12 +172,23 @@ object DynamicPhase extends DaisyPhase {
           i = i + 1
           //if (i % 10000 == 0) println (s"i: $i")
 
-          // no input errors
-          val dblInputs: Map[Identifier, Double] = sampler.next
-          val mpfrInputs: Map[Identifier, MPFRFloat] = dblInputs.map({
-            case (x, d) => (x -> MPFRFloat.fromDouble(d))
-            })
+          // WITH input errors
 
+          val strInputs: Map[Identifier, String] = sampler.nextString
+          val dblInputs: Map[Identifier, Double] = strInputs.map({
+            case (x, s) => (x -> s.toDouble)
+          })
+          val mpfrInputs: Map[Identifier, MPFRFloat] =
+            if (useRoundoff)
+            // WITH input errors
+              strInputs.map({
+              case (x, s) => (x -> MPFRFloat.fromString(s))
+              })
+            else
+            // no input errors
+              dblInputs.map({
+                case (x, d) => (x -> MPFRFloat.fromDouble(d))
+              })
           val dblOutput: Double = evalDouble(body, dblInputs)
           val mpfrOutput: MPFRFloat = evalMPFR(body, mpfrInputs)
 
@@ -175,6 +200,10 @@ object DynamicPhase extends DaisyPhase {
 
           assert(currentMaxAbs <= measurer.maxAbsError.doubleValue)
           currentMaxAbs = measurer.maxAbsError.doubleValue
+          if (abs(dblOutput) <= java.lang.Double.MIN_NORMAL) {
+            reporter.warning(s"THE SUBNORMAL")
+            i = i - 1
+          }
         }
 
         if (logToFile) {

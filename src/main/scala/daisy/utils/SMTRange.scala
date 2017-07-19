@@ -10,11 +10,17 @@ import lang.Constructors._
 import lang.Identifiers._
 import lang.Types.RealType
 import Rational._
-import solvers.Z3Solver
+
+import solvers.Solver
 
 
 
 object SMTRange {
+
+  val lowPrecision = Rational.fromReal(0.01)
+  val lowLoopThreshold = 20
+  val highPrecision = Rational.fromReal(0.00000000000000000001)
+  val highLoopThreshold = 100
 
   def toConstraints(v: Variable, i: Interval): Set[Expr] = {
     Set(
@@ -45,7 +51,18 @@ object SMTRange {
     }
 
     val allConstraints = constrs ++ toConstraints(v, i)
-    val tightRange = tightenBounds(i, v, allConstraints)
+    val tightRange = tightenBounds(i, v, allConstraints, lowPrecision, lowLoopThreshold)
+    SMTRange(tightRange, v, allConstraints)
+  }
+
+  def apply(v: Expr, i: Interval, precondition: Set[Expr]): SMTRange = {
+    val extra = Set(
+      LessEquals(RealLiteral(i.xlo), v), LessEquals(v, RealLiteral(i.xhi))
+    )
+
+    reporter.debug("evaluate complete expression")
+    val allConstraints = precondition ++ extra
+    val tightRange = tightenBounds(i, v, allConstraints, highPrecision, highLoopThreshold)
     SMTRange(tightRange, v, allConstraints)
   }
 
@@ -76,40 +93,38 @@ object SMTRange {
     @param t arithmetic expression to be evaluated
     @param constrs constraints on t
    */
-  def tightenBounds(i: Interval, t: Expr, constrs: Set[Expr]): Interval = {
-
+  def tightenBounds(i: Interval, t: Expr, constrs: Set[Expr], precisionThreshold: Rational,
+    loopThreshold: Int): Interval = {
+//    reporter.warning(s"Tighten the bounds on $t")
     // TODO: massage arithmetic
 
-    if (lang.TreeOps.size(t) == 1) {
-      reporter.warning("Calling tightenRange on simple expression: " + t)
-    } else {
-      //print(lang.TreeOps.size(t) + " ")
-    }
-
-    val condition = and(constrs.toSeq: _*)
-    val precisionThreshold = Rational.fromReal(0.01)
-    val loopThreshold = 10
+    //    reporter.info(s"Calling tighten range with $constrs on $t ")
+    val condition = and(constrs.toSeq :_*)
+    //val precisionThreshold = Rational.fromReal(0.01)
+    //val loopThreshold = 10
 
     def findLowerBound(lo: Rational, hi: Rational, loopCount: Int): Rational = {
 
       if (hi - lo <= precisionThreshold || loopCount >= loopThreshold) {
         lo
-      } else {
-
+      } else
+      {
         val mid = lo + (hi - lo) / two
 
         val solverQuery = And(condition, LessThan(t, RealLiteral(mid)))
         reporter.debug(s"\nloop count: $loopCount, [$lo, $hi], mid: ${mid}")
         reporter.debug(s"solverQuery: $solverQuery")
 
-        // TODO: make this less inefficient, we are creating a new solver each time.
-        val res = Z3Solver.checkSat(solverQuery)
 
+        // TODO: make this less inefficient, we are creating a new solver each time.
+        val res = Solver.checkSat(solverQuery)
+        //        reporter.warning(s"Result for the query is $res")
         res match {
           case Some(false) =>  findLowerBound(mid, hi, loopCount + 1) //UNSAT
           case Some(true) =>   findLowerBound(lo, mid, loopCount + 1) //SAT
           case _ =>
-            Z3Solver.unknownCounter += 1
+            Solver.unknownCounter += 1
+            reporter.debug("Solver returns unknown. TIMEOUT")
             lo       //timeout, return save option
         }
 
@@ -121,21 +136,21 @@ object SMTRange {
       if (hi - lo <= precisionThreshold || loopCount >= loopThreshold) {
         hi
       } else {
-
+        //        reporter.warning(s"HI: ACTUALLY doing something low $lo, hi $hi")
         val mid = lo + (hi - lo) / two
 
         val solverQuery = And(condition, LessThan(RealLiteral(mid), t))
         reporter.debug(s"\nloop count: $loopCount, [$lo, $hi], mid: ${mid}")
         reporter.debug(s"solverQuery: $solverQuery")
 
-        // TODO: can we re-use the solver?
-        val res = Z3Solver.checkSat(solverQuery)
+
+        val res = Solver.checkSat(solverQuery)
         res match {
           case Some(false) =>  findUpperBound(lo, mid, loopCount + 1) //UNSAT
           case Some(true) =>   findUpperBound(mid, hi, loopCount + 1) //SAT
           case _ =>
-            //reporter.warning("Z3 returns unknown")
-            Z3Solver.unknownCounter += 1
+            Solver.unknownCounter += 1
+            reporter.debug("Solver returns unknown. TIMEOUT")
             hi       //timeout, return save option
         }
 
@@ -148,46 +163,57 @@ object SMTRange {
     */
     def lowerBoundIsTight: Boolean = {
       val solverQuery = And(condition, LessThan(t, RealLiteral(i.xlo + precisionThreshold)))
-      val res = Z3Solver.checkSat(solverQuery)
+      val res = Solver.checkSat(solverQuery)
       res match {
         case Some(true) => true  // SAT
         case Some(false) => false          // UNSAT
         case _ =>   // timeout or unknown probably
-          //reporter.warning("Z3 returns unknown")
-            Z3Solver.unknownCounter += 1
+          Solver.unknownCounter += 1
+          reporter.debug("Solver returns unknown. TIMEOUT")
           false
       }
     }
 
     def upperBoundIsTight: Boolean = {
       val solverQuery = And(condition, GreaterThan(t, RealLiteral(i.xhi - precisionThreshold)))
-      val res = Z3Solver.checkSat(solverQuery)
+
+      val res = Solver.checkSat(solverQuery)
       res match {
         case Some(true) => true  // SAT
         case Some(false) => false          // UNSAT and timeout
         case _ => // timeout
-          //reporter.warning("Z3 returns unknown")
-            Z3Solver.unknownCounter += 1
+          Solver.unknownCounter += 1
+          reporter.debug("Solver returns unknown. TIMEOUT")
           false
       }
     }
 
-    reporter.debug(s"Going to find lower bound starting from [${i.xlo}, ${i.xhi}].")
 
-    // it reduces the # of calls to Z3, but not the overall time
-    // TODO: it seems that these calls are expensive, figure out why
-    val lowerBound = if (checkTightness && lowerBoundIsTight) {
+
+    if (lang.TreeOps.size(t) == 1) {
+      reporter.warning("Calling tightenRange on simple expression: " + t)
+      //TODO what to do?
+      i
+    } else {
+      //print(lang.TreeOps.size(t) + " ")
+
+
+      reporter.debug(s"Going to find lower bound starting from [${i.xlo}, ${i.xhi}].")
+
+      // it reduces the # of calls to Z3, but not the overall time
+      // TODO: it seems that these calls are expensive, figure out why
+      val lowerBound = if (checkTightness && lowerBoundIsTight) {
         reporter.info("lower bound is tight")
         i.xlo
       } else {
         findLowerBound(i.xlo, i.xhi, 0)
       }
 
-    //val lowerBound = findLowerBound(i.xlo, i.xhi, 0)
+      //val lowerBound = findLowerBound(i.xlo, i.xhi, 0)
 
-    reporter.debug(s"Going to find upper bound starting from [${i.xlo}, ${i.xhi}].")
+      reporter.debug(s"Going to find upper bound starting from [${i.xlo}, ${i.xhi}].")
 
-    val upperBound = if (checkTightness && upperBoundIsTight) {
+      val upperBound = if (checkTightness && upperBoundIsTight) {
         reporter.info("upper bound is tight")
         i.xhi
       } else {
@@ -195,10 +221,12 @@ object SMTRange {
       }
 
 
-    //val upperBound = findUpperBound(i.xlo, i.xhi, 0)
+      //val upperBound = findUpperBound(i.xlo, i.xhi, 0)
 
 
-    Interval(lowerBound, upperBound)
+      Interval(lowerBound, upperBound)
+    }
+
   }
 }
 
@@ -234,28 +262,39 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
     SMTRange(-interval, UMinus(tree), constraints)
   }
 
-  def +(y: SMTRange): SMTRange = {
+  // needed for RangeArithmetic trait. apparently the members with parameters are not recognized
+  def +(y: SMTRange): SMTRange = this.+(y, lowPrecision, lowLoopThreshold)
+  def -(y: SMTRange): SMTRange = this.-(y, lowPrecision, lowLoopThreshold)
+  def *(y: SMTRange): SMTRange = this.*(y, lowPrecision, lowLoopThreshold)
+  def /(y: SMTRange): SMTRange = this./(y, lowPrecision, lowLoopThreshold)
+  def ^(n: SMTRange): SMTRange = this.^(n, lowPrecision, lowLoopThreshold)
+  def squareRoot: SMTRange = this.squareRoot(lowPrecision, lowLoopThreshold)
+
+  def +(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
 
     val newTree = Plus(this.tree, y.tree)
     val newConstraints = mergeConstraints(this.constraints, y.constraints)
-    val newInterval = tightenBounds(this.interval + y.interval, newTree, newConstraints)
+    val newInterval = tightenBounds(this.interval + y.interval, newTree, newConstraints,
+      precision, maxLoops)
 
     SMTRange(newInterval, newTree, newConstraints)
 
   }
 
-  def -(y: SMTRange): SMTRange = {
+  def -(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
 
     val newTree = Minus(this.tree, y.tree)
     val newConstraints = mergeConstraints(this.constraints, y.constraints)
-    val newInterval = tightenBounds(this.interval - y.interval, newTree, newConstraints)
+    val newInterval = tightenBounds(this.interval - y.interval, newTree, newConstraints,
+      precision, maxLoops)
     SMTRange(newInterval, newTree, newConstraints)
   }
 
-  def *(y: SMTRange): SMTRange = {
+  def *(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = Times(this.tree, y.tree)
     val newConstraints = mergeConstraints(this.constraints, y.constraints)
-    val newInterval = tightenBounds(this.interval * y.interval, newTree, newConstraints)
+    val newInterval = tightenBounds(this.interval * y.interval, newTree, newConstraints,
+      precision, maxLoops)
     SMTRange(newInterval, newTree, newConstraints)
   }
 
@@ -263,10 +302,20 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
     ???
   }
 
-  def /(y: SMTRange): SMTRange = {
+  //todo fix Pow: check if it is correct
+  def ^(n: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = Pow(this.tree, n.tree)
+    val newConstraints = mergeConstraints(this.constraints, n.constraints)
+    val newInterval = tightenBounds(this.interval ^ n. interval, newTree, newConstraints,
+      precision, maxLoops)
+    SMTRange(newInterval, newTree, newConstraints)
+  }
+
+  def /(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = Division(this.tree, y.tree)
     val newConstraints = mergeConstraints(this.constraints, y.constraints)
-    val newInterval = tightenBounds(this.interval / y. interval, newTree, newConstraints)
+    val newInterval = tightenBounds(this.interval / y. interval, newTree, newConstraints,
+      precision, maxLoops)
     SMTRange(newInterval, newTree, newConstraints)
   }
 
@@ -278,12 +327,13 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
     SMTRange(newInterval, newTree, this.constraints)
   }
 
-  def squareRoot: SMTRange = {
+  def squareRoot(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
 
     val newTree = Variable(FreshIdentifier("#sqrt", RealType, true))  //always shows unique ID
     val newCondition: Set[Expr] = Set(Equals(Times(newTree, newTree), this.tree), LessEquals(RealLiteral(zero), newTree))
     val newConstraints = mergeConstraints(this.constraints, newCondition)
-    val newInterval = tightenBounds(this.interval.squareRoot, newTree, newConstraints)
+    val newInterval = tightenBounds(this.interval.squareRoot, newTree, newConstraints,
+      precision, maxLoops)
     SMTRange(newInterval, newTree, newConstraints)
   }
 

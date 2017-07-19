@@ -9,7 +9,7 @@
 package daisy
 package lang
 
-import Trees.{Tree, Variable}
+import Trees.{Delta, Epsilon, Tree, Variable}
 import Types.{TypeTree, Typed, Untyped}
 
 object Identifiers {
@@ -52,6 +52,11 @@ object Identifiers {
     def uniqueName: String = uniqueNameDelimited("")
 
     def toVariable: Variable = Variable(this)
+    def toDeltaVariable: Delta = Delta(this)
+    def toEpsilonVariable: Epsilon = Epsilon(this)
+    // FIXME remove string comparison do something reasonable instead
+    def isDeltaId: Boolean = this.toString.contains("delta")
+    def isEpsilonId: Boolean = this.toString.contains("eps")
 
     def freshen: Identifier = FreshIdentifier(name, tpe, alwaysShowUniqueID).copiedFrom(this)
 

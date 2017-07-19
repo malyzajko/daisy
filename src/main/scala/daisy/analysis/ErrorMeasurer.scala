@@ -5,6 +5,7 @@ package analysis
 import utils.{MPFRFloat, Rational}
 import MPFRFloat.{abs => mpfr_abs, max => mpfr_max, min => mpfr_min}
 import Rational.{abs => rat_abs, max => rat_max, min => rat_min}
+import daisy.lang.Identifiers.Identifier
 
 
 /**
@@ -117,7 +118,7 @@ class ErrorMeasurerRational {
   /*
    @return new resp. current (abs error, rel error)
   */
-  def nextValues(lowPrec: Double, highPrec: Rational): (Rational, Rational) = {
+  def nextValues(lowPrec: Double, highPrec: Rational, inputR: Map[Identifier, Rational], inputX: Map[Identifier, Double]): (Rational, Rational) = {
     n = n + 1
     val absError = rat_abs(Rational.fromDouble(lowPrec) - highPrec)
     val relError = rat_abs(absError / highPrec)

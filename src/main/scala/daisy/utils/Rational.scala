@@ -4,9 +4,9 @@ package daisy
 package utils
 
 import scala.collection.immutable.Seq
+import scala.math.{ScalaNumber, ScalaNumericConversions}
+import java.math.BigInteger
 
-import scala.math.{ScalaNumericConversions, ScalaNumber}
-import java.math.{BigInteger}
 import scala.language.implicitConversions
 //import ceres.DirectedRounding
 import Rational._
@@ -416,36 +416,8 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
   assert(math.abs(gcd(n, d).toLong) == 1, "Rational not reduced %d / %d!".format(n, d))  // fraction is reduced
 
   def unary_-(): Rational = Rational(-n, d)
-  def +(other: Rational): Rational = {
-    // This improves running time on really big testcases.  This new
-    // implementation automatically computes + and - using the
-    // smallest possible denominator. Instead of computing 1/3 + 1/6 =
-    // 6/18 + 3/18 = 9/18 and then reducing this fraction, this
-    // implementation would compute 1/3 + 1/6 = 2/6 + 1/6 and then
-    // reduce this fraction.
-    val gcd_den = gcd(d, other.d)
-    if(gcd_den == 1) {
-      Rational(n * other.d + other.n * d, d * other.d)
-    } else {
-      val lcm_den_s = d * other.d / gcd_den
-      val lcm_den = if(lcm_den_s < 0) -lcm_den_s else lcm_den_s
-
-      val res_n = n * (lcm_den / d) + other.n * (lcm_den / other.d)
-      Rational(res_n, lcm_den)
-    }
-  }
-  def -(other: Rational): Rational = {
-    val gcd_den = gcd(d, other.d)
-    if(gcd_den == 1) {
-      Rational(n * other.d - other.n * d, d * other.d)
-    } else {
-      val lcm_den_s = d * other.d / gcd_den
-      val lcm_den = if(lcm_den_s < 0) -lcm_den_s else lcm_den_s
-
-      val res_n = n * (lcm_den / d) - other.n * (lcm_den / other.d)
-      Rational(res_n, lcm_den)
-    }
-  }
+  def +(other: Rational): Rational = Rational(n * other.d + other.n * d, d * other.d)
+  def -(other: Rational): Rational = Rational(n * other.d - other.n * d, d * other.d)
   def *(other: Rational): Rational = Rational(n * other.n, d * other.d)
   def /(other: Rational): Rational = Rational(n * other.d, d* other.n)
 
@@ -510,10 +482,6 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
     case x: Float => this.toFloat == x
     case x: Long => this.toLong == x
     case _ => false
-  }
-
-  override def hashCode(): Int = {
-    this.doubleValue.hashCode
   }
 
   override def byteValue(): Byte = Predef.double2Double(doubleValue).byteValue

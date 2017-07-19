@@ -50,16 +50,23 @@ object InfoPhase extends DaisyPhase {
 
       reporter.info(fnc.id)
 
-      val absError = ctx.resultAbsoluteErrors(fnc.id)
-      val range = ctx.resultRealRanges(fnc.id)
-      val relError: Double = if (range.xlo <= zero && zero <= range.xhi) {
-          Double.NaN
-        } else {
-          max(abs(absError / range.xlo), abs(absError / range.xhi)).toDouble
-        }
+      val infoString: String = getLastExpression(fnc.body.get) match {
+        case x: NumAnnotation if x.hasError =>
+          val absError = x.absError
+          val range = x.interval
+          val relError: Double = if (range.xlo <= zero && zero <= range.xhi) {
+            Double.NaN
+          } else {
+            max(abs(absError / range.xlo), abs(absError / range.xhi)).toDouble
+          }
 
-      val infoString: String =
-        s"abs-error: ${absError}, real range: ${range},\nrel-error: ${relError}"
+          s"abs-error: ${x.absError}, range: ${x.interval},\nrel-error: ${relError}"
+
+        case x: NumAnnotation =>
+          "final error: - "
+
+        case _ => ""
+      }
       reporter.info(infoString)
 
       if (out != null) {
@@ -68,8 +75,10 @@ object InfoPhase extends DaisyPhase {
       }
     }
 
-    if (solvers.Z3Solver.unknownCounter != 0) {
-      reporter.warning(s"Z3 returned unknown or timed out ${solvers.Z3Solver.unknownCounter} times.")
+
+    if (solvers.Solver.unknownCounter != 0) {
+      reporter.warning(s"Solver returned unknown or timed out ${solvers.Solver.unknownCounter} times.")
+
     }
 
     if (out != null){ out.close }

@@ -16,6 +16,12 @@ object Evaluators {
 
     def eval(e: Expr): AffineForm = e match {
 
+      case x @ Delta(id) if x.hasInterval =>
+        AffineForm(x.interval)
+      case Delta(id) => valMap(id)
+      case x @ Epsilon(id) if x.hasInterval =>
+        AffineForm(x.interval)
+      case Epsilon(id) => valMap(id)
       // TODO should this ignore annotations?
       case x @ Variable(id) if x.hasInterval =>
         AffineForm(x.interval)
@@ -26,6 +32,7 @@ object Evaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
+      case Pow(x, n) => eval(x) ^ eval(n)
       case UMinus(x) => - eval(x)
       case Let(id, v, b) =>
         val aform = eval(v)
@@ -43,6 +50,12 @@ object Evaluators {
 
     def eval(e: Expr): Interval = e match {
 
+      case x @ Delta(id) if x.hasInterval =>
+        x.interval
+      case Delta(id) => valMap(id)
+      case x @ Epsilon(id) if x.hasInterval =>
+        x.interval
+      case Epsilon(id) => valMap(id)
       case x @ Variable(id) if x.hasInterval =>
         x.interval
 
@@ -52,6 +65,7 @@ object Evaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
+      case Pow(x, n) => eval(x) ^ eval(n)
       case UMinus(x) => - eval(x)
       case Let(id, v, b) =>
         val temp = eval(v)
@@ -70,6 +84,14 @@ object Evaluators {
 
     def eval(e: Expr): SMTRange = e match {
 
+      case x @ Delta(id) if x.hasInterval =>
+        SMTRange(x.toVariable, x.interval)
+
+      case Delta(id) => valMap(id)
+      case x @ Epsilon(id) if x.hasInterval =>
+        SMTRange(x.toVariable, x.interval)
+
+      case Epsilon(id) => valMap(id)
       case x @ Variable(id) if x.hasInterval =>
         SMTRange(x, x.interval)
 
@@ -79,6 +101,7 @@ object Evaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
+      case Pow(x, n) => eval(x) ^ eval(n)
       case UMinus(x) => - eval(x)
       case Let(id, v, b) =>
         val temp = eval(v)
