@@ -11,6 +11,11 @@ The current functionality includes:
 - dynamic analysis using rationals or arbitrary precision
 - formal certificate generation for analyses with interval arithmetic (in branch certification)
 
+## Contributors
+
+Many people have contributed to this code (in alphabetical order): 
+Heiko Becker, Einar Horn, Anastasiia Izycheva, Debasmita Lohar, Raphaël Monat, Ezequiel Postan, Fabian Ritter, Saksham Sharma
+
 ## Documentation
 
   To come soon.
