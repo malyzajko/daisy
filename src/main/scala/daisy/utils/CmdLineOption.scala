@@ -1,10 +1,5 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 
@@ -28,7 +23,7 @@ case class FlagOptionDef(name: String, description: String) extends CmdLineOptio
 /*
   Option which sets some parameter. This could be numeric or a string.
   Default value is given in default.
-  */
+ */
 case class ParamOptionDef(name: String, description: String, default: String) extends CmdLineOptionDef[String] {
   def helpLine: String =
     if (default != "") {
@@ -42,7 +37,8 @@ case class ParamOptionDef(name: String, description: String, default: String) ex
   Option for providing a list of things, like debug sections. Delimiter is ':'.
   Default is none.
  */
-case class ListOptionDef(name: String, description: String, examples: List[String]) extends CmdLineOptionDef[Seq[String]] {
+case class ListOptionDef(name: String, description: String, examples: List[String]) extends
+  CmdLineOptionDef[Seq[String]] {
   def helpLine: String = "--%-30s %s".format(name + "=" + (examples.mkString(":")),
     description)
 }
@@ -58,7 +54,7 @@ case class ChoiceOptionDef(name: String, description: String,
 }
 
 object CmdLineOption {
-  def unapply[A](opt: CmdLineOption[A]) = Some((opt.name, opt.value))
+  def unapply[A](opt: CmdLineOption[A]): Option[(String, A)] = Some((opt.name, opt.value))
 }
 
 abstract class CmdLineOption[+T] {
@@ -66,7 +62,7 @@ abstract class CmdLineOption[+T] {
   val value: T
 }
 
-/** Boolean option, present means on. **/
+/* Boolean option, present means on. */
 case class FlagOption(name: String) extends CmdLineOption[Boolean] {
   val value = true  // if the option's there, then it's on
 }

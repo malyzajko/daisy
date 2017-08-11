@@ -1,10 +1,5 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package lang
@@ -14,7 +9,7 @@ import scala.collection.immutable.Seq
 import Trees._
 import Types._
 import Identifiers._
-import utils.FinitePrecision._
+import tools.FinitePrecision._
 
 object PrettyPrinter {
 
@@ -35,29 +30,29 @@ object PrettyPrinter {
 class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boolean = false,
   printTypes: Boolean = false, printPositions: Boolean = false) {
 
-  override def toString = sb.toString
+  override def toString: String = sb.toString
 
-  def append(str: String) {
+  def append(str: String): Unit = {
     sb.append(str)
   }
 
-  def ind(implicit lvl: Int) {
+  def ind(implicit lvl: Int): Unit = {
     sb.append("  " * lvl)
   }
-  def nl(implicit lvl: Int) {
+  def nl(implicit lvl: Int): Unit = {
     sb.append("\n")
     ind(lvl)
   }
 
   // EXPRESSIONS
   // all expressions are printed in-line
-  def ppUnary(expr: Tree, op1: String, op2: String)(implicit parent: Option[Tree], lvl: Int) {
+  def ppUnary(expr: Tree, op1: String, op2: String)(implicit parent: Option[Tree], lvl: Int): Unit = {
     sb.append(op1)
     pp(expr, parent)
     sb.append(op2)
   }
 
-  def ppBinary(left: Tree, right: Tree, op: String)(implicit  parent: Option[Tree], lvl: Int) {
+  def ppBinary(left: Tree, right: Tree, op: String)(implicit  parent: Option[Tree], lvl: Int): Unit = {
     sb.append("(")
     pp(left, parent)
     sb.append(op)
@@ -65,13 +60,18 @@ class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boo
     sb.append(")")
   }
 
-  def ppNary(exprs: Seq[Tree], pre: String, op: String, post: String)(implicit  parent: Option[Tree], lvl: Int) {
+  def ppNary(exprs: Seq[Tree], pre: String, op: String, post: String)(
+    implicit  parent: Option[Tree], lvl: Int): Unit = {
     sb.append(pre)
     val sz = exprs.size
     var c = 0
 
     exprs.foreach(ex => {
-      pp(ex, parent) ; c += 1 ; if(c < sz) sb.append(op)
+      pp(ex, parent);
+      c += 1;
+      if (c < sz) {
+        sb.append(op)
+      }
     })
 
     sb.append(post)
@@ -100,6 +100,28 @@ class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boo
           pp(id, p)
         }
 
+      case Delta(id) =>
+        if (printTypes) {
+          sb.append("(")
+          pp(id, p)
+          sb.append(": ")
+          pp(id.getType, p)
+          sb.append(")")
+        } else {
+          pp(id, p)
+        }
+
+      case Epsilon(id) =>
+        if (printTypes) {
+          sb.append("(")
+          pp(id, p)
+          sb.append(": ")
+          pp(id.getType, p)
+          sb.append(")")
+        } else {
+          pp(id, p)
+        }
+
       case ValDef(id) =>
         pp(id, p)
 
@@ -109,11 +131,11 @@ class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boo
         sb.append(" := ");
         pp(d, p)
         sb.append(") in")
-        nl(lvl+1)
-        pp(e, p)(lvl+1)
+        nl(lvl + 1)
+        pp(e, p)(lvl + 1)
         sb.append(")")
 
-      /*case Block(exprs, last) =>
+      /* case Block(exprs, last) =>
         ppNary(exprs :+ last, "{", "\n", "}")
 
       case Assignment(id, e) =>
@@ -121,7 +143,7 @@ class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boo
         pp(id, p)
         sb.append(" = ")
         pp(e, p)
-        sb.append("\n")*/
+        sb.append("\n") */
 
       case And(exprs) => ppNary(exprs, "(", " \u2227 ", ")")            // \land
       case Or(exprs) => ppNary(exprs, "(", " \u2228 ", ")")             // \lor
@@ -146,7 +168,7 @@ class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boo
         sb.append(x.stringValue + "f")
       case x @ FinitePrecisionLiteral(r, _) =>
         sb.append(x.stringValue)
-
+      case Downcast(expr, tpe) => ppUnary(expr, "downcast(", ", " + tpe + ")")
       case FunctionInvocation(fdId, _, args, _) =>
         pp(fdId, p)
 
@@ -175,12 +197,12 @@ class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boo
         sb.append("if (")
         pp(c, p)
         sb.append(")")
-        nl(lvl+1)
-        pp(t, p)(lvl+1)
+        nl(lvl + 1)
+        pp(t, p)(lvl + 1)
         nl
         sb.append("else")
-        nl(lvl+1)
-        pp(e, p)(lvl+1)
+        nl(lvl + 1)
+        pp(e, p)(lvl + 1)
 
       case Error(tpe, desc) =>
         sb.append(s"""error[$tpe]("$desc""")
@@ -212,7 +234,7 @@ class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boo
         pp(id, p)
         sb.append(" {\n")
         defs.foreach {
-          m => pp(m, p)(lvl+1)
+          m => pp(m, p)(lvl + 1)
         }
         sb.append("\n}\n")
 
@@ -270,11 +292,11 @@ class PrettyPrinter(val sb: StringBuffer = new StringBuffer, printUniqueIds: Boo
     }
   }
 
-  def ppos(p: utils.Position) = p match {
+  def ppos(p: utils.Position): Unit = p match {
     case op: utils.OffsetPosition =>
-      sb.append("@"+op.toString)
+      sb.append("@" + op.toString)
     case rp: utils.RangePosition =>
-      sb.append("@"+rp.focusBegin.toString+"--"+rp.focusEnd.toString)
+      sb.append("@" + rp.focusBegin.toString + "--" + rp.focusEnd.toString)
     case _ =>
   }
 }

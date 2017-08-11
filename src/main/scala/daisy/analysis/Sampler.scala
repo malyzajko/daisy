@@ -1,10 +1,12 @@
+// Copyright 2017 MPI-SWS, Saarbruecken, Germany
+
 package daisy
 package analysis
 
 import scala.util.Random
 
 import lang.Identifiers._
-import utils.{Rational, Interval}
+import tools.{Rational, Interval}
 
 import collection.immutable.Map
 
@@ -31,6 +33,13 @@ object Sampler {
       ranges.map({
         case (x, Interval(a, b)) =>
           (x -> (lowerBounds(x) + random.nextDouble * diameter(x)))
+      })
+    }
+
+    def nextString: Map[Identifier, String] = {
+      ranges.map({
+        case (x, Interval(a, b)) =>
+          (x -> (lowerBounds(x) + random.nextDouble * diameter(x)).toString)
       })
     }
 

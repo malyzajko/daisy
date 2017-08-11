@@ -1,8 +1,12 @@
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
+
 package daisy
 package lang
 
 import Trees._
-import daisy.lang.Types.RealType
+import daisy.lang.Types._
+import tools.FinitePrecision._
 
 object ScalaPrinter {
 
@@ -41,6 +45,9 @@ class ScalaPrinter extends PrettyPrinter {
       case RealType =>
         throw new Exception("RealType found in ScalaPrinter")
 
+      case Downcast(expr, FinitePrecisionType(Float32)) => ppUnary(expr, "", ".toFloat")
+      case Downcast(expr, FinitePrecisionType(Float64)) => ppUnary(expr, "", ".toDouble")
+      case Downcast(expr, FinitePrecisionType(DoubleDouble)) => ppUnary(expr, "DblDouble(", ")")
 
 
       case Program(id, defs) =>
@@ -50,7 +57,7 @@ class ScalaPrinter extends PrettyPrinter {
         sb.append(" {\n")
         nl(lvl)
         defs.foreach {
-          m => pp(m, p)(lvl+1)
+          m => pp(m, p)(lvl + 1)
         }
         sb.append("}\n")
 
@@ -95,18 +102,18 @@ class ScalaPrinter extends PrettyPrinter {
         sb.append(") : ")
         pp(fd.returnType, p)
         sb.append(" = {")
-        nl(lvl+1)
+        nl(lvl + 1)
         fd.body match {
           case Some(body) =>
-            pp(body, p)(lvl+1)
+            pp(body, p)(lvl + 1)
 
           case None =>
             sb.append("[unknown function implementation]")
         }
         nl(lvl)
         sb.append("}")
-        nl(lvl-1)
-        nl(lvl-1)
+        nl(lvl - 1)
+        nl(lvl - 1)
 
 
       case _ => super.pp(tree, parent)

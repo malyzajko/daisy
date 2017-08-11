@@ -1,10 +1,5 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package lang
@@ -31,7 +26,7 @@ object TypeOps {
     leastUpperBound(t1, t2) == Some(t2)
   }
 
-  def typesCompatible(t1: TypeTree, t2: TypeTree) = {
+  def typesCompatible(t1: TypeTree, t2: TypeTree): Boolean = {
     leastUpperBound(t1, t2).isDefined
   }
 

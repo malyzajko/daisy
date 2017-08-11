@@ -1,10 +1,5 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package utils
@@ -42,13 +37,13 @@ class Bijection[A, B] {
     b2a
   }
 
-  //def fromA(a: A): B = getB(a).get
-  //def fromB(b: B): A = getA(b).get
+  // def fromA(a: A): B = getB(a).get
+  // def fromB(b: B): A = getA(b).get
 
   /* Check if a is already present,
     if not, add a new mapping.
-    */
-  def getOrElseAddB(a: A)(c: => B) = {
+   */
+  def getOrElseAddB(a: A)(c: => B): B = {
     getB(a).getOrElse {
       val res = c
       this += a -> res
@@ -58,8 +53,8 @@ class Bijection[A, B] {
 
   /* Check if b is already present,
     if not, add a new mapping.
-    */
-  def getOrElseAddA(b: B)(c: => A) = {
+   */
+  def getOrElseAddA(b: B)(c: => A): A = {
     getA(b).getOrElse {
       val res = c
       this += res -> b
@@ -67,9 +62,9 @@ class Bijection[A, B] {
     }
   }
 
-  def containsA(a: A) = a2b contains a
-  def containsB(b: B) = b2a contains b
+  def containsA(a: A): Boolean = a2b contains a
+  def containsB(b: B): Boolean = b2a contains b
 
-  def aSet = a2b.keySet
-  def bSet = b2a.keySet
+  def aSet: Set[A] = a2b.keySet
+  def bSet: Set[B] = b2a.keySet
 }

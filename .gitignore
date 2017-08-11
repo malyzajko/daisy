@@ -1,1 +1,7 @@
 .DS_STORE
+output/*.scala
+target/
+project/project/
+project/target/
+daisy
+*.log

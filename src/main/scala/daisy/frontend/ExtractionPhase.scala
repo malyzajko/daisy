@@ -1,4 +1,5 @@
-/* Copyright 2009-2016 EPFL, Lausanne */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package frontend
@@ -25,12 +26,12 @@ object ExtractionPhase extends {
     //   scala.util.Try(new File(path).listFiles().map{ _.getAbsolutePath }).toOption
 
     val scalaLib = Option(scala.Predef.getClass.getProtectionDomain.getCodeSource).map{
-       _.getLocation.getPath
-    }.getOrElse( ctx.reporter.fatalError(
+      _.getLocation.getPath
+    }.getOrElse(ctx.reporter.fatalError(
       "No Scala library found."
     ))
 
-    //.orElse( for {
+    // .orElse( for {
     //   // We are in Eclipse. Look in Eclipse plugins to find scala lib
     //   eclipseHome <- Option(System.getenv("ECLIPSE_HOME"))
     //   pluginsHome = eclipseHome + "/plugins"
@@ -51,7 +52,7 @@ object ExtractionPhase extends {
     val compilerOpts = ctx.libFiles.toList ++ ctx.files.toList
 
     val command = new CompilerCommand(compilerOpts, settings) {
-       override val cmdName = "daisy"
+      override val cmdName = "daisy"
     }
 
     if(command.ok) {
@@ -75,7 +76,7 @@ object ExtractionPhase extends {
           ctx.reporter.fatalError("Failed to extract Daisy program.")
       }
     } else {
-       ctx.reporter.fatalError("No input program.")
+      ctx.reporter.fatalError("No input program.")
     }
   }
 }

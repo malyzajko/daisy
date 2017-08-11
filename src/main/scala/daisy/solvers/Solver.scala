@@ -1,10 +1,5 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package solvers
@@ -22,12 +17,80 @@ import lang.Types._
 import lang.Trees._
 import lang.Identifiers._
 import utils.Bijection
-import lang.TreeOps.freeVariablesOf
-import utils.Rational
+import lang.TreeOps._
+import tools.Rational
 import Rational._
 import lang.Constructors._
 
 import scala.collection.mutable.StringBuilder
+
+
+object Solver {
+
+  private val defaultVal = "z3"
+
+  private var context: Context = null
+
+  private var solver = defaultVal
+
+  def setContext(ctx: Context): Unit = {
+    context = ctx
+    solver = context.findOption(Main.optionSolver) match {
+      case Some("dreal") | Some("dReal") =>
+        context.reporter.info("Using dReal")
+        "dreal"
+      case Some("z3") => "z3"
+      case None => defaultVal
+      case Some(s) =>
+        context.reporter.warning("Unknown solver: $s, choosing default (" + defaultVal + ")!")
+        defaultVal
+    }
+
+    Z3Solver.context = ctx
+    DRealSolver.context = ctx
+  }
+
+  def hasContext(): Boolean = context != null
+
+  def checkSat(query: Expr): Option[Boolean] = {
+    solver match {
+      case "z3" => Z3Solver.checkSat(query)
+      case "dreal" => DRealSolver.checkSat(query)
+      case s =>
+        context.reporter.internalError(s"Unknown solver: $s!")
+    }
+  }
+
+  def getModel(query: Expr): Option[Model] = {
+    solver match {
+      case "z3" => Z3Solver.checkAndGetModel(query)
+        // todo: dreal getmodel
+      case "dreal" => context.reporter.internalError(s"Not yet implemented!")
+      case s =>
+        context.reporter.internalError(s"Unknown solver: $s!")
+    }
+  }
+
+  var unknownCounter = 0
+}
+
+// TODO place somewhere else?
+object Power extends scala.AnyRef{
+  def apply(t1: Term, t2: Term): Term =
+    FunctionApplication(
+      QualifiedIdentifier(smtlib.parser.Terms.Identifier(SSymbol("^"))),
+        Seq(t1, t2)
+    )
+
+    def unapply(term: Term): Option[(Term, Term)] = term match {
+    case FunctionApplication(
+      QualifiedIdentifier(
+        smtlib.parser.Terms.Identifier(SSymbol("^"), Seq()),
+        None
+      ), Seq(t1, t2)) => Some((t1, t2))
+    case _ => None
+  }
+}
 
 // general interface for a solver
 abstract class SMTLibSolver(val context: Context) {
@@ -42,7 +105,7 @@ abstract class SMTLibSolver(val context: Context) {
 
   /* Solver name */
   def targetName: String
-  def name: String = "smt-"+targetName
+  def name: String = "smt-" + targetName
 
   val interpreterOpts: Seq[String]
   protected def getNewInterpreter(): ProcessInterpreter
@@ -54,25 +117,25 @@ abstract class SMTLibSolver(val context: Context) {
 
   /* Printing VCs */
   protected lazy val debugOut: Option[java.io.FileWriter] = {
-    if (reporter.isDebugEnabled) {
-      val file = context.files.headOption.getOrElse("NA")
-      val n = DebugFileNumbers.next(targetName + file)
-
-      val fileName = s"smt-sessions/$targetName-$file-$n.smt2"
-
-      val javaFile = new java.io.File(fileName)
-      javaFile.getParentFile.mkdirs()
-
-      reporter.debug(s"Outputting smt session into $fileName")
-
-      val fw = new java.io.FileWriter(javaFile, false)
-
-      fw.write("; Options: " + interpreterOpts.mkString(" ") + "\n")
-
-      Some(fw)
-    } else {
-      None
-    }
+    //    if (reporter.isDebugEnabled) {
+    //      val file = context.files.headOption.getOrElse("NA")
+    //      val n = DebugFileNumbers.next(targetName + file)
+    //
+    //      val fileName = s"smt-sessions/$targetName-$file-$n.smt2"
+    //
+    //      val javaFile = new java.io.File(fileName)
+    //      javaFile.getParentFile.mkdirs()
+    //
+    //      reporter.debug(s"Outputting smt session into $fileName")
+    //
+    //      val fw = new java.io.FileWriter(javaFile, false)
+    //
+    //      fw.write("; Options: " + interpreterOpts.mkString(" ") + "\n")
+    //
+    //      Some(fw)
+    //    } else {
+    None
+    //    }
   }
 
   /* Send a command to the solver */
@@ -87,6 +150,7 @@ abstract class SMTLibSolver(val context: Context) {
     commandBuffer.write("\n")
     commandBuffer.flush()
 
+    //    System.out.println("CMD: "+cmd)
     interpreter.eval(cmd) match {
       case err @ ErrorResponse(msg) if !rawOut =>
         reporter.warning(s"Unexpected error from $targetName solver: $msg")
@@ -95,6 +159,7 @@ abstract class SMTLibSolver(val context: Context) {
         addError()
         err
       case res =>
+        //        System.out.println(res)
         res
     }
   }
@@ -103,11 +168,18 @@ abstract class SMTLibSolver(val context: Context) {
   def assertConstraint(expr: Expr): Unit = {
     try {
       freeVariablesOf(expr).foreach(declareVariable)
+      deltasOf(expr).foreach {
+        case Delta(id) => declareVariable(id)
+      }
+      epsilonsOf(expr).foreach {
+        case Epsilon(id) => declareVariable(id)
+      }
 
       val term = toSMT(expr)(Map())
+      // reporter.warning(s"solver query SMT:" + SMTAssert(term))
       emit(SMTAssert(term))
     } catch {
-      case _ : SMTLIBUnsupportedError =>
+      case _: SMTLIBUnsupportedError =>
         // Store that there was an error. Now all following check()
         // invocations will return None
         addError()
@@ -116,21 +188,22 @@ abstract class SMTLibSolver(val context: Context) {
 
   /* Check the satisfiability of the currently asserted constraints.
     @return Some(true) == SAT, Some(false) == UNSAT, None == error or unknown
-  */
+   */
   def checkSat: Option[Boolean] = {
 
-    if (hasError) None
-    else {
+    if (hasError) {
+      None
+    } else {
       val start = System.currentTimeMillis
       val res = emit(CheckSat())
       val diff = System.currentTimeMillis - start
-      //reporter.info(s"SMT call took $diff ms")
+      // reporter.info(s"SMT call took $diff ms")
 
       if (reporter.isDebugEnabled || printToughSMTCalls) {
         if (diff > 20) {  // 20ms is a random large number
           if (diff > 1000) {
             reporter.warning(s"solver took $diff ms!")
-          }
+
 
           reporter.info("printing tough smt call")
           // slashes in the file name cause file not found errors
@@ -139,17 +212,22 @@ abstract class SMTLibSolver(val context: Context) {
           val fileName = s"smt-sessions/$targetName-$file-$n.smt2"
 
           val out = new java.io.BufferedWriter(new java.io.FileWriter(fileName))
-          out.write(s"; time taken: $diff ms\n")
+          // out.write(s"; time taken: $diff ms\n")
           out.write(output.toString)
           out.close
+          }
         }
       }
 
       res match {
         case CheckSatStatus(SatStatus)     => Some(true)
         case CheckSatStatus(UnsatStatus)   => Some(false)
-        case CheckSatStatus(UnknownStatus) => None
-        case e                             => None
+        case CheckSatStatus(UnknownStatus) =>
+          reporter.debug(s"solver says $res")
+          None
+        case e                             =>
+          reporter.debug(s"solver CRIES $res")
+          None
       }
 
     }
@@ -165,10 +243,10 @@ abstract class SMTLibSolver(val context: Context) {
           syms.head,
           syms.tail.map(s => QualifiedIdentifier(SMTIdentifier(s)))
         )
-
+        //        reporter.warning(cmd)
         emit(cmd) match {
           case GetValueResponseSuccess(valuationPairs) =>
-
+            System.out.println("Val Pairs: " + valuationPairs)
             new Model(valuationPairs.collect {
               case (SimpleSymbol(sym), value) if variables.containsB(sym) =>
                 val id = variables.toA(sym)
@@ -176,40 +254,40 @@ abstract class SMTLibSolver(val context: Context) {
                 (id, fromSMT(value, id.getType)(Map(), Map()))
             }.toMap)
           case _ =>
-            Model.empty //FIXME improve this
+            Model.empty // FIXME improve this
         }
       } catch {
-        case e : SMTLIBUnsupportedError =>
+        case e: SMTLIBUnsupportedError =>
           throw new SolverUnsupportedError(e.t, this, e.reason)
       }
     }
   }
 
-  def getModel: Model = getModel( _ => true)
+  def getModel: Model = getModel(_ => true)
 
-  /*def reset() = {
+  /* def reset() = {
     emit(Reset(), rawOut = true) match {
       case ErrorResponse(msg) =>
         reporter.warning(s"Failed to reset $name: $msg")
         throw new CantResetException(this)
       case _ =>
     }
-  }*/
+  } */
 
   /* Should be called after the solver is no longer used. */
-  def free() = {
+  def free(): Unit = {
     interpreter.free()
     debugOut foreach { _.close }
 
     commandBuffer.close()
-    //reporter.info(s"# calls: $n, avrg time per SMT call: $runningAvrg,"+
+    // reporter.info(s"# calls: $n, avrg time per SMT call: $runningAvrg,"+
     //  " max time per call: $maxTime")
 
   }
 
-  //protected val errors = new IncrementalBijection[Unit, Boolean]()
+  // protected val errors = new IncrementalBijection[Unit, Boolean]()
   private var errors: Boolean = false
-  protected def hasError: Boolean = errors //errors.getB(()) contains true
+  protected def hasError: Boolean = errors // errors.getB(()) contains true
   protected def addError() = errors = true
 
   /*
@@ -217,6 +295,7 @@ abstract class SMTLibSolver(val context: Context) {
    */
 
   protected val variables = new Bijection[Identifier, SSymbol]()
+  protected val deltas = new Bijection[Identifier, SSymbol]()
   // in Leon, this is FunDef -> SSymbol
   // we may have to do extra work, when mapping back to get the full fnc
   protected val functions = new Bijection[Identifier, SSymbol]()
@@ -253,6 +332,7 @@ abstract class SMTLibSolver(val context: Context) {
     variables.getOrElseAddB(id) {
       val s = id2sym(id)
       val cmd = DeclareFun(s, List(), toSMTSort(id.getType))
+      //      reporter.warning(cmd)
       emit(cmd)
       s
     }
@@ -270,12 +350,26 @@ abstract class SMTLibSolver(val context: Context) {
   }
 
   /*
-   Transforms a Daisy expression to a SMTLib expression.
+    Transforms a Daisy expression to a SMTLib expression.
    */
   protected def toSMT(e: Expr)(implicit bindings: Map[Identifier, Term]): Term = e match {
     /**
      * ===== Literals =====
      */
+
+    case Delta(id) =>
+      toSMT(e.getType)
+      // either bindings has the mapping, or else we look in variables.
+      val name = id.uniqueNameDelimited("!")
+      //      reporter.debug(s"delta $name")
+      bindings.getOrElse(id, SSymbol(name))
+
+    case Epsilon(id) =>
+      toSMT(e.getType)
+      // either bindings has the mapping, or else we look in variables.
+      val name = id.uniqueNameDelimited("!")
+      //      reporter.debug(s"delta $name")
+      bindings.getOrElse(id, SSymbol(name))
 
     case Variable(id) =>
       toSMT(e.getType)
@@ -286,7 +380,7 @@ abstract class SMTLibSolver(val context: Context) {
     case IntegerLiteral(i)
       => if (i >= 0) Ints.NumeralLit(i) else Ints.Neg(Ints.NumeralLit(-i))
 
-      //case Int32Literal(i)             => FixedSizeBitVectors.BitVectorLit(Hexadecimal.fromInt(i))
+      // case Int32Literal(i)             => FixedSizeBitVectors.BitVectorLit(Hexadecimal.fromInt(i))
 
     case RealLiteral(r) =>
       Reals.Div(Reals.NumeralLit(r.n), Reals.NumeralLit(r.d))
@@ -302,7 +396,7 @@ abstract class SMTLibSolver(val context: Context) {
         Seq(),
         newBody)
 
-      //case er @ Error(tpe, _) =>
+      // case er @ Error(tpe, _) =>
       //  declareVariable(FreshIdentifier("error_value", tpe))
 
     /**
@@ -328,6 +422,7 @@ abstract class SMTLibSolver(val context: Context) {
     case Times(a, b)    if (e.getType == RealType) => Reals.Mul(toSMT(a), toSMT(b))
     case Division(a, b) if (e.getType == RealType) => Reals.Div(toSMT(a), toSMT(b))
 
+    case Pow(x, n) => Power(toSMT(x), toSMT(n))
     /**
      * ===== Logic =====
      */
@@ -338,22 +433,22 @@ abstract class SMTLibSolver(val context: Context) {
     case Equals(a, b)    => Core.Equals(toSMT(a), toSMT(b))
     case Implies(a, b)   => Core.Implies(toSMT(a), toSMT(b))
     case LessThan(a, b) => a.getType match {
-      //case Int32Type   => FixedSizeBitVectors.SLessThan(toSMT(a), toSMT(b))
+      // case Int32Type   => FixedSizeBitVectors.SLessThan(toSMT(a), toSMT(b))
       case IntegerType => Ints.LessThan(toSMT(a), toSMT(b))
       case RealType    => Reals.LessThan(toSMT(a), toSMT(b))
     }
     case LessEquals(a, b) => a.getType match {
-      //case Int32Type   => FixedSizeBitVectors.SLessEquals(toSMT(a), toSMT(b))
+      // case Int32Type   => FixedSizeBitVectors.SLessEquals(toSMT(a), toSMT(b))
       case IntegerType => Ints.LessEquals(toSMT(a), toSMT(b))
       case RealType    => Reals.LessEquals(toSMT(a), toSMT(b))
     }
     case GreaterThan(a, b) => a.getType match {
-      //case Int32Type   => FixedSizeBitVectors.SGreaterThan(toSMT(a), toSMT(b))
+      // case Int32Type   => FixedSizeBitVectors.SGreaterThan(toSMT(a), toSMT(b))
       case IntegerType => Ints.GreaterThan(toSMT(a), toSMT(b))
       case RealType    => Reals.GreaterThan(toSMT(a), toSMT(b))
     }
     case GreaterEquals(a, b) => a.getType match {
-      //case Int32Type   => FixedSizeBitVectors.SGreaterEquals(toSMT(a), toSMT(b))
+      // case Int32Type   => FixedSizeBitVectors.SGreaterEquals(toSMT(a), toSMT(b))
       case IntegerType => Ints.GreaterEquals(toSMT(a), toSMT(b))
       case RealType    => Reals.GreaterEquals(toSMT(a), toSMT(b))
     }
@@ -384,7 +479,8 @@ abstract class SMTLibSolver(val context: Context) {
   }
 
   /* Translate an SMTLIB term back to a Leon Expr */
-  protected def fromSMT(t: Term, otpe: Option[TypeTree] = None)(implicit lets: Map[SSymbol, Term], letDefs: Map[SSymbol, DefineFun]): Expr = {
+  protected def fromSMT(t: Term, otpe: Option[TypeTree] = None)(implicit lets: Map[SSymbol, Term],
+    letDefs: Map[SSymbol, DefineFun]): Expr = {
 
     // Use as much information as there is, if there is an expected type, great, but it might not always be there
     (t, otpe) match {
@@ -397,9 +493,9 @@ abstract class SMTLibSolver(val context: Context) {
 
       case (SDecimal(d), Some(RealType)) =>
         // converting bigdecimal to a fraction
-        if (d == BigDecimal(0))
+        if (d == BigDecimal(0)) {
           RealLiteral(Rational.zero)
-        else {
+        } else {
           d.toBigIntExact() match {
             case Some(num) =>
               RealLiteral(Rational(num, 1))
@@ -487,6 +583,9 @@ abstract class SMTLibSolver(val context: Context) {
           case ("/", List(a, b)) =>
             Division(fromSMT(a, otpe), fromSMT(b, otpe))
 
+          case ("^", List(a, b)) =>
+            Pow(fromSMT(a, otpe), fromSMT(b, otpe))
+
           case ("div", List(a, b)) =>
             Division(fromSMT(a, otpe), fromSMT(b, otpe))
 
@@ -494,10 +593,10 @@ abstract class SMTLibSolver(val context: Context) {
             Not(fromSMT(a, BooleanType))
 
           case ("or", args) =>
-            or(args.map(fromSMT(_, BooleanType)):_*)
+            or(args.map(fromSMT(_, BooleanType)): _*)
 
           case ("and", args) =>
-            and(args.map(fromSMT(_, BooleanType)):_*)
+            and(args.map(fromSMT(_, BooleanType)): _*)
 
           case ("=", List(a, b)) =>
             val ra = fromSMT(a, None)
@@ -510,12 +609,16 @@ abstract class SMTLibSolver(val context: Context) {
       case (Core.True(), Some(BooleanType))  => BooleanLiteral(true)
       case (Core.False(), Some(BooleanType)) => BooleanLiteral(false)
 
-      //case (SimpleSymbol(s), otpe) if lets contains s =>
+      // case (SimpleSymbol(s), otpe) if lets contains s =>
       //  fromSMT(lets(s), otpe)
+
+      case (SimpleSymbol(s), otpe) if s.equals(SSymbol("?"))=>
+        reporter.debug(s"Detected ? here")
+        RealLiteral(Rational.zero)
 
       case (SimpleSymbol(s), otpe) =>
         variables.getA(s).map(_.toVariable).getOrElse {
-          throw new Exception()
+          throw new Exception(s"Unknown symbol $s")
         }
 
       case _ =>
@@ -524,11 +627,13 @@ abstract class SMTLibSolver(val context: Context) {
     }
   }
 
-  final protected def fromSMT(pair: (Term, TypeTree))(implicit lets: Map[SSymbol, Term], letDefs: Map[SSymbol, DefineFun]): Expr = {
+  final protected def fromSMT(pair: (Term, TypeTree))(implicit lets: Map[SSymbol, Term],
+    letDefs: Map[SSymbol, DefineFun]): Expr = {
     fromSMT(pair._1, Some(pair._2))
   }
 
-  final protected def fromSMT(s: Term, tpe: TypeTree)(implicit lets: Map[SSymbol, Term], letDefs: Map[SSymbol, DefineFun]): Expr = {
+  final protected def fromSMT(s: Term, tpe: TypeTree)(implicit lets: Map[SSymbol, Term],
+    letDefs: Map[SSymbol, DefineFun]): Expr = {
     fromSMT(s, Some(tpe))
   }
 

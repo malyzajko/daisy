@@ -1,10 +1,5 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 
@@ -22,11 +17,11 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
 
   case class Message(severity: Severity, position: Position, msg: Any)
 
-  private var _errorCount : Int = 0
-  private var _warningCount : Int = 0
+  private var _errorCount: Int = 0
+  private var _warningCount: Int = 0
 
-  final def errorCount : Int = _errorCount
-  final def warningCount : Int = _warningCount
+  final def errorCount: Int = _errorCount
+  final def warningCount: Int = _warningCount
 
   def account(msg: Message): Message = {
     msg.severity match {
@@ -44,28 +39,29 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
     throw DaisyFatalError(None)
   }
 
-  def onCompilerProgress(current: Int, total: Int) = {}
+  def onCompilerProgress(current: Int, total: Int): Unit = {}
 
   final def info(pos: Position, msg: Any): Unit    = emit(account(Message(INFO, pos, msg)))
   final def warning(pos: Position, msg: Any): Unit = emit(account(Message(WARNING, pos, msg)))
   final def error(pos: Position, msg: Any): Unit   = emit(account(Message(ERROR, pos, msg)))
-  final def title(pos: Position, msg: Any): Unit   = emit(account(Message(INFO, pos, Console.BOLD + msg + Console.RESET)))
+  final def title(pos: Position, msg: Any): Unit   = emit(account(Message(INFO, pos,
+    Console.BOLD + msg + Console.RESET)))
 
   final def fatalError(pos: Position, msg: Any): Nothing = {
     emit(account(Message(FATAL, pos, msg)))
     onFatal()
   }
-  final def internalError(pos: Position, msg : Any) : Nothing = {
+  final def internalError(pos: Position, msg: Any): Nothing = {
     emit(account(Message(INTERNAL, pos, msg.toString +
       "\nPlease inform the authors of Daisy about this message"
     )))
     onFatal()
   }
-  final def internalAssertion(cond : Boolean, pos: Position, msg : Any) : Unit = {
+  final def internalAssertion(cond: Boolean, pos: Position, msg: Any): Unit = {
     if (!cond) internalError(pos,msg)
   }
 
-  def terminateIfError() = {
+  def terminateIfError(): Unit = {
     if (errorCount > 0) {
       _errorCount = 0
       _warningCount = 0
@@ -80,15 +76,15 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
     (debugMask & section.mask) == section.mask
   }
 
-  def ifDebug(pos: Position, body: (Any => Unit) => Any)(implicit section: DebugSection) = {
+  def ifDebug(pos: Position, body: (Any => Unit) => Any)(implicit section: DebugSection): Unit = {
     if (isDebugEnabled) {
-      body( { (msg: Any) => emit(account(Message(DEBUG(section), pos, msg))) } )
+      body({ (msg: Any) => emit(account(Message(DEBUG(section), pos, msg))) })
     }
   }
 
-  def whenDebug(pos: Position, section: DebugSection)(body: (Any => Unit) => Any) {
+  def whenDebug(pos: Position, section: DebugSection)(body: (Any => Unit) => Any): Unit = {
     if (isDebugEnabled(section)) {
-      body( { (msg: Any) => emit(account(Message(DEBUG(section), pos, msg))) } )
+      body({ (msg: Any) => emit(account(Message(DEBUG(section), pos, msg))) })
     }
   }
 
@@ -106,8 +102,8 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
   final def error(msg: Any): Unit         = error(NoPosition, msg)
   final def title(msg: Any): Unit         = title(NoPosition, msg)
   final def fatalError(msg: Any): Nothing = fatalError(NoPosition, msg)
-  final def internalError(msg: Any) : Nothing = internalError(NoPosition, msg)
-  final def internalAssertion(cond : Boolean, msg: Any) : Unit = internalAssertion(cond,NoPosition, msg)
+  final def internalError(msg: Any): Nothing = internalError(NoPosition, msg)
+  final def internalAssertion(cond: Boolean, msg: Any): Unit = internalAssertion(cond,NoPosition, msg)
   final def debug(msg: => Any)(implicit section: DebugSection): Unit = debug(NoPosition, msg)
   final def ifDebug(body: (Any => Unit) => Any)(implicit section: DebugSection): Unit =
     ifDebug(NoPosition, body)
@@ -117,12 +113,12 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
 
 class DefaultReporter(debugSections: Set[DebugSection]) extends Reporter(debugSections) {
   protected def severityToPrefix(sev: Severity): String = sev match {
-    case ERROR    => "["+Console.RED              +" Error  "+Console.RESET+"]"
-    case WARNING  => "["+Console.YELLOW           +"Warning "+Console.RESET+"]"
-    case INFO     => "["+Console.BLUE             +"  Info  "+Console.RESET+"]"
-    case FATAL    => "["+Console.RED+Console.BOLD +" Fatal  "+Console.RESET+"]"
-    case INTERNAL => "["+            Console.BOLD +"Internal"+Console.RESET+"]"
-    case DEBUG(_) => "["+Console.MAGENTA          +" Debug  "+Console.RESET+"]"
+    case ERROR    => "[" + Console.RED              + " Error  " + Console.RESET + "]"
+    case WARNING  => "[" + Console.YELLOW           + "Warning " + Console.RESET + "]"
+    case INFO     => "[" + Console.BLUE             + "  Info  " + Console.RESET + "]"
+    case FATAL    => "[" + Console.RED + Console.BOLD + " Fatal  " + Console.RESET + "]"
+    case INTERNAL => "[" +            Console.BOLD  + "Internal" + Console.RESET + "]"
+    case DEBUG(_) => "[" + Console.MAGENTA          + " Debug  " + Console.RESET + "]"
   }
 
   def smartPos(p: Position): String = {
@@ -133,13 +129,13 @@ class DefaultReporter(debugSections: Set[DebugSection]) extends Reporter(debugSe
       val here   = new java.io.File(".").getAbsolutePath().stripSuffix(".")
       val diff   = target.stripPrefix(here)
 
-      val filePos = diff+":"
+      val filePos = diff + ":"
 
       filePos + p + ": "
     }
   }
 
-  def emit(msg: Message) = {
+  def emit(msg: Message): Unit = {
     println(reline(severityToPrefix(msg.severity), smartPos(msg.position) + msg.msg.toString))
     printLineContent(msg.position)
   }
@@ -175,7 +171,7 @@ class DefaultReporter(debugSections: Set[DebugSection]) extends Reporter(debugSe
   def printLineContent(pos: Position): Unit = {
     getLine(pos) match {
       case Some(line) =>
-        println(blankPrefix+line)
+        println(blankPrefix + line)
         pos match {
           case rp: RangePosition =>
             val bp = rp.focusBegin
@@ -185,21 +181,21 @@ class DefaultReporter(debugSections: Set[DebugSection]) extends Reporter(debugSe
               val width = Math.max(ep.col - bp.col, 1)
               "^" * width
             } else {
-              val width = Math.max(line.length+1-bp.col, 1)
-              ("^" * width)+"..."
+              val width = Math.max(line.length + 1 - bp.col, 1)
+              ("^" * width) + "..."
             }
 
-            println(blankPrefix+(" " * (bp.col - 1) + Console.RED+carret+Console.RESET))
+            println(blankPrefix + (" " * (bp.col - 1) + Console.RED + carret + Console.RESET))
 
           case op: OffsetPosition =>
-            println(blankPrefix+(" " * (op.col - 1) + Console.RED+"^"+Console.RESET))
+            println(blankPrefix + (" " * (op.col - 1) + Console.RED + "^" + Console.RESET))
         }
       case None =>
     }
   }
 
-  protected def reline(pfx: String, msg: String) : String = {
-    pfx+" "+msg.replaceAll("\n", s"\n$pfx ")
+  protected def reline(pfx: String, msg: String): String = {
+    pfx + " " + msg.replaceAll("\n", s"\n$pfx ")
   }
 
 }

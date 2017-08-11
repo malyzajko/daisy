@@ -1,10 +1,5 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 
@@ -14,35 +9,79 @@ import lang.Trees.Program
 object Main {
 
   val optionFunctions = ListOptionDef("functions",  "Which functions to consider (currently only for error analysis).",
-      List("f1", "f2"))
+    List("f1", "f2"))
 
   val optionPrintToughSMTCalls = FlagOptionDef("print-tough-smt-calls",
     "If enabled, will print those SMT queries to file which take longer.")
 
+  val optionSolver = ChoiceOptionDef("solver", "smt solver to use for smt range analysis",
+    Set("dReal", "z3"), "z3")
+
+  val optionAnalysis = ChoiceOptionDef("analysis",  "Which analysis method to use.",
+    Set("dataflow", "opt", "dataflowSubdiv", "relative"), "dataflow")
+
+  val optionPrecision = ChoiceOptionDef("precision", "(Default, uniform) precision to use",
+    Set("Float32", "Float64", "DoubleDouble", "QuadDouble", "Fixed16", "Fixed32"), "Float64")
+
+  val optionRangeMethod = ChoiceOptionDef("rangeMethod", "Method for range analysis.",
+    Set("affine", "interval", "smt"), "interval")
+
+  val optionNoRoundoff = FlagOptionDef("noRoundoff", "Do not track roundoff errors.")
+
+  val optionNoInitialErrors = FlagOptionDef("noInitialErrors", "Do not track initial errors specified by user.")
+
+  val optionMixedPrecFile = ParamOptionDef("mixed-precision", """File with type assignment for all variables.
+    The format is the following:
+    function_name = {
+      variable_name_1: prec_1
+      variable_name_2: prec_2
+      ... }
+    function_name_2 = {
+      variable_name_i: prec_i }
+
+    The precision is Float, Double or DoubleDouble.
+    The file can give only a partial precision map.""", "")
+
+  val optionDenormals = FlagOptionDef("denormals", "Include parameter for denormals in the FP abstraction")
+
   val globalOptions: Set[CmdLineOptionDef[Any]] = Set(
-    FlagOptionDef("help",       "Show this message."),
-    FlagOptionDef("dynamic",    "Run dynamic analysis."),
-    //ParamOptionDef("timeout",   "Timeout in ms.", "1000"),
-    ListOptionDef("debug",      "For which sections to print debug info.",
+    FlagOptionDef("help",             "Show this message."),
+    ListOptionDef("debug",            "For which sections to print debug info.",
       List("analysis","solver")),
+    FlagOptionDef("dynamic",          "Run dynamic analysis."),
     FlagOptionDef("codegen",    "Generate code (as opposed to just doing analysis)."),
+    FlagOptionDef("rewrite",      "Rewrite expression to improve accuracy ."),
+    optionAnalysis,
     optionFunctions,
-    optionPrintToughSMTCalls
+    optionPrintToughSMTCalls,
+    optionSolver,
+    optionMixedPrecFile,
+    optionPrecision,
+    optionNoRoundoff,
+    optionNoInitialErrors,
+    optionRangeMethod,
+    optionDenormals
   )
 
   /*
     For now these are phases, but it should be anything that
     needs command-line options.
    */
-  lazy val allComponents : Set[DaisyPhase] = Set(
+  lazy val allComponents: Set[DaisyPhase] = Set(
     analysis.SpecsProcessingPhase,
+    analysis.AbsErrorPhase,
+    analysis.RangePhase,
     analysis.RangeErrorPhase,
+    analysis.RelativeErrorPhase,
+    analysis.TaylorErrorPhase,
+    analysis.DataflowSubdivisionPhase,
     backend.CodeGenerationPhase,
     transform.SSATransformerPhase,
     analysis.DynamicPhase,
-    InfoPhase)
+    opt.RewritingOptimizationPhase,
+    backend.InfoPhase)
 
-  def main(args: Array[String]) {
+  def main(args: Array[String]): Unit = {
 
     val ctx = processOptions(args.toList)
 
@@ -52,16 +91,21 @@ object Main {
       val timerTotal = ctx.timers.total.start
 
       // this is the old frontend going through Leon
-      //val inputPrg = frontend.ScalaExtraction.run(ctx)
+      // val inputPrg = frontend.ScalaExtraction.run(ctx)
       // new frontend going directly through Scala compiler
       val inputPrg = frontend.ExtractionPhase(ctx)
 
       val pipeline = computePipeline(ctx)
 
       try { // for debugging it's better to have these off.
+        ctx.reporter.info("\n************ Starting Daisy ************")
         pipeline.run(ctx, inputPrg)
       } catch {
-        case e: DaisyFatalError => ctx. reporter.info("Something really bad happened. Cannot continue.")
+        case tools.DenormalRangeException(msg) =>
+          ctx.reporter.warning(msg)
+        case tools.OverflowException(msg) =>
+          ctx.reporter.warning(msg)
+        case e: DaisyFatalError => ctx.reporter.info("Something really bad happened. Cannot continue.")
       }
 
       timerTotal.stop
@@ -77,6 +121,14 @@ object Main {
     val allOptions: Map[String, CmdLineOptionDef[Any]] =
       (globalOptions ++ allComponents.flatMap(_.definedOptions)).map(o => o.name -> o).toMap
 
+    // check for duplicated command-line options
+    val allOptionNames = globalOptions.map(_.name).toSeq ++
+      allComponents.toSeq.flatMap(_.definedOptions).map(_.name)
+    val diff = allOptionNames.diff(allOptions.keys.toSeq)
+    if (!diff.isEmpty) {
+      initReporter.warning("Duplicated command-line options: " + diff.sorted)
+    }
+
     val options = args.filter(_.startsWith("--"))
     val inputFiles = args.filterNot(_.startsWith("-"))
     if (inputFiles.length == 0) {
@@ -85,12 +137,13 @@ object Main {
 
     var validOptions: List[CmdLineOption[Any]] = List()
     var debugSections = Set[DebugSection]()
+    var fixedPoints: Boolean = false
 
     for (opt <- options) {
       opt.drop(2).split("=", 2).toList match {
         case List(name, value) =>
           allOptions.get(name) match {
-            case Some(ints: ParamOptionDef) => //if (value.forall(_.isDigit))
+            case Some(ints: ParamOptionDef) =>
               validOptions +:= ParamOption(name, value)
 
             case Some(lists: ListOptionDef) =>
@@ -127,23 +180,29 @@ object Main {
               case Some(rs) =>
                 debugSections += rs
               case None =>
-                initReporter.error("Section "+ x +" not found, available: "+DebugSections.all.map(_.name).mkString(", "))
+                initReporter.error("Section " + x + " not found, available: " +
+                  DebugSections.all.map(_.name).mkString(", "))
             }
         }}
 
       case FlagOption("help") =>
         showHelp(initReporter)
+
+      case ChoiceOption("precision", "Fixed16") | ChoiceOption("precision", "Fixed32") =>
+        fixedPoints = true
+
       case _ =>
     }
 
     Context(
       reporter = new DefaultReporter(debugSections),
       files = inputFiles,
-      options = validOptions
+      options = validOptions,
+      fixedPoint = fixedPoints
     )
   }
 
-  private def showHelp(reporter: Reporter) {
+  private def showHelp(reporter: Reporter): Unit = {
     reporter.info("usage: [--help] [--debug=<N>] [..] <files>")
     reporter.info("")
     for (opt <- globalOptions.toSeq.sortBy(_.name)) {
@@ -164,31 +223,52 @@ object Main {
 
 
   private def computePipeline(ctx: Context): Pipeline[Program, Program] = {
-    val fixedPointArith = ctx.findOption(analysis.RangeErrorPhase.optionPrecision) match {
-      case Some("Fixed16") => true
-      case Some("Fixed32") => true
-      case _ => false
+    val ssaNeeded = ctx.fixedPoint && ctx.hasFlag("codegen")
+
+    val beginning = if (ctx.hasFlag("rewrite")) {
+      analysis.SpecsProcessingPhase andThen opt.RewritingOptimizationPhase
+    } else {
+      analysis.SpecsProcessingPhase
     }
 
-    // this is not ideal, using 'magic' strings
     if (ctx.hasFlag("dynamic")) {
-      analysis.SpecsProcessingPhase andThen
-      analysis.DynamicPhase
-    } else if (ctx.hasFlag("codegen") && fixedPointArith) {
-      analysis.SpecsProcessingPhase andThen
-      transform.SSATransformerPhase andThen
-      analysis.RangeErrorPhase andThen
-      InfoPhase andThen
-      backend.CodeGenerationPhase
-    } else if (ctx.hasFlag("codegen")) {
-      analysis.SpecsProcessingPhase andThen
-      analysis.RangeErrorPhase andThen
-      InfoPhase andThen
-      backend.CodeGenerationPhase
+
+      beginning andThen analysis.DynamicPhase
+
     } else {
-      analysis.SpecsProcessingPhase andThen
-      analysis.RangeErrorPhase andThen
-      InfoPhase
+
+      val analysisPipeline = ((ssaNeeded, ctx.findOption(optionAnalysis)): @unchecked) match {
+        case (true, Some("dataflow")) =>
+          transform.SSATransformerPhase andThen analysis.RangeErrorPhase
+
+        case (false, Some("dataflow")) =>
+          analysis.RangeErrorPhase
+
+        case (_, Some("opt")) =>
+          analysis.TaylorErrorPhase
+
+        case (_, Some("dataflowSubdiv")) =>
+          analysis.DataflowSubdivisionPhase
+
+        case (_, Some("relative")) =>
+          analysis.RelativeErrorPhase
+
+        case (true, None) =>
+          ctx.reporter.info("No analysis method specified, choosing default.")
+          transform.SSATransformerPhase andThen analysis.RangeErrorPhase
+
+        case (false, None) =>
+          ctx.reporter.info("No analysis method specified, choosing default.")
+          analysis.RangeErrorPhase
+      }
+
+      if (ctx.hasFlag("codegen")) {
+        beginning andThen analysisPipeline andThen backend.InfoPhase andThen
+        backend.CodeGenerationPhase
+      } else {
+        beginning andThen analysisPipeline andThen backend.InfoPhase
+      }
+
     }
 
   }

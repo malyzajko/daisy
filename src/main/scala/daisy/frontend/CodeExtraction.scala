@@ -1,4 +1,5 @@
-/* Copyright 2009-2016 EPFL, Lausanne */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package frontend
@@ -41,11 +42,9 @@ trait CodeExtraction extends ASTExtractors {
       val start = p.focusStart
       val end   = p.focusEnd
       DaisyRangePosition(start.line, start.column, start.point,
-                        end.line, end.column, end.point,
-                        p.source.file.file)
+        end.line, end.column, end.point, p.source.file.file)
     } else {
-      DaisyOffsetPosition(p.line, p.column, p.point,
-                         p.source.file.file)
+      DaisyOffsetPosition(p.line, p.column, p.point, p.source.file.file)
     }
   }
 
@@ -66,14 +65,14 @@ trait CodeExtraction extends ASTExtractors {
   /**
     An exception thrown when non-purescala compatible code is encountered.
     Unlike Leon, we will always abort if there is a problem.
-  */
+   */
   sealed class OutOfSubsetException(pos: Position, msg: String, ot: Option[Tree]) extends Exception(msg) {
-    def emit() {
+    def emit(): Unit = {
       val debugInfo =
         ot.map { t =>
           val strWr = new java.io.StringWriter()
           new global.TreePrinter(new java.io.PrintWriter(strWr)).printTree(t)
-          " (Tree: "+strWr.toString+" ; Class: "+t.getClass+")"
+          " (Tree: " + strWr.toString + " ; Class: " + t.getClass + ")"
         }.getOrElse("")
 
       reporter.error(pos, msg + debugInfo)
@@ -88,8 +87,8 @@ trait CodeExtraction extends ASTExtractors {
     throw new OutOfSubsetException(t.pos, msg, Some(t))
   }
 
-  //Simple case class to capture function definitions gradually
-  //there are later copied over to the immutable FunDef class
+  // Simple case class to capture function definitions gradually
+  // there are later copied over to the immutable FunDef class
   case class TmpFunDef(id: Identifier, params: Seq[DaisyValDef], returnType: DaisyType,
     varMap: Map[Symbol, Identifier]) extends Positioned
 
@@ -99,13 +98,13 @@ trait CodeExtraction extends ASTExtractors {
     // actually have the same ID
     case class DefContext(vars: Map[Symbol, Identifier] = Map()){
 
-      def isVariable(s: Symbol) = vars contains s
+      def isVariable(s: Symbol): Boolean = vars.contains(s)
 
-      def withNewVars(nvars: Traversable[(Symbol, Identifier)]) = {
+      def withNewVars(nvars: Traversable[(Symbol, Identifier)]): DefContext = {
         copy(vars = vars ++ nvars)
       }
 
-      def withNewVar(nvar: (Symbol, Identifier)) = {
+      def withNewVar(nvar: (Symbol, Identifier)): DefContext = {
         copy(vars = vars + nvar)
       }
 
@@ -127,7 +126,7 @@ trait CodeExtraction extends ASTExtractors {
         defs.head match {
           case t @ ExObjectDef(n, templ) =>
             // Module
-            //val id = FreshIdentifier(n)
+            // val id = FreshIdentifier(n)
             templ.body.foreach {
 
               // Functions
@@ -147,7 +146,7 @@ trait CodeExtraction extends ASTExtractors {
             outOfSubsetError(NoPosition, "Unexpected top-level object found: " + x)
         }
 
-        //println("defsToDefs: " + defsToDefs)
+        // println("defsToDefs: " + defsToDefs)
 
         // Step 2: fill in function bodies
         val daisyProgram = defs.head match {
@@ -155,7 +154,7 @@ trait CodeExtraction extends ASTExtractors {
             val id = FreshIdentifier(n)
             val funDefs = templ.body.flatMap {
               case ExFunctionDef(sym, _, _, _, rhs) =>
-                //println("going to extract: " + sym)
+                // println("going to extract: " + sym)
                 Some(extractFunBody(sym, rhs))
               case _ => None
             }
@@ -188,11 +187,6 @@ trait CodeExtraction extends ASTExtractors {
 
 
     private def isLibrary(u: CompilationUnit) = {
-      //println("ctx libfiles: " + self.ctx.libFiles)
-      //println("this file: " + u.source.file.absolute.path)
-      //println(u.source.file.absolute.path.endsWith(self.ctx.libFiles.head))
-
-      //self.ctx.libFiles contains u.source.file.absolute.path
       // TODO: big hack
       u.source.file.absolute.path.endsWith(self.ctx.libFiles.head)
     }
@@ -245,7 +239,8 @@ trait CodeExtraction extends ASTExtractors {
 
       case _ =>
         if (tpt ne null) {
-          outOfSubsetError(tpt.typeSymbol.pos, "Could not extract type as PureScala: "+tpt+" ("+tpt.getClass+")")
+          outOfSubsetError(tpt.typeSymbol.pos, "Could not extract type as PureScala: " +
+            tpt + " (" + tpt.getClass + ")")
         } else {
           outOfSubsetError(NoPosition, "Tree with null-pointer as type found")
         }
@@ -285,17 +280,17 @@ trait CodeExtraction extends ASTExtractors {
     private def extractFunBody(sym: Symbol, body0: Tree): DaisyFunDef = {
 
       /** Extracts the body without its specification
-        *
-        * [[Expressions.Expr]] trees contain its specifications as part of certain nodes.
-        * This function helps extracting only the body part of an expression
-        *
-        * @return An option type with the resulting expression if not [[Expressions.NoTree]]
-        * @see [[Expressions.Ensuring]]
-        * @see [[Expressions.Require]]
-        */
+       *
+       * [[Expressions.Expr]] trees contain its specifications as part of certain nodes.
+       * This function helps extracting only the body part of an expression
+       *
+       * @return An option type with the resulting expression if not [[Expressions.NoTree]]
+       * @see [[Expressions.Ensuring]]
+       * @see [[Expressions.Require]]
+       */
       def withoutSpec(expr: DaisyExpr): Option[DaisyExpr] = expr match {
         // TODO ???
-        //case Let(i, e, b)                    => withoutSpec(b).map(Let(i, e, _))
+        // case Let(i, e, b)                    => withoutSpec(b).map(Let(i, e, _))
         case Require(pre, b)                 => Option(b).filterNot(_.isInstanceOf[NoTree])
         case Ensuring(Require(pre, b), post) => Option(b).filterNot(_.isInstanceOf[NoTree])
         case Ensuring(b, post)               => Option(b).filterNot(_.isInstanceOf[NoTree])
@@ -304,7 +299,7 @@ trait CodeExtraction extends ASTExtractors {
 
       /** Returns the precondition of an expression wrapped in Option */
       def preconditionOf(expr: DaisyExpr): Option[DaisyExpr] = expr match {
-        //case Let(i, e, b)                 => preconditionOf(b).map(Let(i, e, _).copiedFrom(expr))
+        // case Let(i, e, b)                 => preconditionOf(b).map(Let(i, e, _).copiedFrom(expr))
         case Require(pre, _)              => Some(pre)
         case Ensuring(Require(pre, _), _) => Some(pre)
         case b                            => None
@@ -312,7 +307,7 @@ trait CodeExtraction extends ASTExtractors {
 
       /** Returns the postcondition of an expression wrapped in Option */
       def postconditionOf(expr: DaisyExpr): Option[DaisyExpr] = expr match {
-        //case Let(i, e, b)      => postconditionOf(b).map(Let(i, e, _).copiedFrom(expr))
+        // case Let(i, e, b)      => postconditionOf(b).map(Let(i, e, _).copiedFrom(expr))
         case Ensuring(_, post) => Some(post)
         case _                 => None
       }
@@ -320,7 +315,7 @@ trait CodeExtraction extends ASTExtractors {
       val tmpFunDef = defsToDefs(sym)
 
       // TODO: flags
-      //fd.addFlags(annotationsOf(sym).map { case (name, args) => FunctionFlag.fromName(name, args) }.toSet)
+      // fd.addFlags(annotationsOf(sym).map { case (name, args) => FunctionFlag.fromName(name, args) }.toSet)
       val flags = false   // this is actually called isField right now
 
       val returnType = tmpFunDef.returnType
@@ -352,7 +347,7 @@ trait CodeExtraction extends ASTExtractors {
         extractTree(tr)
       } catch {
         case e: OutOfSubsetException =>
-          //NoTree(extractType(tr)).setPos(tr.pos)
+          // NoTree(extractType(tr)).setPos(tr.pos)
           throw e
       }
     }
@@ -376,7 +371,7 @@ trait CodeExtraction extends ASTExtractors {
 
       var rest = tmpRest
 
-      //println("extracting: " + current)
+      // println("extracting: " + current)
 
       val res = current match {
 
@@ -431,7 +426,7 @@ trait CodeExtraction extends ASTExtractors {
         case ExInt32Literal(v) => Int32Literal(v)
 
         case ExImplicitInt2Real(i) => {
-          val tmp = RealLiteral(utils.Rational(i))
+          val tmp = RealLiteral(tools.Rational(i))
           tmp.stringValue = i.toString
           tmp
         }
@@ -439,12 +434,12 @@ trait CodeExtraction extends ASTExtractors {
         case ExBooleanLiteral(v) => BooleanLiteral(v)
 
         // case ExFloat64Literal(d) =>
-        //   val tmp = RealLiteral(utils.Rational.fromString(d.toString))
+        //   val tmp = RealLiteral(tools.Rational.fromString(d.toString))
         //   tmp.stringValue = d.toString
         //   tmp
 
-        case ExImplicitDouble2Real(d) => //RealLiteral(d.toString)
-          val tmp = RealLiteral(utils.Rational.fromString(d.toString))
+        case ExImplicitDouble2Real(d) => // RealLiteral(d.toString)
+          val tmp = RealLiteral(tools.Rational.fromString(d.toString))
           tmp.stringValue = d.toString
           tmp
 
@@ -552,17 +547,17 @@ trait CodeExtraction extends ASTExtractors {
           }
           val r2 = extractTree(t2)
           val r3 = extractTree(t3)
-          //val lub = leastUpperBound(r2.getType, r3.getType)
+          // val lub = leastUpperBound(r2.getType, r3.getType)
           if (r2.getType == r3.getType) {
             IfExpr(r1, r2, r3)
           } else {
-            outOfSubsetError(tr, "Both branches of ifthenelse have incompatible types ("+
+            outOfSubsetError(tr, "Both branches of ifthenelse have incompatible types (" +
               r2.getType + " and " + r3.getType + ")")
           }
 
         // default behaviour is to complain :)
         case _ =>
-          outOfSubsetError(tr, "Could not extract as PureScala (Scala tree of type "+tr.getClass+")")
+          outOfSubsetError(tr, "Could not extract as PureScala (Scala tree of type " + tr.getClass + ")")
       }
 
       res.setPos(tr.pos)

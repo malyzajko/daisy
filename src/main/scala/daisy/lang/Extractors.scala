@@ -1,10 +1,5 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package lang
@@ -115,10 +110,10 @@ object Extractors {
       case Or(args) => Some((args, or))
 
       /* Terminals */
-      case t: Terminal => Some(Seq[Expr](), (_:Seq[Expr]) => t)
+      case t: Terminal => Some(Seq[Expr](), (_: Seq[Expr]) => t)
 
       /* Expr's not handled here should implement this trait */
-      //case e: Extractable =>
+      // case e: Extractable =>
       //  e.extract
 
       case _ =>

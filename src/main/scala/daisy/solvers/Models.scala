@@ -1,3 +1,5 @@
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package solvers
@@ -9,16 +11,16 @@ import lang.Identifiers._
 
 /* For now, this is just a map with a fancy name. */
 class Model(protected val mapping: Map[Identifier, Expr])
-  //extends AbstractModel[Model]
+  // extends AbstractModel[Model]
   extends (Identifier => Expr) {
 
-  //def newBuilder = new ModelBuilder
+  // def newBuilder = new ModelBuilder
   def isDefinedAt(id: Identifier): Boolean = mapping.isDefinedAt(id)
   def get(id: Identifier): Option[Expr] = mapping.get(id)
   def getOrElse[E >: Expr](id: Identifier, e: E): E = get(id).getOrElse(e)
   def apply(id: Identifier): Expr = get(id).getOrElse { throw new IllegalArgumentException }
 
-  override def toString = {
+  override def toString: String = {
     if (mapping.isEmpty) {
       "Model()"
     } else {
@@ -30,10 +32,10 @@ class Model(protected val mapping: Map[Identifier, Expr])
 }
 
 object Model {
-  def empty = new Model(Map.empty)
+  def empty: Model = new Model(Map.empty)
 }
 
-/*trait AbstractModel[+This <: Model with AbstractModel[This]]
+/* trait AbstractModel[+This <: Model with AbstractModel[This]]
   extends scala.collection.IterableLike[(Identifier, Expr), This] {
 
   protected val mapping: Map[Identifier, Expr]
@@ -71,9 +73,9 @@ object Model {
       }).mkString("Model(\n", ",\n", ")")
     }
   }
-}*/
+} */
 
-/*trait AbstractModelBuilder[+This <: Model with AbstractModel[This]]
+/* trait AbstractModelBuilder[+This <: Model with AbstractModel[This]]
   extends scala.collection.mutable.Builder[(Identifier, Expr), This] {
 
   import scala.collection.mutable.MapBuilder
@@ -85,10 +87,10 @@ object Model {
   }
 
   def clear(): Unit = mapBuilder.clear
-}*/
+} */
 
 
 
-/*class ModelBuilder extends AbstractModelBuilder[Model] {
+/* class ModelBuilder extends AbstractModelBuilder[Model] {
   def result = new Model(mapBuilder.result)
-}*/
+} */

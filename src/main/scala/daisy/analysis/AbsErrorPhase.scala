@@ -1,12 +1,14 @@
+// Copyright 2017 MPI-SWS, Saarbruecken, Germany
+
 package daisy
 package analysis
 
-import utils.FinitePrecision._
 import lang.Trees._
-import lang.NumAnnotation
+import lang.TreeOps.allVariablesOf
 import lang.Identifiers._
-import utils.{AffineForm, Interval, Rational}
-import utils.Interval._
+import tools.{AffineForm, Interval, Rational}
+import tools.FinitePrecision._
+import tools.Interval._
 import Rational._
 
 /**
@@ -28,14 +30,11 @@ import Rational._
     - SpecsProcessingPhase
     - RangePhase (check you are computing the correct ranges)
  */
-object AbsErrorPhase extends DaisyPhase {
+object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
 
   override val name = "roundoff phase"
   override val description = "Computes roundoff errors"
-  override val definedOptions: Set[CmdLineOptionDef[Any]] = Set(
-    FlagOptionDef("noInitialErrors", "do not track initial errors specified by user"),
-    FlagOptionDef("noRoundoff", "do not track roundoff errors")
-    )
+  override val definedOptions: Set[CmdLineOptionDef[Any]] = Set()
 
   implicit val debugSection = DebugSectionAnalysis
 
@@ -48,6 +47,7 @@ object AbsErrorPhase extends DaisyPhase {
 
     var trackInitialErrs = true
     var trackRoundoffErrs = true
+    val uniformPrecision = Float64
 
     /* Process relevant options */
     for (opt <- ctx.options) opt match {
@@ -56,194 +56,65 @@ object AbsErrorPhase extends DaisyPhase {
       case _ => ;
     }
 
-    for (fnc <- prg.defs) if (!fnc.precondition.isEmpty && !fnc.body.isEmpty){
+    val fncsToConsider: Seq[String] = functionsToConsider(ctx, prg)
 
-      computeAbsError(fnc.body.get, Map.empty, trackInitialErrs, trackRoundoffErrs)
+    val res: Map[Identifier, (Rational, Map[Expr, Rational])] = prg.defs.filter(fnc =>
+      !fnc.precondition.isEmpty &&
+      !fnc.body.isEmpty &&
+      fncsToConsider.contains(fnc.id.toString)).map(fnc => {
 
-    }
+      val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
-    timer.stop
-    ctx.reporter.info(s"Finished $name")
-    (ctx, prg)
-  }
+      val inputErrorMap: Map[Identifier, Rational] =
+        if (trackInitialErrs && trackRoundoffErrs) {
 
+          val inputErrs = ctx.specInputErrors(fnc.id)
+          val allIDs = fnc.params.map(_.id).toSet
+          val missingIDs = allIDs -- inputErrs.keySet
+          inputErrs ++ missingIDs.map(id => (id -> uniformPrecision.absRoundoff(inputValMap(id))))
 
-  def computeAbsError(expr: Expr, _valMap: Map[Identifier, AffineForm],
-    trackInitialErrs: Boolean, trackRoundoffErrs: Boolean): Unit = {
+        } else if (trackInitialErrs) {
 
-    var valMap = _valMap
-
-    def evalRoundoff(e: Expr): AffineForm = e match {
-
-      // if x has been evaluated before (via let, or simply inside the expression)
-      // we need to cache the latter ones, or else we are loosing all correlations.
-      case x @ Variable(id) if (valMap.isDefinedAt(id)) =>
-        val aform = valMap(id)
-        if (!x.hasError) {  // happens for roundoff only, i.e. when no error is given by precondition
-          x.absError = maxAbs(aform.toInterval)
-        }
-        aform
-
-      // if x has an interval, then it's a fnc parameter
-      case x @ Variable(id) if x.hasInterval =>
-        val aform = if (trackInitialErrs && x.hasError) {
-          // error is already attached to x, do not add roundoff on top
-          AffineForm.fromError(x.absError)
+          val inputErrs = ctx.specInputErrors(fnc.id)
+          val allIDs = fnc.params.map(_.id).toSet
+          val missingIDs = allIDs -- inputErrs.keySet
+          inputErrs ++ missingIDs.map(id => (id -> zero))
 
         } else if (trackRoundoffErrs) {
-          // new error based on interval and data type/precision
-          val rndoff = Float64.absRoundoff(x.interval)
-          x.absError = rndoff
-          AffineForm.fromError(rndoff)
+
+          val allIDs = fnc.params.map(_.id)
+          allIDs.map(id => (id -> uniformPrecision.absRoundoff(inputValMap(id)))).toMap
 
         } else {
-          // do nothing to x (which may get us inconsistent state,
-          // if x has already attached error )
-          if (x.hasError) reporter.warning("Node has errors attached," +
-            "but you are asking me to ignore them.")
-          else {
-            x.absError = zero // this is just for consistency
-          }
-          AffineForm.zero
-        }
-        valMap += (id -> aform)
-        aform
 
-      // the recording can potentially be done here too, but it's not clear
-      // whether the cost of checking won't offset this...
-      case x @ Plus(lhs, rhs) =>
-        // propagated error
-        val aform: AffineForm = evalRoundoff(lhs) + evalRoundoff(rhs)
+          val allIDs = fnc.params.map(_.id)
+          allIDs.map(id => (id -> zero)).toMap
 
-        val actualRange: Interval = x.interval + aform.toInterval
-        val newError: AffineForm = if (trackRoundoffErrs) {
-          val rndoff: Rational =  Float64.absRoundoff(actualRange)
-          aform :+ rndoff
-        } else {
-          aform
-        }
-        x.absError = maxAbs(newError.toInterval)
-        newError
-
-      case x @ RealLiteral(r) =>
-        if (isExactInFloats(r, Float64)) {
-          AffineForm.zero
-        } else {
-          AffineForm.fromError(Float64.absRoundoff(r))
         }
 
-      case x @ Minus(lhs, rhs) =>
-        // propagated error
-        val aform: AffineForm = evalRoundoff(lhs) - evalRoundoff(rhs)
+      val fncBody = fnc.body.get
+      val intermediateRanges = ctx.intermediateRanges(fnc.id)
 
-        val actualRange: Interval = x.interval + aform.toInterval
-        val newError: AffineForm = if (trackRoundoffErrs) {
-          val rndoff: Rational = Float64.absRoundoff(actualRange)
-          aform :+ rndoff
-        } else {
-          aform
-        }
-        x.absError = maxAbs(newError.toInterval)
-        newError
+      val (resRoundoff, allErrors) = evalRoundoff[AffineForm](fncBody, intermediateRanges,
+        allVariablesOf(fncBody).map(id => (id -> uniformPrecision)).toMap,
+        inputErrorMap.map(x => (x._1 -> AffineForm.fromError(x._2))),
+        zeroError = AffineForm.zero,
+        fromError = AffineForm.fromError,
+        interval2T = AffineForm.apply,
+        constantsPrecision = uniformPrecision,
+        trackRoundoffErrs)
 
-      case x @ Times(lhs, rhs) =>
-        // propagated error
-        val lAA = AffineForm(lhs.asInstanceOf[NumAnnotation].interval)
-        val rAA = AffineForm(rhs.asInstanceOf[NumAnnotation].interval)
-        val lErr = evalRoundoff(lhs)
-        val rErr = evalRoundoff(rhs)
+      // computeAbsError(fnc.body.get, Map.empty, trackInitialErrs, trackRoundoffErrs)
+      (fnc.id -> (Interval.maxAbs(resRoundoff.toInterval),
+        allErrors.map({
+          case (e, aa) => (e -> Interval.maxAbs(aa.toInterval))
+        })))
+    }).toMap
 
-        var aform: AffineForm = lAA*rErr + rAA*lErr + lErr*rErr
-
-        // new error
-        val actualRange: Interval = x.interval + aform.toInterval
-        val newError: AffineForm = if (trackRoundoffErrs) {
-          val rndoff: Rational = Float64.absRoundoff(actualRange)
-          aform :+ rndoff
-        } else {
-          aform
-        }
-        x.absError = maxAbs(newError.toInterval)
-        newError
-
-      case x @ Division(lhs, rhs) =>
-        // propagated error
-
-        // we will not call the SMT solver here. This is conservative
-        // and probably does not make a big difference for the accuracy of the analysis
-        val rhsInterval = rhs.asInstanceOf[NumAnnotation].interval
-        val rErr = evalRoundoff(rhs)  //yErr
-
-        val rInt = rhsInterval + rErr.toInterval // the actual interval, incl errors
-        val a = min(abs(rInt.xlo), abs(rInt.xhi))
-        val errorMultiplier = -one / (a*a)
-
-
-        val invErr = rErr * AffineForm(errorMultiplier)
-
-        val lAA = AffineForm(lhs.asInstanceOf[NumAnnotation].interval)
-
-        val inverse: Interval = rhsInterval.inverse
-
-        val kAA = AffineForm(inverse)
-
-        val lErr = evalRoundoff(lhs)  //xErr
-
-        // multiplication with inverse
-        var aform = lAA*invErr + kAA*lErr + lErr*invErr
-
-
-        // new error
-        val actualRange: Interval = x.interval + aform.toInterval
-        val newError: AffineForm = if (trackRoundoffErrs) {
-          val rndoff: Rational = Float64.absRoundoff(actualRange)
-          aform :+ rndoff
-        } else {
-          aform
-        }
-        x.absError = maxAbs(newError.toInterval)
-        newError
-
-      case x @ UMinus(t) =>
-        val newError = -evalRoundoff(t)   // no additional roundoff error
-        x.absError = maxAbs(newError.toInterval)  // PERF: skip the recomputation
-        newError
-
-      case x @ Sqrt(t) =>
-
-        // TODO: Not supported for fixed-points, add exception
-        //case FPPrecision(_) => throw UnsupportedRealFragmentException("Sqrt not supported for fixed-points.")
-
-        val tInterval = t.asInstanceOf[NumAnnotation].interval
-        val tError = evalRoundoff(t)
-
-        // propagated existing errors
-        val a = min(abs(tInterval.xlo), abs(tInterval.xhi))
-        val errorMultiplier = Rational(1L, 2L) / sqrtDown(a)
-        val propErr = tError * AffineForm(errorMultiplier)
-
-        // new roundoff
-        val actualRange: Interval = x.interval + propErr.toInterval
-        val newError: AffineForm = if (trackRoundoffErrs) {
-          val rndoff: Rational = Float64.absRoundoff(actualRange)
-          propErr :+ rndoff
-        } else {
-          propErr
-        }
-        x.absError = maxAbs(newError.toInterval)
-        newError
-
-
-      case Let(id, value, body) =>
-        // here one could do an error split, and use error propagation
-
-        val aform = evalRoundoff(value)
-        valMap += (id -> aform)
-        evalRoundoff(body)
-
-    }
-    evalRoundoff(expr)
-
+    timer.stop
+    // ctx.reporter.info(s"Finished $name")
+    (ctx.copy(resultAbsoluteErrors = res.mapValues(_._1),
+      intermediateAbsErrors = res.mapValues(_._2)), prg)
   }
 
 }

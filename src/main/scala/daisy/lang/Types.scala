@@ -1,16 +1,11 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package lang
 
 import scala.collection.immutable.Seq
-import utils.FinitePrecision.Precision
+import tools.FinitePrecision.Precision
 
 import Trees._
 
@@ -18,14 +13,15 @@ object Types {
 
   trait Typed {
     val getType: TypeTree
-    def isTyped : Boolean = getType != Untyped
+    def isTyped: Boolean = getType != Untyped
   }
 
   class TypeErrorException(msg: String) extends Exception(msg)
 
   object TypeErrorException {
     def apply(obj: Expr, exp: List[TypeTree]): TypeErrorException = {
-      new TypeErrorException("Type error: "+obj+", expected: "+exp.mkString(" or ")+", found "+obj.getType)
+      new TypeErrorException("Type error: " + obj + ", expected: " +
+        exp.mkString(" or ") + ", found " + obj.getType)
     }
 
     def apply(obj: Expr, exp: TypeTree): TypeErrorException = {

@@ -1,3 +1,5 @@
+// Copyright 2017 MPI-SWS, Saarbruecken, Germany
+
 package daisy
 package analysis
 
@@ -6,7 +8,7 @@ import java.io.BufferedWriter
 import scala.util.Random
 
 import lang.Trees._
-import utils.{Rational, Interval, MPFRFloat}
+import tools.{Rational, Interval, MPFRFloat}
 import MPFRFloat.{abs => mpfr_abs, max => mpfr_max, min => mpfr_min}
 import Rational._
 import lang.Identifiers._
@@ -43,8 +45,8 @@ object DynamicPhase extends DaisyPhase {
     ParamOptionDef("sampleSize", "number of inputs for dynamic evaluation", numSamples.toString),
     ParamOptionDef("inputRangeFactor", "factor for scaling input ranges", inputRangeFactor.toString),
     FlagOptionDef("mpfr", "Use MPFR as the higher precision"),
-    FlagOptionDef("log", "log results to file"),
-    ParamOptionDef("seed", "seed to use for random number generator", "System.currentTimeMillis")
+    FlagOptionDef("dynamic-log", "log results to file"),
+    ParamOptionDef("dynamic-seed", "seed to use for random number generator", "System.currentTimeMillis")
     )
 
   implicit val debugSection = DebugSectionAnalysis
@@ -59,6 +61,7 @@ object DynamicPhase extends DaisyPhase {
     // make rationals default as they are a bit more reliable
     var useRationals = true
     var logToFile = false
+    var useRoundoff = true
     var seed = System.currentTimeMillis // 4783
 
     /* Process relevant options */
@@ -68,18 +71,19 @@ object DynamicPhase extends DaisyPhase {
         inputRangeFactor = Rational.fromString(value)
 
       case FlagOption("mpfr") => useRationals = false
-      case FlagOption("log") => logToFile = true
-      case ParamOption("seed", value) => seed = value.toLong
+      case FlagOption("dynamic-log") => logToFile = true
+      case FlagOption("noRoundoff") => useRoundoff = false
+      case ParamOption("dynamic-seed", value) => seed = value.toLong
       case _ =>
     }
 
-    if (useRationals) reporter.info("using Rational")
-    else reporter.info("using MPFR")
+    if (useRationals) { reporter.info("using Rational")
+    } else { reporter.info("using MPFR") }
 
     reporter.info("seed: " + seed)
 
-    //val timestamp: Long = System.currentTimeMillis / 1000
-    //val fstream = new FileWriter(s"rawdata/${filePrefix}_${prg.id}_$timestamp.txt")
+    // val timestamp: Long = System.currentTimeMillis / 1000
+    // val fstream = new FileWriter(s"rawdata/${filePrefix}_${prg.id}_$timestamp.txt")
     val logFile = if (logToFile) {
       val fstream = new FileWriter(s"rawdata/dynamic_${prg.id}.txt", true) // append
       val out = new BufferedWriter(fstream)
@@ -92,7 +96,7 @@ object DynamicPhase extends DaisyPhase {
       } else {
         out.write("mpfr\n")
         out.write(s"# benchmark maxAbsError maxRelError maxUlpError minAbsError " +
-            "minRelError minUlpError avrgAbsError avrgRelError avrgUlpError\n\n")
+          "minRelError minUlpError avrgAbsError avrgRelError avrgUlpError\n\n")
       }
       out
     } else {
@@ -105,11 +109,12 @@ object DynamicPhase extends DaisyPhase {
       val id = fnc.id
       val body = fnc.body.get
       reporter.info("evaluating " + id + "...")
+      reporter.info(s"expression is $body")
 
       val inputRanges: Map[Identifier, Interval] = ctx.specInputRanges(id).map({
         case (id, i) =>
           (id, Interval(i.mid - inputRangeFactor * i.radius,
-                        i.mid + inputRangeFactor * i.radius))
+            i.mid + inputRangeFactor * i.radius))
         })
 
       if (useRationals) {
@@ -120,23 +125,34 @@ object DynamicPhase extends DaisyPhase {
         var i = 0
         while (i < numSamples) {
           i = i + 1
-          //if (i % 10000 == 0) println (s"i: $i")  // showing progress
+          // if (i % 10000 == 0) println (s"i: $i")  // showing progress
 
           // does not consider input roundoff errors
-          val dblInputs: Map[Identifier, Double] = sampler.next
-          val ratInputs: Map[Identifier, Rational] = dblInputs.map({
+          val strInputs: Map[Identifier, String] = sampler.nextString
+          val dblInputs: Map[Identifier, Double] = strInputs.map({
+            case (x, s) => (x -> s.toDouble)
+          })
+          val ratInputs: Map[Identifier, Rational] = if (useRoundoff) {
+            // WITH input errors
+            strInputs.map({
+              case (x, s) => (x -> Rational.fromString(s))
+            })
+          } else {
+            // no input errors
+            dblInputs.map({
             case (x, d) => (x -> Rational.fromDouble(d))
             })
+          }
 
           val dblOutput: Double = evalDouble(body, dblInputs)
           val ratOutput: Rational = evalRational(body, ratInputs)
 
-          measurer.nextValues(dblOutput, ratOutput)
+          measurer.nextValues(dblOutput, ratOutput, ratInputs, dblInputs)
         }
 
         if (logToFile) {
           logFile.write(s"${prg.id}-$id" +
-            s" ${measurer.maxAbsError}"+
+            s" ${measurer.maxAbsError}" +
             s" ${measurer.maxRelError}" +
             s" ${measurer.minAbsError}" +
             s" ${measurer.minRelError}\n")
@@ -148,7 +164,7 @@ object DynamicPhase extends DaisyPhase {
 
         // this functionality is duplicated in ErrorFunctions.errorDynamic,
         // but we are printing here all sorts of stats...
-        val sampler = new Uniform(inputRanges, seed)  //no seed = System millis 485793
+        val sampler = new Uniform(inputRanges, seed)  // no seed = System millis 485793
         val measurer = new ErrorMeasurerMPFR()
         var currentMaxAbsMPFR = measurer.maxAbsError
         var currentMaxAbs: Double = measurer.maxAbsError.doubleValue
@@ -156,14 +172,26 @@ object DynamicPhase extends DaisyPhase {
         var i = 0
         while (i < numSamples) {
           i = i + 1
-          //if (i % 10000 == 0) println (s"i: $i")
+          // if (i % 10000 == 0) println (s"i: $i")
 
-          // no input errors
-          val dblInputs: Map[Identifier, Double] = sampler.next
-          val mpfrInputs: Map[Identifier, MPFRFloat] = dblInputs.map({
-            case (x, d) => (x -> MPFRFloat.fromDouble(d))
-            })
+          // WITH input errors
 
+          val strInputs: Map[Identifier, String] = sampler.nextString
+          val dblInputs: Map[Identifier, Double] = strInputs.map({
+            case (x, s) => (x -> s.toDouble)
+          })
+          val mpfrInputs: Map[Identifier, MPFRFloat] =
+            if (useRoundoff) {
+              // WITH input errors
+              strInputs.map({
+              case (x, s) => (x -> MPFRFloat.fromString(s))
+              })
+            } else {
+              // no input errors
+              dblInputs.map({
+                case (x, d) => (x -> MPFRFloat.fromDouble(d))
+              })
+            }
           val dblOutput: Double = evalDouble(body, dblInputs)
           val mpfrOutput: MPFRFloat = evalMPFR(body, mpfrInputs)
 
@@ -175,18 +203,22 @@ object DynamicPhase extends DaisyPhase {
 
           assert(currentMaxAbs <= measurer.maxAbsError.doubleValue)
           currentMaxAbs = measurer.maxAbsError.doubleValue
+          if (abs(dblOutput) <= java.lang.Double.MIN_NORMAL) {
+            reporter.warning(s"THE SUBNORMAL")
+            i = i - 1
+          }
         }
 
         if (logToFile) {
           logFile.write(s"${prg.id}-$id" +
-            s" ${measurer.maxAbsError.toDoubleString}"+
+            s" ${measurer.maxAbsError.toDoubleString}" +
             s" ${measurer.maxRelError.toDoubleString}" +
-            s" ${measurer.maxUlpError}"+
+            s" ${measurer.maxUlpError}" +
             s" ${measurer.minAbsError.toDoubleString}" +
             s" ${measurer.minRelError.toDoubleString} " +
             s" ${measurer.minUlpError}" +
             s" ${measurer.avrgAbsError.toDoubleString}" +
-            s" ${measurer.avrgRelError.toDoubleString}"+
+            s" ${measurer.avrgRelError.toDoubleString}" +
             s" ${measurer.avrgUlpError}\n")
         }
         reporter.info(s"$id maxAbsError: ${measurer.maxAbsError.toDoubleString}" +
@@ -240,7 +272,7 @@ object DynamicPhase extends DaisyPhase {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
-      case Pow(x, y) => math.pow( eval(x), eval(y))
+      case Pow(x, y) => math.pow(eval(x), eval(y))
       case UMinus(x) => - eval(x)
       case Sqrt(x) => math.sqrt(eval(x))
       case Sin(x) => math.sin(eval(x))
@@ -268,9 +300,9 @@ object DynamicPhase extends DaisyPhase {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
-      case Pow(x, y) => MPFRFloat.pow( eval(x), eval(y))
+      case Pow(x, y) => MPFRFloat.pow(eval(x), eval(y))
       case UMinus(x) => - eval(x)
-      case Sqrt(x) => MPFRFloat.sqrt( eval(x) )
+      case Sqrt(x) => MPFRFloat.sqrt(eval(x) )
       case Sin(x) => MPFRFloat.sin(eval(x))
       case Cos(x) => MPFRFloat.cos(eval(x))
       case Tan(x) => MPFRFloat.tan(eval(x))

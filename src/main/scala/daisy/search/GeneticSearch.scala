@@ -1,3 +1,4 @@
+// Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package search
@@ -6,7 +7,7 @@ import util.Random
 import scala.collection.immutable.Seq
 
 import lang.Trees.Expr
-import utils.Rational
+import tools.Rational
 import Rational._
 
 // The MutationRules should probably not be mixed-in to the generic genetic program
@@ -31,10 +32,9 @@ trait GeneticSearch[T] {
 
     @param inputExpr expression to rewrite
     @param copy function to perform a deep copy
-    @param fitnessFnc fitness function to guide the search, assumes that smaller
-                      is better
+    @param fitnessFnc fitness function to guide the search, assumes that smaller is better
     @return AST and fitness value of best expression found)
-  */
+   */
   def runGenetic(inputExpr: T, copy: T => T, fitnessFnc: T => Rational): (T, Rational) = {
 
     val initialFitness = fitnessFnc(inputExpr)
@@ -67,7 +67,7 @@ trait GeneticSearch[T] {
       currentPopulation = newPopulation
 
       // check if we have found a better expression; compare the fitness values
-      val currentBest = currentPopulation.sortWith( _._2 < _._2 ).head
+      val currentBest = currentPopulation.sortWith(_._2 < _._2).head
       if (currentBest._2 < globalBest._2) {
         globalBest = currentBest
       }

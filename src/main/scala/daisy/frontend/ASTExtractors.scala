@@ -1,4 +1,5 @@
-/* Copyright 2009-2016 EPFL, Lausanne */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package frontend
@@ -31,13 +32,13 @@ trait ASTExtractors {
     }).toMap
   }
 
-  def classFromName(str: String) = {
+  def classFromName(str: String): global.ClassSymbol = {
     rootMirror.getClassByName(newTypeName(str))
   }
 
-  protected lazy val realSym            = classFromName("daisy.lang.Real")
-  def isRealSym(sym: Symbol) : Boolean = {
-    //getResolvedTypeSym(sym) == realSym
+  protected lazy val realSym          = classFromName("daisy.lang.Real")
+  def isRealSym(sym: Symbol): Boolean = {
+    // getResolvedTypeSym(sym) == realSym
     // @eva: I don't think we have type aliases...
     sym == realSym
   }
@@ -76,8 +77,9 @@ trait ASTExtractors {
     import ExtractorHelpers._
 
     /** Matches an object with no type parameters, and regardless of its
-      * visibility. Does not match on case objects or the automatically generated companion
-      * objects of case classes (or any synthetic class). */
+     * visibility. Does not match on case objects or the automatically generated companion
+     * objects of case classes (or any synthetic class).
+     */
     object ExObjectDef {
       def unapply(cd: ClassDef): Option[(String,Template)] = cd match {
         case ClassDef(_, name, tparams, impl) if
@@ -93,8 +95,8 @@ trait ASTExtractors {
     }
 
     /** Matches a function with a single list of arguments,
-      * and regardless of its visibility.
-      */
+     * and regardless of its visibility.
+     */
     object ExFunctionDef {
       def unapply(dd: DefDef): Option[(Symbol, Seq[Symbol], Seq[ValDef], Type, Tree)] = dd match {
         case DefDef(_, name, tparams, vparamss, tpt, rhs) if name != nme.CONSTRUCTOR && !dd.symbol.isAccessor =>
@@ -104,7 +106,7 @@ trait ASTExtractors {
             //   None
             // } else {
               Some((dd.symbol, tparams.map(_.symbol), vparamss.flatten, tpt.tpe, rhs))
-            //}
+            // }
           } else if (!dd.symbol.isSynthetic) {
             Some((dd.symbol, tparams.map(_.symbol), vparamss.flatten, tpt.tpe, rhs))
           } else {
@@ -159,11 +161,12 @@ trait ASTExtractors {
     }
 
     /** Extracts the 'require' contract from an expression (only if it's the
-     * first call in the block). */
+     * first call in the block).
+     */
     object ExRequiredExpression {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(ExSelected("scala", "Predef", "require"), contractBody :: Nil) =>
-         Some(contractBody)
+          Some(contractBody)
         case _ => None
       }
     }
@@ -221,7 +224,7 @@ trait ASTExtractors {
     }
 
     object ExLambdaExpression {
-      def unapply(tree: Function) : Option[(Seq[ValDef], Tree)] = tree match {
+      def unapply(tree: Function): Option[(Seq[ValDef], Tree)] = tree match {
         case Function(vds, body) => Some((vds, body))
         case _ => None
       }
@@ -291,5 +294,5 @@ trait ASTExtractors {
       }
     }
 
-  } //end StructuralExtractors
+  } // end StructuralExtractors
 }

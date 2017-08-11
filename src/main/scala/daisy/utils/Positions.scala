@@ -1,10 +1,5 @@
-
-/*
-  The contents of this file is heaviy influenced and/or partly taken from
-  the Leon Project which is released under the BSD 2 clauses license.
-  See file LEON_LICENSE or go to https://github.com/epfl-lara/leon
-  for full license details.
- */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package utils
@@ -14,9 +9,10 @@ import java.io.File
 abstract class Position extends Ordered[Position] {
   val line: Int
   val col: Int
+  // TODO: this could be an option to avoid the null
   val file: File
 
-  def compare(that: Position) = {
+  def compare(that: Position): Int = {
     if (this.file == that.file) {
       val ld = this.line - that.line
       if (ld == 0) {
@@ -68,25 +64,24 @@ object Position {
 }
 
 abstract class DefinedPosition extends Position {
-  override def toString = line+":"+col
-  override def fullString = file.getPath+":"+line+":"+col
-  override def isDefined = true
+  override def toString: String = line + ":" + col
+  override def fullString: String = file.getPath + ":" + line + ":" + col
+  override def isDefined: Boolean = true
 
   def focusBegin: OffsetPosition
   def focusEnd: OffsetPosition
 }
 
 case class OffsetPosition(line: Int, col: Int, point: Int, file: File) extends DefinedPosition {
-  def focusBegin = this
-  def focusEnd = this
+  def focusBegin: OffsetPosition = this
+  def focusEnd: OffsetPosition = this
 }
 
 case class RangePosition(lineFrom: Int, colFrom: Int, pointFrom: Int,
-                         lineTo: Int, colTo: Int, pointTo: Int,
-                         file: File) extends DefinedPosition {
+  lineTo: Int, colTo: Int, pointTo: Int, file: File) extends DefinedPosition {
 
-  def focusEnd = OffsetPosition(lineTo, colTo, pointTo, file)
-  def focusBegin = OffsetPosition(lineFrom, colFrom, pointFrom, file)
+  def focusEnd: OffsetPosition = OffsetPosition(lineTo, colTo, pointTo, file)
+  def focusBegin: OffsetPosition = OffsetPosition(lineFrom, colFrom, pointFrom, file)
 
   val line = lineFrom
   val col  = colFrom
@@ -97,9 +92,9 @@ case object NoPosition extends Position {
   val col  = -1
   val file = null
 
-  override def toString = "?:?"
-  override def fullString = "?:?:?"
-  override def isDefined = false
+  override def toString: String = "?:?"
+  override def fullString: String = "?:?:?"
+  override def isDefined: Boolean = false
 }
 
 
@@ -116,7 +111,7 @@ trait Positioned {
     this
   }
 
-  def getPos = {
+  def getPos: Position = {
     _pos
   }
 }

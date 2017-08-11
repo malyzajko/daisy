@@ -1,4 +1,4 @@
-
+// Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package transform
@@ -21,7 +21,7 @@ import lang.TreeOps.replace
 
   Prerequisites:
     None
-  */
+ */
 object SSATransformerPhase extends DaisyPhase {
 
   override val name = "SSA transformer"
@@ -86,7 +86,7 @@ object SSATransformerPhase extends DaisyPhase {
 
   }
 
-  private def replaceBody(expr: Expr, nextId: Identifier, nextBody: Expr): Expr = expr match {
+  private def replaceBody(expr: Expr, nextId: Identifier, nextBody: Expr): Expr = (expr: @unchecked) match {
     case Let(id, value, x @ Let(id2, value2, body)) =>
       Let(id, value, replaceBody(x, id, nextBody))
 
@@ -123,11 +123,11 @@ object SSATransformerPhase extends DaisyPhase {
 
     case (t1: Terminal, t2: Terminal) => recons(Seq(t1, t2))
 
-    case (v : Terminal, p) if isSimpleExpr(p) =>
+    case (v: Terminal, p) if isSimpleExpr(p) =>
       val t1 = fresh()
       Let(t1, p, recons(Seq(v, Variable(t1))))
 
-    case (p, v : Terminal) if isSimpleExpr(p) =>
+    case (p, v: Terminal) if isSimpleExpr(p) =>
       val t1 = fresh()
       Let(t1, p, recons(Seq(Variable(t1), v)))
 

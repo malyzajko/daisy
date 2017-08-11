@@ -1,4 +1,5 @@
-/* Copyright 2009-2016 EPFL, Lausanne */
+  // Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
 package frontend
@@ -6,7 +7,8 @@ package frontend
 import scala.tools.nsc.{Global,Settings=>NSCSettings}
 import scala.reflect.internal.Positions
 
-class ScalaCompiler(settings : NSCSettings, ctx: Context) extends Global(settings, new SimpleReporter(settings, ctx.reporter)) with Positions {
+class ScalaCompiler(settings: NSCSettings, ctx: Context) extends Global(
+  settings, new SimpleReporter(settings, ctx.reporter)) with Positions {
 
   object daisyExtraction extends {
     val global: ScalaCompiler.this.type = ScalaCompiler.this
@@ -15,7 +17,7 @@ class ScalaCompiler(settings : NSCSettings, ctx: Context) extends Global(setting
     val ctx = ScalaCompiler.this.ctx
   } with DaisyExtraction
 
-  override protected def computeInternalPhases() : Unit = {
+  override protected def computeInternalPhases(): Unit = {
     val phs = List(
       syntaxAnalyzer          -> "parse source into ASTs, perform simple desugaring",
       analyzer.namerFactory   -> "resolve names, attach symbols to named trees",
@@ -32,7 +34,7 @@ class ScalaCompiler(settings : NSCSettings, ctx: Context) extends Global(setting
   }
 
   class Run extends super.Run {
-    override def progress(current: Int, total: Int) {
+    override def progress(current: Int, total: Int): Unit = {
       ctx.reporter.onCompilerProgress(current, total)
     }
   }
