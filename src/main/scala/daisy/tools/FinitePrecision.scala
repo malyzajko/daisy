@@ -3,297 +3,196 @@
 package daisy
 package tools
 
-import Rational.{max, abs, double2Fraction}
-import java.math.BigInteger
-// import math.BigInt.{abs => bigAbs}
-
 object FinitePrecision {
 
-  // Does not check for overflow, assumes this has been done before,
-  // a number is representable in a given precision if the denominator is a power of two,
-  // and the mantissa and exponents are within the precision's allowed ones.
-  def isExactInFloats(r: Rational, prec: Precision): Boolean = {
-    // if it's an integer, it's definitely representable
-    if (r.isWhole) {
-      true
-    } else {
-      prec match {
-        case DoubleDouble | QuadDouble => false
-        case Fixed(_) => false
-        case Float32 | Float64 =>
-
-        val nominator = r.n.abs
-        val denominator = r.d.abs
-
-        val (nomBound, denomBound) = (prec: @unchecked) match {
-          case Float32 =>
-            // 2^23 - 1, 2^8 -1
-            (8388607l, 255l)
-          case Float64 =>
-            // 2^52 - 1, 2^11 -1
-            (4503599627370496l, 2047l)
-        }
-
-        if (nominator <= nomBound && denominator <= denomBound) {
-          val exponent: Double = math.log(denominator.toDouble) / math.log(2)
-
-          if (exponent.isWhole) {
-            // maybe the log computations isn't sound due to roundoffs, let's sanity check:
-            assert(math.pow(2, exponent) == denominator)
-            true
-          } else {
-            false
-          }
-
-        } else {
-          false
-        }
-      }
-    }
-  }
-
-  // checks whether the range contains only denormal numbers in the given precision
-  def isDenormalOnlyRange(i: Interval, prec: Precision): Boolean = prec match {
-    case Float32 | Float64 =>
-      - prec.minNormal < i.xlo && i.xhi < prec.minNormal
-
-    case _ => false
-
-  }
-
-  private def allPrec: List[Precision] = List(Float32, Float64, DoubleDouble, QuadDouble)
-
-  def getUpperBound(lhs: Precision, rhs: Precision): Precision = (lhs, rhs) match {
-    case (Fixed(a), Fixed(b)) if (a == b) => lhs
-    case (Fixed(a), Fixed(b)) =>
-      throw new Exception("mixed-precision currently unsupported for fixed-points")
-    case _ =>
-      if (allPrec.indexOf(lhs) <= allPrec.indexOf(rhs)) {
-        rhs
-      } else {
-        lhs
-      }
-  }
+  def getUpperBound(precs: Precision*): Precision = precs.max
 
   sealed abstract class Precision extends Ordered[Precision] {
-    /* The range of values that are representable by this precision. */
-    def range: (Rational, Rational)
+    val range: Interval
 
-    val isFloatingPoint: Boolean
-    /* The smallest (absolute) value representable by this precision,
-      for floating-point precisions, it's the smallest normal (and not denormal)
-     */
-    def minNormal: Rational
+    /* Computes the worst-case roundoff error of the given range */
+    protected def _absRoundoff(i: Interval): Rational
+    protected def _absTranscendentalRoundoff(i: Interval): Rational
 
-    /* Computes the worst-case roundoff error of the given value */
-    def _absRoundoff(r: Rational): Rational
-
-    def absRoundoff(r: Rational): Rational = {
-      if (isDenormalOnlyRange(Interval(r,r), this)) {
-        throw new DenormalRangeException("Range containing only denormals detected. " +
-          "Error bound cannot be computed.")
-      }
-      if (r < this.range._1 || this.range._2 < r) {
-        throw new OverflowException("Potential overflow detected." +
-          "Error bound cannot be computed.")
-      }
-      _absRoundoff(r)
-    }
-
-    /* Computes the worst-case roundoff error of the given range of values. */
+    /* Public method that can be modified using mix-ins */
     def absRoundoff(i: Interval): Rational = {
-      if (isDenormalOnlyRange(i, this)) {
-        throw new DenormalRangeException("Range containing only denormals detected. " +
-          "Error bound cannot be computed.")
+      if (!range.includes(i)) {
+        throw OverflowException("Potential overflow detected. Error bound cannot be computed.")
       }
-      if (i.xlo < this.range._1 || this.range._2 < i.xhi) {
-        throw new OverflowException("Potential overflow detected." +
-          "Error bound cannot be computed.")
+      _absRoundoff(i)
+    }
+    final def absRoundoff(r: Rational): Rational = absRoundoff(Interval(r))
+
+    /* Public method that can be modified using mix-ins */
+    final def absTranscendentalRoundoff(i: Interval): Rational = {
+      if (!range.includes(i)) {
+        throw OverflowException("Potential overflow detected. Error bound cannot be computed.")
       }
-      _absRoundoff(max(abs(i.xlo), abs(i.xhi)))
+      _absTranscendentalRoundoff(i)
+    }
+    final def absTranscendentalRoundoff(r: Rational): Rational = absTranscendentalRoundoff(Interval(r))
+
+
+    override def compare(that: Precision): Int = (this,that) match {
+      case (FloatPrecision(a), FloatPrecision(b)) => a - b
+      case (FixedPrecision(a), FixedPrecision(b)) =>
+        if (a == b) 0 else throw new Exception("mixed-precision currently unsupported for fixed-points")
+      case (FloatPrecision(_), FixedPrecision(_)) |
+           (FixedPrecision(_), FloatPrecision(_)) => throw new Exception("comparing incompatible precisions")
     }
 
-    def absRoundoffApprox(r: Rational): Rational
-
-    def absRoundoffApprox(i: Interval): Rational = {
-      absRoundoffApprox(max(abs(i.xlo), abs(i.xhi)))
-    }
-
-
+    def canRepresent(r: Rational): Boolean
   }
 
-  case object Float32 extends Precision {
-    val range: (Rational, Rational) = {
-      val rationalMaxValue = double2Fraction(Float.MaxValue)
-      (-Rational(rationalMaxValue._1, rationalMaxValue._2), Rational(rationalMaxValue._1, rationalMaxValue._2))
-    }
+  sealed abstract class FloatPrecision(val order: Int) extends Precision {
 
-    val isFloatingPoint = true
+    val machineEpsilon: Rational
 
-    val minNormal: Rational = {
-      val rationalMinNormal = double2Fraction(java.lang.Float.MIN_NORMAL)
-      Rational(rationalMinNormal._1, rationalMinNormal._2)
-    }
-    def _absRoundoff(r: Rational): Rational = {
-      // PERFORMANCE: this may not be the fastest way
-      Rational.fromDouble(math.ulp(Rational.abs(r).floatValue)/2)
-    }
-    // TODO: nothing approx. here
-    def absRoundoffApprox(r: Rational): Rational = absRoundoff(r)
+    override def _absRoundoff(i: Interval): Rational = machineEpsilon * Interval.maxAbs(i)
+    def _absTranscendentalRoundoff(i: Interval): Rational = _absRoundoff(i) * 2    // 1 ulp instead of 1.5 ulp
 
-    val machineEpsilon: Rational =
-      Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(24))
+    val mantissa_bits, exponent_bits: Int
 
-    val denormalsError: Rational =
-      Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(150))
+    // A number is representable in a given precision if the denominator is a power of two, and the numerator uses at
+    // most as many bits as the mantissa can store, while the exponents is in the right range.
+    def canRepresent(r: Rational): Boolean = {
+      val nominator = r.n.abs
+      val denominator = r.d.abs
 
-    def compare(that: Precision): Int = (that: @unchecked) match {
-      case Float32 => 0
-      case Float64 => -1
-      case DoubleDouble => -1
-    }
-  }
-
-  case object Float64 extends Precision {
-    val range: (Rational, Rational) = {
-      val rationalMaxValue = double2Fraction(Double.MaxValue)
-      (-Rational(rationalMaxValue._1, rationalMaxValue._2), Rational(rationalMaxValue._1, rationalMaxValue._2))
-    }
-
-    val isFloatingPoint = true
-
-    val minNormal: Rational = {
-      val rationalMinNormal = double2Fraction(java.lang.Double.MIN_NORMAL)
-      Rational(rationalMinNormal._1, rationalMinNormal._2)
-    }
-
-    def _absRoundoff(r: Rational): Rational = {
-      Rational.fromDouble(math.ulp(Rational.abs(r).doubleValue)/2)
-    }
-    def absRoundoffApprox(r: Rational): Rational = absRoundoff(r)
-
-
-    // TODO: machine epsilon representation will be huge?! Can we approximate it,
-    // without much loss of accuracy? It is worth it?
-    val machineEpsilon: Rational =
-      Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(53))
-
-    val denormalsError: Rational =
-      Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(1075))
-
-    def compare(that: Precision): Int = (that: @unchecked) match {
-      case Float32 => 1
-      case Float64 => 0
-      case DoubleDouble => -1
-    }
-  }
-
-  case object DoubleDouble extends Precision {
-    val doubleDoubleEps = Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(105))
-
-    val range: (Rational, Rational) = {
-      val rationalMaxValue = double2Fraction(Double.MaxValue)
-      (-Rational(rationalMaxValue._1, rationalMaxValue._2), Rational(rationalMaxValue._1, rationalMaxValue._2))
-    }
-
-    val isFloatingPoint = true
-
-    val minNormal: Rational = {
-      val rationalMinNormal = double2Fraction(math.pow(2, -969))
-      Rational(rationalMinNormal._1, rationalMinNormal._2)
-    }
-    // 2.0041683600089728e-292;  // = 2^(-1022 + 53) = 2^(-969)
-
-    def _absRoundoff(r: Rational): Rational = {
-      doubleDoubleEps * Rational.abs(r)
-    }
-
-    def absRoundoffApprox(r: Rational): Rational = {
-      var rndoff = doubleDoubleEps * Rational.abs(r)  // do this in Double already?
-
-      if (rndoff.n.bitLength > 100) {  // won't this always hold?
-        // rndoff = Rational.fromString(rndoff.toString)   // too slow
-        rndoff = Rational.fromDouble(rndoff.doubleValue)
+      if (denominator.bitCount > 1) {
+        false // denominator not a power of 2
+      } else if (nominator.bitLength - nominator.lowestSetBit > mantissa_bits + 1 /* implicit bit */){
+        false // don't have enough accuracy
+      } else {
+        // mantissa = nominator / 2^nominator.lowestSetBit ∈ [1,2)
+        // exponent = log2(2^nominator.lowestSetBit / denominator)
+        //          = nominator.lowestSetBit - log2(denominator)
+        val exponent = nominator.lowestSetBit - (denominator.lowestSetBit-1)
+        val max_exp = (1 << (exponent_bits-1)) - 1
+        val min_exp = - max_exp + 1
+        min_exp <= exponent && exponent <= max_exp
       }
-      rndoff
-    }
-
-    def compare(that: Precision): Int = (that: @unchecked) match {
-      case Float32 => 1
-      case Float64 => 1
-      case DoubleDouble => 0
     }
   }
 
-  case object QuadDouble extends Precision {
-    val quadDoubleEps = Rational(new BigInt(new BigInteger("1")), new BigInt(new BigInteger("2")).pow(211))
+  object FloatPrecision {
+    def unapply(arg: FloatPrecision): Option[Int] = Some(arg.order)
+  }
 
-    val range: (Rational, Rational) = {
-      val rationalMaxValue = double2Fraction(Double.MaxValue)
-      (-Rational(rationalMaxValue._1, rationalMaxValue._2), Rational(rationalMaxValue._1, rationalMaxValue._2))
+  sealed trait DenormalCheck extends FloatPrecision {
+    val minNormal: Rational
+    private lazy val denormalRange = Interval.+/-(minNormal)
+    val denormalsError: Rational
+
+    override def absRoundoff(i: Interval): Rational = {
+      if (denormalRange.includes(i) && i != Interval.zero) {
+        //throw DenormalRangeException("Range containing only denormals detected. " +
+        //  "Error bound cannot be computed")
+        denormalsError
+      } else {
+        super.absRoundoff(i)
+      }
     }
+  }
 
-    val isFloatingPoint = true
+  // IEEE half-precision
+  case object Float16 extends FloatPrecision(16) with DenormalCheck {
 
-    val minNormal: Rational = {
-      val rationalMinNormal = double2Fraction(math.pow(2, -863))
-      Rational(rationalMinNormal._1, rationalMinNormal._2)
-    }
-    // 1.6259745436952323e-260; // = 2^(-1022 + 3*53) = 2^(-863)
+    override val machineEpsilon: Rational = Rational.powerTwo(-11)
 
-    def _absRoundoff(r: Rational): Rational = {
-      quadDoubleEps * Rational.abs(r)
-    }
+    override val (mantissa_bits, exponent_bits): (Int, Int) = (10, 5)
 
-    // TODO: nothing approx. here
-    def absRoundoffApprox(r: Rational): Rational = absRoundoff(r)
+    override val range: Interval = Interval.+/-(Rational(65504))
 
-    def compare(that: Precision): Int = ???
+    override val minNormal: Rational = Rational.powerTwo(-14)
+
+    override val denormalsError: Rational = Rational.powerTwo(-25)
+  }
+
+  case object Float32 extends FloatPrecision(32) with DenormalCheck {
+
+    override val machineEpsilon: Rational = Rational.powerTwo(-24)
+
+    override val (mantissa_bits, exponent_bits): (Int, Int) = (23, 8)
+
+    override val range: Interval = Interval.+/-(Float.MaxValue.toDouble)
+
+    override val minNormal: Rational = java.lang.Float.MIN_NORMAL.toDouble
+
+    override val denormalsError: Rational = Rational.powerTwo(-150)
+
+    // PERFORMANCE: this may not be the fastest way
+    // also potential error: math.ulp(float.minNormal)/2 = 0.0
+    override def _absRoundoff(i: Interval): Rational =
+      Rational.fromDouble(math.ulp(Math.nextUp(Interval.maxAbs(i).floatValue))) / Rational(2)
+  }
+
+  case object Float64 extends FloatPrecision(64) with DenormalCheck {
+
+    override val machineEpsilon: Rational = Rational.powerTwo(-53)
+
+    override val (mantissa_bits, exponent_bits): (Int, Int) = (52, 11)
+
+    override val range: Interval = Interval.+/-(Double.MaxValue)
+
+    override val minNormal: Rational = java.lang.Double.MIN_NORMAL
+
+    override val denormalsError: Rational = Rational.powerTwo(-1075)
+
+    override def _absRoundoff(i: Interval): Rational =
+      Rational.fromDouble(math.ulp(Math.nextUp(Interval.maxAbs(i).doubleValue))) / Rational(2)
+
+  }
+
+  case object DoubleDouble extends FloatPrecision(128) {
+
+    override val machineEpsilon: Rational = Rational.powerTwo(-113)
+
+    lazy override val (mantissa_bits, exponent_bits): (Int, Int) = ???
+
+    override val range: Interval = Interval.+/-(Double.MaxValue)
+
+    // 2.0041683600089728e-292 = 2^(-1022 + 53) = 2^(-969)
+    // override val minNormal: Rational = Rational.powerTwo(-969)
+  }
+
+  case object QuadDouble extends FloatPrecision(256) {
+
+    override val machineEpsilon: Rational = Rational.powerTwo(-211)
+
+    lazy override val (mantissa_bits, exponent_bits): (Int, Int) = ???
+
+    override val range: Interval = Interval.+/-(Double.MaxValue)
+
+    // 1.6259745436952323e-260 = 2^(-1022 + 3*53) = 2^(-863)
+    // override val minNormal: Rational = Rational.powerTwo(-863)
   }
 
   /*
     Represents a fixed-point arithmetic precision.
     Supports a signed format with truncation as the rounding mode.
    */
-  case class Fixed(bitlength: Int) extends Precision {
-    // TODO: is this correct?
-    val range: (Rational, Rational) =
-      (Rational(-math.pow(2, bitlength - 1).toLong, 1l),
-        Rational(math.pow(2, bitlength - 1).toLong - 1, 1l))
+  case class FixedPrecision(bitlength: Int) extends Precision {
 
-    def minNormal: Rational = ???
+    override def _absRoundoff(i: Interval): Rational = Rational.powerTwo(-fractionalBits(i))
+    override def _absTranscendentalRoundoff(i: Interval): Rational = ???
 
-    val isFloatingPoint = false
+    def fractionalBits(i: Interval): Int = fractionalBits(Interval.maxAbs(i))
+    def fractionalBits(r: Rational): Int = bitlength - bitsNeeded(Rational.abs(r).integerPart)
 
-    def _absRoundoff(r: Rational): Rational = {
-      val fracBits = fractionalBits(r)
-      Rational(1, math.pow(2, fracBits).toLong)
-    }
-    override def absRoundoff(r: Rational): Rational = _absRoundoff(r)  // no denormals check
-
-    def absRoundoffApprox(r: Rational): Rational = _absRoundoff(r)
-
-    def fractionalBits(i: Interval): Int = {
-      fractionalBits(max(abs(i.xlo), abs(i.xhi)))
-    }
-
-    def fractionalBits(r: Rational): Int = {
-      val intBits = bitsNeeded(math.abs(r.integerPart))
-      bitlength - intBits
-    }
-
-    /**
-      Returns the number of bits needed to represent the given integer.
-      @param 32-bit integer
-     */
+    // Returns the number of bits needed to represent the given integer.
     private def bitsNeeded(value: Int): Int = {
       assert(value >= 0)
-      // TODO: don't we have to also subtract 1 for the sign?
-      32 - Integer.numberOfLeadingZeros(value)
+      // Integer.num...(n) returns 0 for all negative numbers, and >= 1 for all positive numbers.
+      // Using 33 so bitsNeeded(2^a-1) = a+1, where we need the extra bit to represent -(2^a-1) (+bonus -2^a)
+      33 - Integer.numberOfLeadingZeros(value)
     }
-    def compare(that: Precision): Int = (that: @unchecked) match {
-      case Fixed(x) => bitlength.compare(x)
-    }
-  }
 
+    // Range is -2^(bitlength-1), 2^(bitlength-1) - 1
+    override val range: Interval =
+      Interval(-Rational.powerTwo(bitlength-1), Rational.powerTwo(bitlength-1) - Rational(1))
+
+    // TODO
+    override def canRepresent(r: Rational) = false
+  }
 }

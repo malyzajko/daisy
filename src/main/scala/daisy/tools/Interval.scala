@@ -8,17 +8,32 @@ import daisy.lang.Identifiers.Identifier
 
 object Interval {
 
-  def maxAbs(i: Interval): Rational = {
-    max(abs(i.xlo), abs(i.xhi))
+  def maxAbs(i: Interval): Rational = max(abs(i.xlo), abs(i.xhi))
+
+  def minAbs(i: Interval): Rational = {
+    assert(!i.includes(Rational.zero))
+    min(abs(i.xlo), abs(i.xhi))
   }
 
   def apply(r: Rational): Interval = Interval(r, r)
+  def apply(i: Interval): Interval = i
+
+  def +/-(r: Rational) = Interval(-r,r)
+
+  val zero: Interval = Interval(0)
+
+  // TODO good precision?
+  val pi = Interval(Rational.fromString("3.141592653589793238"),
+                    Rational.fromString("3.141592653589793239"))
 }
 
 case class PartialInterval(xlo: Option[Rational], xhi: Option[Rational])
 
 case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interval] {
   assert(xlo <= xhi, "interval lower bound cannot be bigger than upper bound")
+
+  import Interval.pi
+
   // private val zero = Rational(0.0)
 
   // def this(aa: RationalForm) = this(aa.interval._1, aa.interval._2)
@@ -116,7 +131,6 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
 
   def ^(n: Interval): Interval = {
     assert(n.xlo > Rational.one)
-    //    System.out.println(s"to the power of $n int? " + n.xlo.isValidInt)
     //    assert(n.xlo.isValidInt && n.xhi.isValidInt)
     // fixme remove this assertion when we will allow expressions in power
     assert(n.xlo == n.xhi)
@@ -184,5 +198,128 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
    */
   def extendBy(parameter: Rational): Interval =
     Interval(this.xlo - (parameter), this.xhi + (parameter))
+
+  /** Reduces the Interval bounds to [-pi, pi]
+   *
+   * Note that the resulting values form not necessarily an interval.
+   *
+   * It also returns the indices of the quarters of the sine wave in which the
+   * end points are.
+   */
+  def reduceRange() : ((Rational, Rational), (BigInt, BigInt)) = {
+    // lower bound >= 0 -> subtract over-approximation of pi...
+    // lower bound < 0 -> subtract under-approximation of pi...
+    // ... and for the widened interval add the opposite one
+    val piForLo = if (xlo >= 0.0) (pi.xhi, pi.xlo) else (pi.xlo, pi.xhi)
+
+    // upper bound >= 0 -> subtract under-approximation of pi...
+    // upper bound < 0 -> subtract over-approximation of pi...
+    // ... and for the widened interval add the opposite one
+    val piForHi = if (xhi >= 0.0) (pi.xlo, pi.xhi) else (pi.xhi, pi.xlo)
+
+    // Returns the representative y of x in [-b, b] and the number of times 2*b
+    // has been subtracted from x to obtain y.
+    // TODO this becomes inaccurate for intervals that are far from 0 because of
+    // the imprecision of the rational pi
+    def reduceTo(x: Rational, b: Rational) = {
+      val k = Rational((x / b).toBigInt, 1)
+      val sign = if (k >= 0) 1 else -1
+      val l = Rational(((k + sign) / 2).toBigInt, 1)
+      val res = x - l * 2 * b
+      (res, l)
+    }
+
+    val (rLo, rLoFact) = reduceTo(xlo, piForLo._1)
+    val (rHi, rHiFact) = reduceTo(xhi, piForHi._1)
+
+    // find an over-approximation of any interval that could lead to the
+    // resulting values with the given uncertainty of pi
+    val rounded = Interval(rLo + rLoFact * 2 * piForLo._2, rHi + rHiFact * 2 * piForHi._2)
+
+    val piLo = if (rounded.xlo >= 0.0) pi.xhi else pi.xlo
+    val piHi = if (rounded.xhi >= 0.0) pi.xlo else pi.xhi
+
+    // computes n such that n*(pi/2) <= rounded.x__ <= (n+1)*(pi/2)
+    var posLo = ((rounded.xlo * 2) / piLo).toBigInt
+    if (rounded.xlo < 0) posLo -= 1
+    var posHi = ((rounded.xhi * 2) / piHi).toBigInt
+    if (rounded.xhi < 0) posHi -= 1
+    // has to be based on rounded (instead of this) as the imprecision of pi can
+    // make the bounded values be in different quarters of the sine wave as they
+    // should be, resulting in unsound results if not properly handled
+
+    ((rLo, rHi), (posLo, posHi))
+  }
+
+  /** Over-approximating implementation of the trigonometric sine function
+   */
+  def sine: Interval = {
+    def mod(a: BigInt, b: BigInt): BigInt = {(a % b + b) % b}
+
+    val ((yloBounded, yhiBounded), (posLo, posHi)) = this.reduceRange()
+
+    if (posHi - posLo >= 4) {
+      // the interval is larger than 2 pi -> no information
+      Interval(-1, 1)
+    } else {
+      // In which quarters of the sine wave are we?
+      //
+      // |  _|_  |   |   |
+      // | / | \ |   |   |
+      // |/  |  \|   |   |
+      // |   |   |   |   |
+      // |   |   |\  |  /|
+      // |   |   | \_|_/ |
+      // |   |   |   |   |
+      //   0   1   2   3
+      //
+      (mod(posLo, 4).toInt, mod(posHi, 4).toInt) match {
+        case (0, 3) | (2, 1) => Interval(-1, 1) // both -1 and 1 contained
+        case (0, 1) | (0, 2) | (3, 1) | (3, 2) => { // 1, but not -1 contained
+          val (yll, ylh) = sineBounded(yloBounded)
+          val (yhl, yhh) = sineBounded(yhiBounded)
+          Interval(min(min(yll, ylh), min(yhl, yhh)), 1)
+        }
+        case (1, 0) | (1, 3) | (2, 0) | (2, 3) => { // -1, but not 1 contained
+          val (yll, ylh) = sineBounded(yloBounded)
+          val (yhl, yhh) = sineBounded(yhiBounded)
+          Interval(-1, max(max(yll, ylh), max(yhl, yhh)))
+        }
+        case _ => { // monotone part
+          val (yll, ylh) = sineBounded(yloBounded)
+          val (yhl, yhh) = sineBounded(yhiBounded)
+          Interval(min(min(yll, ylh), min(yhl, yhh)), max(max(yll, ylh), max(yhl, yhh)))
+        }
+      }
+    }
+  }
+
+  /** Over-approximating implementation of the trigonometric cosine function
+   */
+  def cosine: Interval = {
+    val conv = (pi / Interval(2, 2)) - this
+    conv.sine
+  }
+
+  def tangent: Interval = {
+    this.sine / this.cosine
+  }
+
+  def exp: Interval = {
+    Interval(expDown(xlo), expUp(xhi))
+  }
+
+  def log: Interval = {
+    if (xlo <= zero) {
+      throw NonPositiveLogException("Trying to take the log of a non-positive number!")
+    }
+    Interval(logDown(xlo), logUp(xhi))
+  }
+
+  @inline
+  def includes(that: Interval): Boolean = this.xlo <= that.xlo && that.xhi <= this.xhi
+
+  @inline
+  def includes(r: Rational): Boolean = xlo <= r && r <= xhi
 
 }

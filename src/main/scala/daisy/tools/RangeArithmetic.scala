@@ -12,8 +12,14 @@ trait RangeArithmetic[T] { self: T =>
   def *(other: T): T
   def *(r: Rational): T
   def /(other: T): T
+  def ^(n: T): T
   def squareRoot: T
   def inverse: T
+  def sine: T
+  def cosine: T
+  def tangent: T
+  def exp: T
+  def log: T
   def toInterval: Interval
 
   /* Add an error */

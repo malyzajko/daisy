@@ -19,10 +19,10 @@ import scala.collection.parallel.{ParSeq, ParSet}
 /**
  * Trait with collections of methods to perform Taylor simplifications
  */
-trait Taylor extends DeltaAbstractionUtils {
+trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
 
-  var reporter: Reporter
-  // var denormals: Boolean
+  val cfg: Config
+  // var denormals = cfg.hasFlag("denormals")
 
   var listFailed: List[Map[Identifier, Interval]] = List.empty
 
@@ -71,7 +71,7 @@ trait Taylor extends DeltaAbstractionUtils {
       for (i <-0 until n.intValue()){
         tmp = listElements(x).++(tmp)
       }
-      // reporter.warning(s"List elements $tmp")
+      // cfg.reporter.warning(s"List elements $tmp")
       tmp:+ UMinus(one)
     case x =>
       List(x)
@@ -85,15 +85,15 @@ trait Taylor extends DeltaAbstractionUtils {
    */
   def cancelNominators(nom: Expr, denom: Expr): Expr = {
     // FIXME function not used. contains bugs?
-    // reporter.warning("=== BEFOREEXPRESSION ==== list Nominators " + nom)
-    // reporter.warning("=== BEFOREEXPRESSION ==== list Denominators " + denom)
+    // cfg.reporter.warning("=== BEFOREEXPRESSION ==== list Nominators " + nom)
+    // cfg.reporter.warning("=== BEFOREEXPRESSION ==== list Denominators " + denom)
 
     // get lists of the elements in nominator and denominator
     val noms = listElements(nom)
     val denoms = listElements(denom)
 
-    // reporter.warning(s"===BEFORE==== list Nominators $noms")
-    // reporter.warning(s"===BEFORE==== list Denominators $denoms")
+    // cfg.reporter.warning(s"===BEFORE==== list Nominators $noms")
+    // cfg.reporter.warning(s"===BEFORE==== list Denominators $denoms")
 
     // get repeating terms in nominator and denominator
     var newNomList = noms
@@ -111,14 +111,14 @@ trait Taylor extends DeltaAbstractionUtils {
       }
     }
 
-    // reporter.warning(s"===AFTER==== Nominator LIST $newNomList")
-    // reporter.warning(s"===AFTER==== Denominator LIST $newDenomList")
+    // cfg.reporter.warning(s"===AFTER==== Nominator LIST $newNomList")
+    // cfg.reporter.warning(s"===AFTER==== Denominator LIST $newDenomList")
 
     // multiply the terms that left
     val newNom = multiply(newNomList)
     val newDenom = multiply(newDenomList)
-    // reporter.warning(s"===AFTER==== Nominator $newNom")
-    // reporter.warning(s"===AFTER==== Denominator $newDenom")
+    // cfg.reporter.warning(s"===AFTER==== Nominator $newNom")
+    // cfg.reporter.warning(s"===AFTER==== Denominator $newDenom")
 
     if (newDenom.equals(RealLiteral(Rational.one))) {
       newNom
@@ -150,7 +150,7 @@ trait Taylor extends DeltaAbstractionUtils {
   }
 
   private def multiplyRealLiterals(ra: Rational, list: Seq[Expr]): Expr = {
-    // reporter.warning(s"terms to multiply $ra and $list")
+    // cfg.reporter.warning(s"terms to multiply $ra and $list")
     var newMultiplier = ra
     list.foreach {
       case x @ RealLiteral(r) => newMultiplier = r.*(newMultiplier)
@@ -162,7 +162,7 @@ trait Taylor extends DeltaAbstractionUtils {
       case y => res = Times(res, y)
     }
 
-    // reporter.warning(s"terms after multiplying $res")
+    // cfg.reporter.warning(s"terms after multiplying $res")
     res
   }
 
@@ -297,6 +297,21 @@ trait Taylor extends DeltaAbstractionUtils {
       case x @ Sqrt(lhs) =>
         Sqrt(simpleRound(lhs))
 
+      case x @ Sin(lhs) =>
+        Sin(simpleRound(lhs))
+
+      case x @ Cos(lhs) =>
+        Cos(simpleRound(lhs))
+
+      case x @ Tan(lhs) =>
+        Tan(simpleRound(lhs))
+
+      case x @ Exp(lhs) =>
+        Exp(simpleRound(lhs))
+
+      case x @ Log(lhs) =>
+        Log(simpleRound(lhs))
+
       case x @ Let(id, value, body) =>
         simpleRound(body)
 
@@ -304,7 +319,7 @@ trait Taylor extends DeltaAbstractionUtils {
         throw new IllegalArgumentException("Unknown expression. Simplifying expression failed. " + n.toString)
     }
 
-    // reporter.debug(s"COMPLETE EXPR is $ex")
+    // cfg.reporter.debug(s"COMPLETE EXPR is $ex")
     while (!ready){
       // simplify expression
       val tmpresExpr = simpleRound(resExpr)
@@ -312,7 +327,7 @@ trait Taylor extends DeltaAbstractionUtils {
       ready = expressionsEqual(resExpr, tmpresExpr)
       resExpr = tmpresExpr
     }
-    // reporter.debug(s"SIMPLIFIED EXPR is $resExpr")
+    // cfg.reporter.debug(s"SIMPLIFIED EXPR is $resExpr")
     resExpr
   }
 
@@ -530,7 +545,7 @@ trait Taylor extends DeltaAbstractionUtils {
             Division(simpleRound(rhsIn), simpleRound(lhsIn))
           // a/b / c/d = ad / bc
           case (Division(a, b), Division(c, d)) =>
-            // reporter.warning("swap divisions")
+            // cfg.reporter.warning("swap divisions")
             Division(Times(simpleRound(a), simpleRound(d)),
               Times(simpleRound(b), simpleRound(c)))
           // case (Division(nom, denom), _) =>
@@ -569,6 +584,21 @@ trait Taylor extends DeltaAbstractionUtils {
       case x @ Sqrt(lhs) =>
         Sqrt(simpleRound(lhs))
 
+      case x @ Sin(lhs) =>
+        Sin(simpleRound(lhs))
+
+      case x @ Cos(lhs) =>
+        Cos(simpleRound(lhs))
+
+      case x @ Tan(lhs) =>
+        Tan(simpleRound(lhs))
+
+      case x @ Exp(lhs) =>
+        Exp(simpleRound(lhs))
+
+      case x @ Log(lhs) =>
+        Log(simpleRound(lhs))
+
       case x @ Let(id, value, body) =>
         simpleRound(body)
 
@@ -576,7 +606,7 @@ trait Taylor extends DeltaAbstractionUtils {
         throw new IllegalArgumentException("Unknown expression. Simplifying expression failed. " + n.toString)
     }
 
-    reporter.debug(s"COMPLETE EXPR is $resExpr")
+    cfg.reporter.debug(s"COMPLETE EXPR is $resExpr")
     while (!ready){
       // simplify expression
       val tmpresExpr = simpleRound(resExpr)
@@ -584,7 +614,7 @@ trait Taylor extends DeltaAbstractionUtils {
       ready = expressionsEqual(resExpr, tmpresExpr)
       resExpr = tmpresExpr
     }
-    reporter.debug(s"SIMPLIFIED EXPR is $resExpr")
+    cfg.reporter.debug(s"SIMPLIFIED EXPR is $resExpr")
     resExpr
   }
 
@@ -665,6 +695,27 @@ trait Taylor extends DeltaAbstractionUtils {
       Division(getPartialDerivative(x, wrt), Times(two, Sqrt(x)))
     case z @ Sqrt(x) => zero
 
+    case z @ Sin(x) if containsVariables(x, wrt) =>
+      Times(getPartialDerivative(x, wrt), Cos(x))
+    case z @ Sin(x) => zero
+
+    case z @ Cos(x) if containsVariables(x, wrt) =>
+      Times(getPartialDerivative(x, wrt), UMinus(Sin(x)))
+    case z @ Cos(x) => zero
+
+    case z @ Tan(x) if containsVariables(x, wrt) =>
+      Times(getPartialDerivative(x, wrt), Plus(one, Times(Tan(x), Tan(x))))
+    case z @ Tan(x) => zero
+
+    case z @ Exp(x) if containsVariables(x, wrt) =>
+      Times(getPartialDerivative(x, wrt), Exp(x))
+    case z @ Exp(x) => zero
+
+    case z @ Log(x) if containsVariables(x, wrt) =>
+      Division(getPartialDerivative(x, wrt), x)
+    case z @ Log(x) => zero
+
+
     case z @ Let(x, value, body) if containsVariables(body, wrt) =>
       getPartialDerivative(body, wrt)
 
@@ -684,7 +735,7 @@ trait Taylor extends DeltaAbstractionUtils {
   def getDerivative(e: Expr): Seq[(Expr, Identifier)]  = {
     // we only compute partial derivatives with respect to deltas
     var taylorSeries: Seq[(Expr, Identifier)] = Seq.empty
-    reporter.debug(s"rel error expression $e")
+    cfg.reporter.debug(s"rel error expression $e")
     // val simple = simplify(e)
     deltasOf(e).foreach(wrt => {
       val tmp = getPartialDerivative(e, wrt.id) // recurseDerivative(e, wrt.id)
@@ -702,13 +753,13 @@ trait Taylor extends DeltaAbstractionUtils {
   def getTaylorRemainder(e: Expr, intervals: Seq[Map[Identifier, Interval]]): Option[Rational] = {
 
     val simple = easySimplify(e)
-    reporter.debug("WHAT is INITIALLY in the listFailed " +
+    cfg.reporter.debug("WHAT is INITIALLY in the listFailed " +
       listFailed.map(removeDeltasFromMap).map(_.keySet.map(_.globalId)))
 
     // both deltas and epsilons
     val deltas: Set[Expr with Identifiable] = deltasOf(simple) ++ epsilonsOf(simple)
     // todo fix fold or map
-    reporter.warning("Amount of runs for the first remainder term " + Math.pow(deltas.size, 2) * intervals.size)
+    // cfg.reporter.warning("Amount of runs for the first remainder term " + Math.pow(deltas.size, 2) * intervals.size)
     val firstTerm = deltas.map(wrt => {
       // val wrtSt = System.currentTimeMillis()
       // first derivative
@@ -721,8 +772,8 @@ trait Taylor extends DeltaAbstractionUtils {
           val tmpIn = easySimplify(Times(wrt, Times(wrtIn, moreSimplify(
             getPartialDerivative(tmp, wrtIn.getId)))))
 
-          // reporter.warning(s"=============WRT $wrt * $wrtIn===============")
-          // reporter.warning(s"Second derivative $tmpIn")
+          // cfg.reporter.warning(s"=============WRT $wrt * $wrtIn===============")
+          // cfg.reporter.warning(s"Second derivative $tmpIn")
           val tmpVal = tmpIn match {
             case x @ Delta(id) => Seq(Some(Float64.machineEpsilon)) // Seq(Some(maxAbs(x.interval)))
             case x @ Epsilon(id) => Seq(Some(Float64.denormalsError)) // Seq(Some(maxAbs(x.interval)))
@@ -739,7 +790,7 @@ trait Taylor extends DeltaAbstractionUtils {
                 }
               })
             }
-          // reporter.warning(s"finished iteration for $wrt, $wrtIn; time:" + (System.currentTimeMillis() - start))
+          // cfg.reporter.warning(s"finished iteration for $wrt, $wrtIn; time:" + (System.currentTimeMillis() - start))
           tmpVal.max(optionAbsOrdering)
         }
         else {
@@ -747,10 +798,10 @@ trait Taylor extends DeltaAbstractionUtils {
         }
       })
       // remove a dummy entry from the list
-      reporter.debug(s"before " + listFailed.map(removeDeltasFromMap))
+      cfg.reporter.debug(s"before " + listFailed.map(removeDeltasFromMap))
       listFailed = listFailed.filter(x => removeDeltasFromMap(x).keySet == removeDeltasFromMap(intervals.head).keySet)
-      reporter.debug(s"after " + listFailed.map(removeDeltasFromMap))
-      // reporter.warning(s"done for $wrt in " + (System.currentTimeMillis()-wrtSt))
+      cfg.reporter.debug(s"after " + listFailed.map(removeDeltasFromMap))
+      // cfg.reporter.warning(s"done for $wrt in " + (System.currentTimeMillis()-wrtSt))
       tmpValOut.fold(None)(sumOption)
     })
 
@@ -827,6 +878,21 @@ trait Taylor extends DeltaAbstractionUtils {
       case x @ Sqrt(lhs) =>
         recurse(lhs, wrt)
 
+      case x @ Sin(lhs) =>
+        recurse(lhs, wrt)
+
+      case x @ Cos(lhs) =>
+        recurse(lhs, wrt)
+
+      case x @ Tan(lhs) =>
+        recurse(lhs, wrt)
+
+      case x @ Exp(lhs) =>
+        recurse(lhs, wrt)
+
+      case x @ Log(lhs) =>
+        recurse(lhs, wrt)
+
       case x @ Let(id, value, body) =>
         recurse(body, wrt)
 
@@ -849,6 +915,11 @@ trait Taylor extends DeltaAbstractionUtils {
     case (Epsilon(r1), Epsilon(r2)) => r1.equals(r2)
     case (Variable(r1), Variable(r2)) => r1.equals(r2)
     case (Sqrt(r1), Sqrt(r2)) => expressionsEqual(r1, r2)
+    case (Sin(r1), Sin(r2)) => expressionsEqual(r1, r2)
+    case (Cos(r1), Cos(r2)) => expressionsEqual(r1, r2)
+    case (Tan(r1), Tan(r2)) => expressionsEqual(r1, r2)
+    case (Exp(r1), Exp(r2)) => expressionsEqual(r1, r2)
+    case (Log(r1), Log(r2)) => expressionsEqual(r1, r2)
     case (UMinus(r1), UMinus(r2)) => expressionsEqual(r1, r2)
     case (Let(id1, val1, body1), Let(id2, val2, body2)) =>
       id1.equals(id2) && val1.equals(val2) && expressionsEqual(body1, body2)
@@ -880,7 +951,8 @@ trait Taylor extends DeltaAbstractionUtils {
       // TODO remove it! only for Doppler evaluation!
       // Some(Evaluators.evalSMT(expr,_intMap.map({
       // case (id, int) => (id -> SMTRange(Variable(id), int)) })).toInterval)
-      Some(Evaluators.evalInterval(expr,_intMap))
+      //Some(Evaluators.evalInterval(expr,_intMap))
+      Some(evalRange[Interval](expr, _intMap, Interval.apply)._1)
     }
     catch {
       case e: DivisionByZeroException => None

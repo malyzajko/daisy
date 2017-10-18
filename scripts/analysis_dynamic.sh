@@ -9,10 +9,12 @@ declare -a files=("testcases/rosa/Bsplines.scala" \
   "testcases/control/InvertedPendulum.scala" \
   "testcases/real2float/Kepler.scala" \
   "testcases/rosa/RigidBody.scala" \
-  "testcases/trigApprox/Sine.scala" \
-  "testcases/trigApprox/Sqrt.scala" \
+  "testcases/misc/Sine.scala" \
+  "testcases/misc/Sqrt.scala" \
   "testcases/control/Traincar4.scala" \
-  "testcases/rosa/Turbine.scala")
+  "testcases/rosa/Turbine.scala" \
+  "testcases/rosa/JetEngine.scala" \
+  "testcases/misc/Transcendentals.scala")
 
 # Make sure the code is compiled
 sbt compile
@@ -27,5 +29,5 @@ fi
 # Run daisy on each testfile
 for file in "${files[@]}"
 do
-  ./daisy --analysis=dataflow ${file}
+  ./daisy --dynamic --mpfr ${file}
 done

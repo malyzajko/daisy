@@ -45,12 +45,11 @@ object AffineForm {
 
   def apply(r: Rational): AffineForm = AffineForm(r, Seq[Deviation]())
 
-  def fromError(absError: Rational): AffineForm = {
-    AffineForm(Rational.zero, Seq(Deviation(absError, AffineIndex.nextGlobal)))
+  def +/-(x: Rational): AffineForm = {
+    AffineForm(Rational.zero, Seq(Deviation(x, AffineIndex.nextGlobal)))
   }
 
   val zero: AffineForm = AffineForm(Rational.zero, Seq())
-
 }
 
 
@@ -159,8 +158,10 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
   def squareRoot: AffineForm = {
     var (a, b) = (toInterval.xlo, toInterval.xhi)
 
-    // if (b <= zero)  //soft policy
-    //  throw OutOfDomainException("Possible sqrt of negative number: " + toString)
+    if (b < rzero) {
+     throw NegativeSqrtException("Sqrt of negative number: " + toString)
+    }
+    // if (a < rzero) a = rzero  //soft policy
 
     /* if(noise.size == 0) { //exact
       val sqrt = x0.sqrt
@@ -168,8 +169,6 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
       val maxError = zero
       return new XRationalForm(sqrt, new Queue[Deviation](Deviation(newIndex, maxError)))
     } */
-
-    if (a < rzero) a = rzero  // soft policy
 
     val alpha = Rational(1L, 2L) / sqrtUp(b)
     val dmin = sqrtDown(a) - (alpha * a)
@@ -180,6 +179,119 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     unaryOp(x0, noise, alpha, zeta, delta)
   }
 
+  /** Min-range based approximating implementation of sine
+   */
+  def sine: AffineForm = {
+    val (l, u) = (toInterval.xlo, toInterval.xhi)
+
+    val intsol = toInterval.sine
+    if (intsol.xlo == -1 || intsol.xhi == 1) {
+      // we are not in a monotone part of sine, so we use interval results
+      AffineForm(intsol)
+    } else {
+      // compute intervals enclosing the sine value at the ending points
+      val aInt = Interval(l, l).sine
+      val bInt = Interval(u, u).sine
+
+      // choose the end points a, b of the intervals that maximize abs(a-b)
+      val mp = MonotonicityPhase.getMonotonicityPhaseSine(Interval(l, u))
+      assert(!(mp.isInstanceOf[Mixed]))
+
+      val a = (mp: @unchecked) match {
+        case Rising() => aInt.xlo
+        case Falling() => aInt.xhi
+      }
+      val b = (mp: @unchecked) match {
+        case Rising() => bInt.xhi
+        case Falling() => bInt.xlo
+      }
+
+      // Compute slope of approximation. If an inflection point of sine is
+      // included in the interval, use -1 or 1 to over-approximate.
+      val alpha =
+        if (a < 0 && b > 0) { // rising inflection point included
+          one
+        } else if (a > 0 && b < 0) { // falling inflection point included
+          - one
+        } else {
+          // heuristic: Choose the ending point c that is farther from the
+          // x-axis for computing the slope alpha. This might yield better
+          // accuracy.
+          val chooseA = abs(a) >= abs(b)
+          val c = if (chooseA) l else u
+
+          // cosine is the derivative of sine
+          val slopeInt = Interval(c, c).cosine
+
+          // Decide whether to round the slope up or down for soundness. It
+          // should be rounded such that there is a larger distance between the
+          // resulting line and the sine curve at the other interval end point.
+          // The first component is a check for concavity as the second
+          // derivative of sin(x) is -sin(x)
+          // Note: this is a more verbose formulation of ((a > 0) == chooseA)
+          (a > 0, chooseA) match {
+            case (true, true) | (false, false) => slopeInt.xhi
+            case (true, false) | (false, true) => slopeInt.xlo
+          }
+        }
+
+      // compute the y-intercept
+      val z1 = a - alpha * l
+      val z2 = b - alpha * u
+      val zeta = computeZeta(z1, z2)
+
+      // compute the maximal deviation
+      val delta = max(abs(z1 - zeta), abs(z2 - zeta))
+
+      // apply the linear approximation to the input
+      unaryOp(x0, noise, alpha, zeta, delta)
+    }
+  }
+
+  def cosine: AffineForm = {
+    val conv = (AffineForm(Interval.pi) / AffineForm(Interval(2, 2))) - this
+    conv.sine
+  }
+
+  def tangent: AffineForm = {
+    this.sine / this.cosine
+  }
+
+  /** Min-range based linear approximation of the exp() function
+   */
+  def exp: AffineForm = {
+    val (a, b) = (toInterval.xlo, toInterval.xhi)
+
+    // Take slope of the left ending point of the interval (which is smaller),
+    // probably results in better ranges.
+    // Round it down to be sound for convex functions such as exp.
+    val alpha = expDown(a)
+    val dmin = expDown(a) - (alpha * a)
+    val dmax = expUp(b) - (alpha * b)
+
+    val zeta = computeZeta(dmin, dmax)
+    val delta = max(abs(dmin - zeta), abs(dmax - zeta))
+    unaryOp(x0, noise, alpha, zeta, delta)
+  }
+
+  def log: AffineForm = {
+    var (a, b) = (toInterval.xlo, toInterval.xhi)
+
+    if (a <= rzero) {
+      throw NonPositiveLogException("Trying to take the log of a non-positive number!")
+    }
+
+    // Take slope of the right ending point of the interval (which is smaller),
+    // probably results in better ranges.
+    // Round it down to be sound for concave functions such as log.
+    val alpha = one / b
+    val dmin = logDown(a) - (alpha * a)
+    val dmax = logUp(b) - (alpha * b)
+
+    val zeta = computeZeta(dmin, dmax)
+    val delta = max(abs(dmin - zeta), abs(dmax - zeta))
+    unaryOp(x0, noise, alpha, zeta, delta)
+  }
 
   override def toString: String = "[%s,%s]".format(toInterval.xlo.toDouble, toInterval.xhi.toDouble)
   def toSmallString: String = "[%.3f,%.3f]".format(toInterval.xlo.toDouble, toInterval.xhi.toDouble)

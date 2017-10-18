@@ -3,6 +3,7 @@
 package daisy
 package analysis
 
+import scala.collection.immutable.Seq
 import scala.util.parsing.combinator._
 
 import lang.Trees._
@@ -30,27 +31,25 @@ import lang.Trees.Program
   Prerequisite:
     None
  */
-object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
-
+object SpecsProcessingPhase extends PhaseComponent {
   override val name = "Specs processing"
   override val description = "Processes the specifications for later phases."
-  override val definedOptions: Set[CmdLineOptionDef[Any]] = Set()
+  override val definedOptions: Set[CmdLineOption[Any]] = Set()
+  override def apply(cfg: Config) = new SpecsProcessingPhase(cfg, name, "specs")
+}
 
+class SpecsProcessingPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
+    with PrecisionsParser {
   implicit val debugSection = DebugSectionAnalysis
 
-  var reporter: Reporter = null
-
-  val defaultPrecision = Float64
+  val defaultPrecision = cfg.option[Precision]("precision")
 
   def run(ctx: Context, prg: Program): (Context, Program) = {
-    reporter = ctx.reporter
-    // reporter.info("\nStarting specs preprocessing phase")
-    val timer = ctx.timers.preprocess.start
-
+    startRun()
 
     //
     val precisionMap: Map[Identifier, (Map[Identifier, Precision], Precision)] =
-      ctx.findOption(Main.optionMixedPrecFile) match {
+      cfg.option[Option[String]]("mixed-precision") match {
 
       case Some(file) =>
         // maps from fnc/variable names to their respective identifiers
@@ -81,13 +80,14 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
         Map()
     }
 
-    // println("precision map:")
-    // println(precisionMap)
+    // cfg.reporter.info("precision map:")
+    // cfg.reporter.info(precisionMap)
 
     var allRanges: Map[Identifier, Map[Identifier, Interval]] = Map()
     var allErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
     var resRanges: Map[Identifier, PartialInterval] = Map()
     var resErrors: Map[Identifier, Rational] = Map()
+    var additionalConst: Map[Identifier, Expr] = Map()
     // var requiredOutputRanges: Map[Identifier, Map[Identifier, PartialInterval]] = Map()
     // var requiredOutputErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
 
@@ -96,10 +96,16 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       fnc.precondition match {
         case Some(pre) =>
           // TODO: additional constraints
-          val (ranges, errors) = extractPreCondition(pre)
+          val (ranges, errors, addConds) = extractPreCondition(pre)
 
           allRanges += (fnc.id -> ranges.map(x => (x._1 -> Interval(x._2._1, x._2._2))))
           allErrors += (fnc.id -> errors)
+          addConds match {
+            case Seq() => additionalConst += (fnc.id -> BooleanLiteral(true)) // no additional constraints
+            case Seq(x) => additionalConst += (fnc.id -> x)
+            case _ => additionalConst += (fnc.id -> And(addConds))
+          }
+
 
           // annotate the variables in the function body directly
           // preTraversal ({
@@ -133,14 +139,14 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
             val tmp = ranges.values.head
             resRanges += (fnc.id -> PartialInterval(tmp._1, tmp._2))
           } else if (ranges.size > 1) {
-            reporter.error("Tuples are not supported.")
+            cfg.reporter.error("Tuples are not supported.")
           }
 
           if (errors.size == 1) {
             val tmp = errors.values.head
             resErrors += (fnc.id -> tmp)
           } else if (errors.size > 1) {
-            reporter.error("Tuples are not supported.")
+            cfg.reporter.error("Tuples are not supported.")
           }
 
           // requiredOutputRanges += (fnc.id -> ranges.map( x =>
@@ -150,39 +156,42 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
 
 
         case _ =>
-          // reporter.info("No post-condition found\n")
+          // cfg.reporter.info("No post-condition found\n")
 
       }
 
     }
 
-    timer.stop
-    // reporter.info("Finished specs preprocessing phase\n")
+    cfg.reporter.debug("range bounds: " + resRanges.mkString("\n"))
+    cfg.reporter.debug("error bounds: " + resErrors.mkString("\n"))
 
-    reporter.debug("range bounds: " + resRanges.mkString("\n"))
-    reporter.debug("error bounds: " + resErrors.mkString("\n"))
-
-    (ctx.copy(specInputRanges = allRanges, specInputErrors = allErrors,
-      specResultRangeBounds = resRanges, specResultErrorBounds = resErrors,
-      specMixedPrecisions = precisionMap.mapValues(_._1),
-      specInferredReturnTypes = precisionMap.mapValues(_._2)), prg)
+    finishRun(
+      ctx.copy(
+        specInputRanges = allRanges,
+        specInputErrors = allErrors,
+        specResultRangeBounds = resRanges,
+        specResultErrorBounds = resErrors,
+        specMixedPrecisions = precisionMap.mapValues(_._1),
+        specInferredReturnTypes = precisionMap.mapValues(_._2),
+        specAdditionalConstraints = additionalConst),
+      prg)
   }
 
   def extractPreCondition(expr: Expr): (Map[Identifier, (Rational, Rational)],
-    Map[Identifier, Rational]) = {
+    Map[Identifier, Rational], Seq[Expr]) = {
 
-    val (lowerBound, upperBound, absError) = extractCondition(expr)
+    val (lowerBound, upperBound, absError, addCond) = extractCondition(expr)
 
     (lowerBound.map({
       case (x, r) => (x, (r, upperBound(x))) // assumes that it exists
       }),
-      absError)
+      absError, addCond)
   }
 
   def extractPostCondition(expr: Expr): (Map[Identifier, (Option[Rational], Option[Rational])],
     Map[Identifier, Rational]) = {
 
-    val (lowerBound, upperBound, absError) = extractCondition(expr)
+    val (lowerBound, upperBound, absError, _) = extractCondition(expr)
 
     val lowerMap = lowerBound.map({
       case (x, r) => (x, (Some(r), upperBound.get(x)))
@@ -198,11 +207,12 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
   }
 
   def extractCondition(e: Expr): (Map[Identifier, Rational],
-    Map[Identifier, Rational], Map[Identifier, Rational]) = {
+    Map[Identifier, Rational], Map[Identifier, Rational], Seq[Expr]) = {
 
     var lowerBound: Map[Identifier, Rational] = Map.empty
     var upperBound: Map[Identifier, Rational] = Map.empty
     var absError: Map[Identifier, Rational] = Map.empty
+    var additionalCond: Seq[Expr] = Seq.empty
 
     def extract(e: Expr): Unit = e match {
       case Lambda(args,body) => extract(body)
@@ -222,12 +232,12 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       case GreaterEquals(RealLiteral(r), Variable(id)) => upperBound += (id -> r)
 
       case _ => ;
-        // reporter.warning(s"Unexpected expression in spec: $e.")
+        additionalCond = additionalCond :+ e
     }
 
     extract(e)
 
-    (lowerBound, upperBound, absError)
+    (lowerBound, upperBound, absError, additionalCond)
   }
 
   def buildIdentifierMap(prg: Program): (Map[String, Identifier], Map[String, Map[String, Identifier]]) = {
@@ -263,14 +273,14 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
     bufferedSource.close
     parse(overallFunction, sourceText) match {
       case Success(precisionsTree, _) => treeToMap(precisionsTree)
-      case Failure(msg, _) => reporter.fatalError("Failure during the parsing of the type assignment file: " + msg)
-      case Error(msg, _) => reporter.fatalError("Error during the parsing of the type assignment file: " + msg)
+      case Failure(msg, _) => cfg.reporter.fatalError("Failure during the parsing of the type assignment file: " + msg)
+      case Error(msg, _) => cfg.reporter.fatalError("Error during the parsing of the type assignment file: " + msg)
     }
   }
 
 
   def typecheck(expr: Expr, precisionMap: Map[Identifier, Precision],
-    defaultPrec: Precision): (Map[Identifier, Precision], Precision) = {
+    defaultPrecision: Precision): (Map[Identifier, Precision], Precision) = {
 
     def eval(e: Expr, precMap: Map[Identifier, Precision]): (Map[Identifier, Precision], Precision) = e match {
 
@@ -316,6 +326,7 @@ trait PrecisionsParser extends RegexParsers with JavaTokenParsers {
   def float128: Parser[Precision] = "DoubleDouble" ^^ { case _ => DoubleDouble }
   def float64: Parser[Precision] = "Double" ^^ { case _ => Float64 }
   def float32: Parser[Precision] = "Float" ^^ { case _ => Float32 }
+  def float16: Parser[Precision] = "Float16" ^^ { case _ => Float16 }
 
   def typeVar: Parser[TypeAssign] = identifier ~ ":" ~ (float256 | float128 | float64 | float32) ^^ {
     case i ~ _ ~ p => TypeAssign(i, p)

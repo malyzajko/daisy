@@ -9,7 +9,6 @@ import lang.Identifiers._
 import tools.{AffineForm, Interval, Rational}
 import tools.FinitePrecision._
 import tools.Interval._
-import Rational._
 
 /**
   This phase computes roundoff errors for a given precision and data type
@@ -30,38 +29,26 @@ import Rational._
     - SpecsProcessingPhase
     - RangePhase (check you are computing the correct ranges)
  */
-object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
 
-  override val name = "roundoff phase"
+object AbsErrorPhase extends PhaseComponent {
+  override val name = "Roundoff"
   override val description = "Computes roundoff errors"
-  override val definedOptions: Set[CmdLineOptionDef[Any]] = Set()
+  override def apply(cfg: Config) = new AbsErrorPhase(cfg, name, "roundoff")
+}
 
+class AbsErrorPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
+    with tools.RoundoffEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
-  var reporter: Reporter = null
-
   override def run(ctx: Context, prg: Program): (Context, Program) = {
-    reporter = ctx.reporter
-    reporter.info(s"\nStarting $name")
-    val timer = ctx.timers.roundoff.start
+    startRun()
 
-    var trackInitialErrs = true
-    var trackRoundoffErrs = true
-    val uniformPrecision = Float64
+    val trackInitialErrs = !cfg.hasFlag("noInitialErrors")
+    val trackRoundoffErrs = !cfg.hasFlag("noRoundoff")
+    val uniformPrecision = cfg.option[Precision]("precision")
 
-    /* Process relevant options */
-    for (opt <- ctx.options) opt match {
-      case FlagOption("noInitialErrors") => trackInitialErrs = false
-      case FlagOption("noRoundoff") => trackRoundoffErrs = false
-      case _ => ;
-    }
-
-    val fncsToConsider: Seq[String] = functionsToConsider(ctx, prg)
-
-    val res: Map[Identifier, (Rational, Map[Expr, Rational])] = prg.defs.filter(fnc =>
-      !fnc.precondition.isEmpty &&
-      !fnc.body.isEmpty &&
-      fncsToConsider.contains(fnc.id.toString)).map(fnc => {
+    val res: Map[Identifier, (Rational, Map[Expr, Rational])] = 
+      functionsToConsider(prg).map(fnc => {
 
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
@@ -78,7 +65,7 @@ object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
           val inputErrs = ctx.specInputErrors(fnc.id)
           val allIDs = fnc.params.map(_.id).toSet
           val missingIDs = allIDs -- inputErrs.keySet
-          inputErrs ++ missingIDs.map(id => (id -> zero))
+          inputErrs ++ missingIDs.map(id => (id -> Rational.zero))
 
         } else if (trackRoundoffErrs) {
 
@@ -88,7 +75,7 @@ object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
         } else {
 
           val allIDs = fnc.params.map(_.id)
-          allIDs.map(id => (id -> zero)).toMap
+          allIDs.map(id => (id -> Rational.zero)).toMap
 
         }
 
@@ -96,26 +83,23 @@ object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
       val intermediateRanges = ctx.intermediateRanges(fnc.id)
 
       val (resRoundoff, allErrors) = evalRoundoff[AffineForm](fncBody, intermediateRanges,
-        allVariablesOf(fncBody).map(id => (id -> uniformPrecision)).toMap,
-        inputErrorMap.map(x => (x._1 -> AffineForm.fromError(x._2))),
+        Map.empty.withDefaultValue(uniformPrecision),
+        inputErrorMap.mapValues(AffineForm.+/-),
         zeroError = AffineForm.zero,
-        fromError = AffineForm.fromError,
+        fromError = AffineForm.+/-,
         interval2T = AffineForm.apply,
         constantsPrecision = uniformPrecision,
         trackRoundoffErrs)
 
       // computeAbsError(fnc.body.get, Map.empty, trackInitialErrs, trackRoundoffErrs)
-      (fnc.id -> (Interval.maxAbs(resRoundoff.toInterval),
-        allErrors.map({
-          case (e, aa) => (e -> Interval.maxAbs(aa.toInterval))
-        })))
+      fnc.id -> (Interval.maxAbs(resRoundoff.toInterval), allErrors.mapValues(aa => Interval.maxAbs(aa.toInterval)))
     }).toMap
 
-    timer.stop
-    // ctx.reporter.info(s"Finished $name")
-    (ctx.copy(resultAbsoluteErrors = res.mapValues(_._1),
-      intermediateAbsErrors = res.mapValues(_._2)), prg)
+    finishRun(
+      ctx.copy(
+        resultAbsoluteErrors = res.mapValues(_._1),
+        intermediateAbsErrors = res.mapValues(_._2)),
+      prg)
   }
 
 }
-

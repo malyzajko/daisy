@@ -27,42 +27,22 @@ import tools.{Interval, AffineForm, SMTRange}
   Prerequisite:
     - SpecsProcessingPhase
  */
-object RangePhase extends DaisyPhase with tools.RangeEvaluators {
-
-  override val name = "Range phase"
+object RangePhase extends PhaseComponent {
+  override val name = "Range"
   override val description = "Computes the ranges of intermediate expressions."
-  override val definedOptions: Set[CmdLineOptionDef[Any]] = Set()
+  override def apply(cfg: Config) = new RangePhase(cfg, name, "range")
+}
 
+class RangePhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
+    with tools.RangeEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
-  var reporter: Reporter = null
-
   override def run(ctx: Context, prg: Program): (Context, Program) = {
-    reporter = ctx.reporter
-    reporter.info("\nStarting range phase")
-    val timer = ctx.timers.ranges.start
+    startRun()
 
-    // default
-    var rangeMethod: String = "interval"
+    val rangeMethod = cfg.option[String]("rangeMethod")
 
-    // Process relevant options.
-    for (opt <- ctx.options) opt match {
-      case ChoiceOption("rangeMethod", s) => s match {
-        case "interval" | "affine" | "smt" | "subdiv" =>
-          rangeMethod = s
-          reporter.info(s"using $s")
-        case _ =>
-          reporter.warning(s"Unknown range method: $s, choosing default (interval)!")
-      }
-      case _ =>
-    }
-
-    val fncsToConsider: Seq[String] = functionsToConsider(ctx, prg)
-
-    val res: Map[Identifier, (Interval, Map[Expr, Interval])] = prg.defs.filter(fnc =>
-      !fnc.precondition.isEmpty &&
-      !fnc.body.isEmpty &&
-      fncsToConsider.contains(fnc.id.toString)).map(fnc => {
+    val res: Map[Identifier, (Interval, Map[Expr, Interval])] = functionsToConsider(prg).map(fnc => {
 
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
@@ -94,11 +74,10 @@ object RangePhase extends DaisyPhase with tools.RangeEvaluators {
 
     }).toMap
 
-    timer.stop
-    // ctx.reporter.info("Finished range phase\n")
-
-    (ctx.copy(resultRealRanges = res.mapValues(_._1),
-      intermediateRanges = res.mapValues(_._2)),
+    finishRun(
+      ctx.copy(
+        resultRealRanges = res.mapValues(_._1),
+        intermediateRanges = res.mapValues(_._2)),
       prg)
   }
 

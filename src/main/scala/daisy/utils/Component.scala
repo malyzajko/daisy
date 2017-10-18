@@ -11,13 +11,9 @@ import lang.Trees.Program
 trait Component {
   val name: String
   val description: String
+  val definedOptions: Set[CmdLineOption[Any]] = Set()
+}
 
-  val definedOptions: Set[CmdLineOptionDef[Any]] = Set()
-
-  def functionsToConsider(ctx: Context, prg: Program): Seq[String] = {
-    ctx.findOption(Main.optionFunctions) match {
-      case Some(fncs) => fncs
-      case None => prg.defs.map(_.id.toString)
-    }
-  }
+trait PhaseComponent extends Component {
+  def apply(cfg: Config): DaisyPhase
 }

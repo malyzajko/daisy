@@ -5,10 +5,9 @@ package analysis
 
 import java.io.FileWriter
 import java.io.BufferedWriter
-import scala.util.Random
 
 import lang.Trees._
-import tools.{Rational, Interval, MPFRFloat}
+import tools.{Rational, Interval, MPFRFloat, DynamicEvaluators}
 import MPFRFloat.{abs => mpfr_abs, max => mpfr_max, min => mpfr_min}
 import Rational._
 import lang.Identifiers._
@@ -34,53 +33,50 @@ import Sampler._
   Prerequisites:
     - SpecsProcessingPhase
  */
-object DynamicPhase extends DaisyPhase {
-
-  var numSamples = 100000
-  var inputRangeFactor = Rational.one
-
-  override val name = "dynamic phase"
+object DynamicPhase extends PhaseComponent {
+  override val name = "Dynamic"
   override val description = "dynamic evaluation of errors"
-  override val definedOptions: Set[CmdLineOptionDef[Any]] = Set(
-    ParamOptionDef("sampleSize", "number of inputs for dynamic evaluation", numSamples.toString),
-    ParamOptionDef("inputRangeFactor", "factor for scaling input ranges", inputRangeFactor.toString),
-    FlagOptionDef("mpfr", "Use MPFR as the higher precision"),
-    FlagOptionDef("dynamic-log", "log results to file"),
-    ParamOptionDef("dynamic-seed", "seed to use for random number generator", "System.currentTimeMillis")
-    )
+  override val definedOptions: Set[CmdLineOption[Any]] = Set(
+    NumOption(
+      "sampleSize",
+      100000,
+      "Number of inputs for dynamic evaluation"),
+    StringOption(
+      "inputRangeFactor",
+      "Factor for scaling input ranges"),
+    // FlagOption(
+    //   "mpfr",
+    //   "Use MPFR as the higher precision"),
+    FlagOption(
+      "dynamic-log",
+      "Log results to file"),
+    NumOption(
+      "dynamic-custom-seed", // pseudo argument "dynamic-seed"
+      0,
+      "Seed to use for random number generator. 0 for System.currentTimeMillis()")
+  )
+  override def apply(cfg: Config) = new DynamicPhase(cfg, name, "dynamic")
+}
 
+class DynamicPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
+    with DynamicEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
-  var reporter: Reporter = null
-
   override def run(ctx: Context, prg: Program): (Context, Program) = {
-    reporter = ctx.reporter
-    reporter.info(s"\nStarting $name")
-    val timer = ctx.timers.dynamic.start
+    startRun()
 
-    // make rationals default as they are a bit more reliable
-    var useRationals = true
-    var logToFile = false
-    var useRoundoff = true
-    var seed = System.currentTimeMillis // 4783
+    val numSamples = cfg.option[Long]("sampleSize")
+    val inputRangeFactor: Rational = Rational.fromString(cfg.option[Option[String]]("inputRangeFactor").getOrElse("1"))
 
-    /* Process relevant options */
-    for (opt <- ctx.options) opt match {
-      case ParamOption("sampleSize", value) => numSamples = value.toInt
-      case ParamOption("inputRangeFactor", value) =>
-        inputRangeFactor = Rational.fromString(value)
+    val useRationals = false //!cfg.hasFlag("mpfr")
+    val logToFile = cfg.hasFlag("dynamic-log")
+    val useRoundoff = !cfg.hasFlag("noRoundoff")
+    val seed = cfg.option[Long]("dynamic-seed")
 
-      case FlagOption("mpfr") => useRationals = false
-      case FlagOption("dynamic-log") => logToFile = true
-      case FlagOption("noRoundoff") => useRoundoff = false
-      case ParamOption("dynamic-seed", value) => seed = value.toLong
-      case _ =>
-    }
+    if (useRationals) { cfg.reporter.info("using Rational")
+    } else { cfg.reporter.info("using MPFR") }
 
-    if (useRationals) { reporter.info("using Rational")
-    } else { reporter.info("using MPFR") }
-
-    reporter.info("seed: " + seed)
+    cfg.reporter.info("seed: " + seed)
 
     // val timestamp: Long = System.currentTimeMillis / 1000
     // val fstream = new FileWriter(s"rawdata/${filePrefix}_${prg.id}_$timestamp.txt")
@@ -108,8 +104,8 @@ object DynamicPhase extends DaisyPhase {
 
       val id = fnc.id
       val body = fnc.body.get
-      reporter.info("evaluating " + id + "...")
-      reporter.info(s"expression is $body")
+      cfg.reporter.info("evaluating " + id + "...")
+      //cfg.reporter.info(s"expression is $body")
 
       val inputRanges: Map[Identifier, Interval] = ctx.specInputRanges(id).map({
         case (id, i) =>
@@ -125,7 +121,7 @@ object DynamicPhase extends DaisyPhase {
         var i = 0
         while (i < numSamples) {
           i = i + 1
-          // if (i % 10000 == 0) println (s"i: $i")  // showing progress
+          // if (i % 10000 == 0) cfg.reporter.info(s"i: $i")  // showing progress
 
           // does not consider input roundoff errors
           val strInputs: Map[Identifier, String] = sampler.nextString
@@ -157,7 +153,7 @@ object DynamicPhase extends DaisyPhase {
             s" ${measurer.minAbsError}" +
             s" ${measurer.minRelError}\n")
         }
-        reporter.info(s"$id maxAbsError: ${measurer.maxAbsError}" +
+        cfg.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError}" +
           s" maxRelError: ${measurer.maxRelError}")
 
       } else {
@@ -172,7 +168,7 @@ object DynamicPhase extends DaisyPhase {
         var i = 0
         while (i < numSamples) {
           i = i + 1
-          // if (i % 10000 == 0) println (s"i: $i")
+          // if (i % 10000 == 0) cfg.reporter.info(s"i: $i")
 
           // WITH input errors
 
@@ -204,7 +200,7 @@ object DynamicPhase extends DaisyPhase {
           assert(currentMaxAbs <= measurer.maxAbsError.doubleValue)
           currentMaxAbs = measurer.maxAbsError.doubleValue
           if (abs(dblOutput) <= java.lang.Double.MIN_NORMAL) {
-            reporter.warning(s"THE SUBNORMAL")
+            cfg.reporter.warning(s"THE SUBNORMAL")
             i = i - 1
           }
         }
@@ -221,98 +217,22 @@ object DynamicPhase extends DaisyPhase {
             s" ${measurer.avrgRelError.toDoubleString}" +
             s" ${measurer.avrgUlpError}\n")
         }
-        reporter.info(s"$id maxAbsError: ${measurer.maxAbsError.toDoubleString}" +
+        cfg.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError.toDoubleString}" +
           s" maxRelError: ${measurer.maxRelError.toDoubleString}")
 
       }
 
 
     }
-    timer.stop
+
+    finishRun(ctx, prg)
 
     if (logToFile) {
-      logFile.write(s"\ntime: ${timer}\n\n")
+      logFile.write(s"\ntime: ${cfg.timers.get(shortName)}\n\n")
       logFile.close()
     }
 
-    ctx.reporter.info(s"Finished $name")
     (ctx, prg)
   }
 
-
-  def evalRational(expr: Expr, _valMap: Map[Identifier, Rational]): Rational = {
-    var valMap = _valMap
-
-    def eval(e: Expr): Rational = (e: @unchecked) match {
-
-      case Variable(id) => valMap(id)
-      case RealLiteral(r) => r
-      case Plus(x, y) => eval(x) + eval(y)
-      case Minus(x, y) => eval(x) - eval(y)
-      case Times(x, y) => eval(x) * eval(y)
-      case Division(x, y) => eval(x) / eval(y)
-      case UMinus(x) => - eval(x)
-      case Let(id, v, b) =>
-        valMap += (id -> eval(v))
-        eval(b)
-
-    }
-    eval(expr)
-
-  }
-
-  def evalDouble(expr: Expr, _valMap: Map[Identifier, Double]): Double = {
-    var valMap = _valMap
-
-    def eval(e: Expr): Double = (e: @unchecked) match {
-
-      case Variable(id) => valMap(id)
-      case RealLiteral(r) => r.toDouble
-      case Plus(x, y) => eval(x) + eval(y)
-      case Minus(x, y) => eval(x) - eval(y)
-      case Times(x, y) => eval(x) * eval(y)
-      case Division(x, y) => eval(x) / eval(y)
-      case Pow(x, y) => math.pow(eval(x), eval(y))
-      case UMinus(x) => - eval(x)
-      case Sqrt(x) => math.sqrt(eval(x))
-      case Sin(x) => math.sin(eval(x))
-      case Cos(x) => math.cos(eval(x))
-      case Tan(x) => math.tan(eval(x))
-      case Exp(x) => math.exp(eval(x))
-      case Log(x) => math.log(eval(x))
-      case Let(id, v, b) =>
-        valMap += (id -> eval(v))
-        eval(b)
-
-    }
-    eval(expr)
-
-  }
-
-  def evalMPFR(expr: Expr, _valMap: Map[Identifier, MPFRFloat]): MPFRFloat = {
-    var valMap = _valMap
-
-    def eval(e: Expr): MPFRFloat = (e: @unchecked) match {
-
-      case Variable(id) => valMap(id)
-      case r: RealLiteral => MPFRFloat.fromString(r.stringValue)
-      case Plus(x, y) => eval(x) + eval(y)
-      case Minus(x, y) => eval(x) - eval(y)
-      case Times(x, y) => eval(x) * eval(y)
-      case Division(x, y) => eval(x) / eval(y)
-      case Pow(x, y) => MPFRFloat.pow(eval(x), eval(y))
-      case UMinus(x) => - eval(x)
-      case Sqrt(x) => MPFRFloat.sqrt(eval(x) )
-      case Sin(x) => MPFRFloat.sin(eval(x))
-      case Cos(x) => MPFRFloat.cos(eval(x))
-      case Tan(x) => MPFRFloat.tan(eval(x))
-      case Exp(x) => MPFRFloat.exp(eval(x))
-      case Log(x) => MPFRFloat.log(eval(x))
-      case Let(id, v, b) =>
-        valMap += (id -> eval(v))
-        eval(b)
-
-    }
-    eval(expr)
-  }
 }

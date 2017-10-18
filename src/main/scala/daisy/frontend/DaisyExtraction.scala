@@ -14,8 +14,6 @@ trait DaisyExtraction extends SubComponent with CodeExtraction {
 
   var units: List[CompilationUnit] = Nil
 
-  implicit val ctx: Context
-
   var imports: Map[RefTree,List[Import]] = Map()
 
   def setImports(imports: Map[RefTree,List[Import]]): Unit = {

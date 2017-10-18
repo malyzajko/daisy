@@ -237,6 +237,13 @@ trait ASTExtractors {
       }
     }
 
+    object ExFMA {
+      def unapply(tree: Apply): Option[(Tree, Tree, Tree)] = tree match {
+        case Apply(select, List(f1,f2,s)) if select.toString == "daisy.lang.Real.fma" => Some((f1,f2,s))
+        case _ => None
+      }
+    }
+
     object ExPow {
       def unapply(tree: Apply): Option[(Tree, Tree)] = tree match {
         case Apply(select, List(arg1, arg2)) if (select.toString == "daisy.lang.Real.pow") => Some((arg1, arg2))

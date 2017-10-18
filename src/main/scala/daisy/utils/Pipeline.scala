@@ -6,7 +6,7 @@ package daisy
 abstract class Pipeline[-F, +T] {
   self =>
 
-  def andThen[G](thenn: Pipeline[T, G]): Pipeline[F, G] = new Pipeline[F,G] {
+  def >>[G](thenn: Pipeline[T, G]): Pipeline[F, G] = new Pipeline[F,G] {
     def run(ctx: Context, v: F): (Context, G) = {
       val (ctx2, s) = self.run(ctx, v)
       // if(ctx.findOptionOrDefault(SharedOptions.optStrictPhases)) ctx.reporter.terminateIfError()

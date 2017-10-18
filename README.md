@@ -1,24 +1,5 @@
 # Project Daisy
 
-Daisy is a framework for accuracy analysis of numerical programs whose aim
-is to be modular and extensible. It is currently very much work in progress,
-so stay tuned for updates and new features.
-
-The current functionality includes:
-- static analysis of roundoff errors in arithmetic expressions for various
-  floating-point and fixed-point precisions
-- code generation of fixed-point arithmetic code from mathematical expressions
-- dynamic analysis using rationals or arbitrary precision
-- formal certificate generation for analyses with interval arithmetic (in branch certification)
-
-## Contributors
-
-Many people have contributed to this code (in alphabetical order): 
-Heiko Becker, Einar Horn, Anastasiia Izycheva, Debasmita Lohar, Raphaël Monat, Ezequiel Postan, Fabian Ritter, Saksham Sharma
-
-## Documentation
-
-  To come soon.
 
 ## First steps
 
@@ -68,10 +49,16 @@ To see all command-line options:
 ```
 
 If you don't want to run in interactive mode, you can also call all of the above
-commands simply with 'sbt' prefixed, e.g. $ sbt compile.
+commands simply with 'sbt' prefixed, e.g.
+```
+$ sbt compile.
+```
 
-You can also run Daisy outside of sbt. For this use '$ sbt script' which will
-generate a script called 'daisy' which includes all the necessary files (and then some).
+You can also run Daisy outside of sbt. For this use 
+```
+$ sbt script
+```
+which will generate a script called 'daisy' which includes all the necessary files.
 You can then run Daisy on an input file as follows:
 ```bash
 $ ./daisy testcases/rosa/Doppler.scala
@@ -86,7 +73,24 @@ Currently, this is
 [install it first on your machine](https://github.com/Z3Prover/z3).
 
 * MPFR: Daisy uses a [Java binding](https://github.com/kframework/mpfr-java).
+(TODO: figure out whether we used the static or dynamic binding)
 
+## Documentation
+
+To come.
+
+## Intellij Idea Setup
+To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins. 
+Choose Scala in the list and select "Install JetBrains Plugin ...". 
+Then let Idea know where is your Scala (or make sure Scala SDK is already there): Project Structure -> Global Libraries -> New Global Library -> Scala SDK -> select the source folder for the SDK on your machine.
+Also make sure the Java SDK is set up for Idea (Project Structure -> SDKs -> check that your JDK is here or add it here).
+
+Choose File -> New -> Project from Existing Source -> path-to-the-build.sbt-file
+or
+File -> New -> Project from Version Control -> Git -> and put git-rts@gitlab.mpi-sws.org:AVA/daisy.git into the URL field and 
+select the destination folder for source files to be copied.
+
+After the setup run Daisy in the Terminal of Intellij Idea using sbt as described above.
 
 Acknowledgements
 ----

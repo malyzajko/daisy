@@ -31,7 +31,7 @@ trait CodeExtraction extends ASTExtractors {
   import StructuralExtractors._
   import scala.collection.immutable.Set
 
-  val reporter = self.ctx.reporter
+  val cfg: Config
 
   implicit val debugSection = DebugSectionFrontend
 
@@ -75,7 +75,7 @@ trait CodeExtraction extends ASTExtractors {
           " (Tree: " + strWr.toString + " ; Class: " + t.getClass + ")"
         }.getOrElse("")
 
-      reporter.error(pos, msg + debugInfo)
+      cfg.reporter.error(pos, msg + debugInfo)
     }
   }
 
@@ -138,7 +138,7 @@ trait CodeExtraction extends ASTExtractors {
                 None
 
               case tree =>
-                println(tree)
+                cfg.reporter.error(tree)
                 outOfSubsetError(tree, "Unexpected def in top-level object of class: " + tree.getClass);
             }
             t
@@ -146,7 +146,7 @@ trait CodeExtraction extends ASTExtractors {
             outOfSubsetError(NoPosition, "Unexpected top-level object found: " + x)
         }
 
-        // println("defsToDefs: " + defsToDefs)
+        // cfg.reporter.info("defsToDefs: " + defsToDefs)
 
         // Step 2: fill in function bodies
         val daisyProgram = defs.head match {
@@ -154,15 +154,15 @@ trait CodeExtraction extends ASTExtractors {
             val id = FreshIdentifier(n)
             val funDefs = templ.body.flatMap {
               case ExFunctionDef(sym, _, _, _, rhs) =>
-                // println("going to extract: " + sym)
+                // cfg.reporter.info("going to extract: " + sym)
                 Some(extractFunBody(sym, rhs))
               case _ => None
             }
             DaisyProgram(id, funDefs)
         }
 
-        reporter.debug("Extracted the following program:")
-        reporter.debug(daisyProgram)
+        cfg.reporter.debug("Extracted the following program:")
+        cfg.reporter.debug(daisyProgram)
 
         Some(daisyProgram)
       } catch {
@@ -188,7 +188,7 @@ trait CodeExtraction extends ASTExtractors {
 
     private def isLibrary(u: CompilationUnit) = {
       // TODO: big hack
-      u.source.file.absolute.path.endsWith(self.ctx.libFiles.head)
+      u.source.file.absolute.path.endsWith(self.cfg.option[List[String]]("libFiles").head)
     }
 
     private def getSelectChain(e: Tree): List[String] = {
@@ -197,7 +197,7 @@ trait CodeExtraction extends ASTExtractors {
         case Ident(name) => List(name)
         case EmptyTree => List()
         case _ =>
-          ctx.reporter.internalError("getSelectChain: unexpected Tree:\n" + e.toString)
+          cfg.reporter.internalError("getSelectChain: unexpected Tree:\n" + e.toString)
       }
       rec(e).reverseMap(_.toString)
     }
@@ -325,7 +325,7 @@ trait CodeExtraction extends ASTExtractors {
       } catch {
         case e: OutOfSubsetException =>
           e.emit()
-          reporter.error(sym.pos, "Function " + tmpFunDef.id.name + " could not be extracted.")
+          cfg.reporter.error(sym.pos, "Function " + tmpFunDef.id.name + " could not be extracted.")
           NoTree(returnType)
       }
 
@@ -371,7 +371,7 @@ trait CodeExtraction extends ASTExtractors {
 
       var rest = tmpRest
 
-      // println("extracting: " + current)
+      // cfg.reporter.info("extracting: " + current)
 
       val res = current match {
 
@@ -458,7 +458,7 @@ trait CodeExtraction extends ASTExtractors {
           }
 
         case ex @  ExIdentifier(sym, tpt) =>
-          println("matched ex id")
+          cfg.reporter.info("matched ex id")
           null
 
         /* ----- Unary ops ----- */
@@ -515,6 +515,9 @@ trait CodeExtraction extends ASTExtractors {
               or(a1, a2)
           }
 
+        /* ----- Ternary ops ----- */
+        case ExFMA(f1, f2, s) => FMA(extractTree(f1), extractTree(f2), extractTree(s))
+
         /* ----- Let ----- */
         case ExValDef(vs, tpt, bdy) =>
           val binderTpe = extractType(tpt)
@@ -535,10 +538,7 @@ trait CodeExtraction extends ASTExtractors {
 
         case ExIfThenElse(t1,t2,t3) =>
           def containsLetDef(expr: DaisyExpr): Boolean = {
-            lang.TreeOps.exists {
-              case (l: Let) => true
-              case _ => false
-            }(expr)
+            lang.TreeOps.exists { case Let(_,_,_) => true }(expr)
           }
 
           val r1 = extractTree(t1)

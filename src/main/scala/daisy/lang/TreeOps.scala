@@ -139,8 +139,8 @@ object TreeOps {
   }
 
   /** Checks if the predicate holds in some sub-expression */
-  def exists(matcher: Expr => Boolean)(e: Expr): Boolean = {
-    fold[Boolean]({(e, subs) =>  matcher(e) || subs.contains(true)})(e)
+  def exists(matcher: PartialFunction[Expr, Boolean])(e: Expr): Boolean = {
+    fold[Boolean]({(e, subs) => PartialFunction.cond(e)(matcher) || subs.contains(true)})(e)
   }
 
   /** Computes the negation of a boolean formula, with some simplifications. */

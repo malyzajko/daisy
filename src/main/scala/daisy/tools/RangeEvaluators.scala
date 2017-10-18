@@ -3,9 +3,7 @@
 package daisy
 package tools
 
-import scala.collection.immutable.Seq
-
-
+import daisy.utils.CachingMap
 import lang.Trees._
 import lang.Identifiers._
 
@@ -30,64 +28,59 @@ trait RangeEvaluators {
     initValMap: Map[Identifier, T],
     rangeFromReal: Rational => T): (T, Map[Expr, T]) = {
 
-    // TODO: we could even do easy caching now, since we can just check whether the
-    // stuff is already computed...
-    var intermediateRanges: Map[Expr, T] = Map.empty
+    var intermediateRanges: CachingMap[Expr, T] = new CachingMap[Expr, T]
 
-    def eval(e: Expr, valMap: Map[Identifier, T]): T = (e: @unchecked) match {
+    for ((id, range) <- initValMap){
+      intermediateRanges.put(Variable(id), range)
+    }
 
-      case x @ RealLiteral(r) =>
-        val range = rangeFromReal(r)
-        intermediateRanges += (x -> range)
-        range
+    def eval(e: Expr): T = intermediateRanges.getOrAdd(e, {
 
-      case x @ Variable(id) =>
-        // we update the map each time we encounter a variable, in principle
-        // we only need to do this once though. Perhaps optimise?
-        val range = valMap(id)
-        intermediateRanges += (x -> range)
-        range
+      // TODO: these should ideally be also put initially into intermediateRanges,
+      // once Deltas and Epsilons are Variables
+      case x @ Delta(id) => initValMap(id)
 
-      case x @ Plus(lhs, rhs) =>
-        val range = eval(lhs, valMap) + eval(rhs, valMap)
-        intermediateRanges += (x -> range)
-        range
+      case x @ Epsilon(id) => initValMap(id)
 
-      case x @ Minus(lhs, rhs) =>
-        val range = eval(lhs, valMap) - eval(rhs, valMap)
-        intermediateRanges += (x -> range)
-        range
+      case x @ RealLiteral(r) => rangeFromReal(r)
 
-      case x @ Times(lhs, rhs) =>
-        val range = eval(lhs, valMap) * eval(rhs, valMap)
-        intermediateRanges += (x -> range)
-        range
+      case x @ Plus(lhs, rhs) => eval(lhs) + eval(rhs)
 
+      case x @ Minus(lhs, rhs) => eval(lhs) - eval(rhs)
 
-      case x @ Division(lhs, rhs) =>
-        val range = eval(lhs, valMap) / eval(rhs, valMap)
-        intermediateRanges += (x -> range)
-        range
+      case x @ Times(lhs, rhs) => eval(lhs) * eval(rhs)
 
-      case x @ UMinus(t) =>
-        val range = - eval(t, valMap)
-        intermediateRanges += (x -> range)
-        range
+      case x @ FMA(fac1, fac2, sum) => eval(fac1) * eval(fac2) + eval(sum)
 
-      case x @ Sqrt(t) =>
-        val range = eval(t, valMap).squareRoot
-        intermediateRanges += (x -> range)
-        range
+      case x @ Division(lhs, rhs) => eval(lhs) / eval(rhs)
 
+      case x @ Pow(t, n) => eval(t) ^ eval(n)
+
+      case x @ UMinus(t) => - eval(t)
+
+      case x @ Sqrt(t) => eval(t).squareRoot
+
+      case x @ Sin(t) => eval(t).sine
+
+      case x @ Cos(t) => eval(t).cosine
+
+      case x @ Tan(t) => eval(t).tangent
+
+      case x @ Exp(t) => eval(t).exp
+
+      case x @ Log(t) => eval(t).log
 
       case x @ Let(id, value, body) =>
-        val valueRange = eval(value, valMap)
-        // TODO: do we need the ranges also of the Let's?
-        eval(body, valMap + (id -> valueRange))
+        intermediateRanges.put(Variable(id), eval(value))
+        eval(body)
 
-    }
-    val res = eval(expr, initValMap)
-    (res, intermediateRanges)
+      case Variable(_) => throw new Exception("Unknown variable")
+
+      case _ =>
+        throw new Exception("Not supported")
+    })
+    val res = eval(expr)
+    (res, intermediateRanges.toMap)
   }
 
 

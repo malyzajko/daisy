@@ -4,25 +4,31 @@ version := "0.0"
 
 organization := "org.mpi-sws.ava"
 
-scalaVersion := "2.11.6"
+//enablePlugins(ScalaNativePlugin)
+
+scalaVersion := "2.11.11"
 
 scalacOptions ++= Seq(
     "-deprecation",
     "-unchecked",
-    "-feature"
-)
+    "-feature")
 
 resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/"
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
 
 libraryDependencies ++= Seq(
-    "org.scala-lang" % "scala-compiler" % "2.11.6",
+    "org.scala-lang" % "scala-compiler" % "2.11.11",
     "org.scalatest" % "scalatest_2.11" % "2.2.4" % "test",
     "com.storm-enroute" %% "scalameter" % "0.7",
     "org.fusesource.hawtjni" % "hawtjni-runtime" % "1.9"  //for JNI
 )
 
+envVars := Map("LC_NUMERIC" -> "en_US.UTF-8")
+
 Keys.fork in run := true
+
+javaOptions in run ++= Seq(
+    "-Xms256M", "-Xmx2G", "-XX:+UseConcMarkSweepGC")
 
 Keys.fork in Test := true   //for native libraries to be on correct path
 
@@ -78,7 +84,12 @@ script := {
                     |
                     |SCALACLASSPATH="$paths"
                     |
+                    |TMP=$$LC_NUMERIC
+                    |LC_NUMERIC=en_US.UTF-8
+                    |
                     |java -Xmx2G -Xms512M -Xss64M -classpath "$${SCALACLASSPATH}" -Dscala.usejavacp=false scala.tools.nsc.MainGenericRunner -classpath "$${SCALACLASSPATH}" daisy.Main $$@ 2>&1 | tee -i last.log
+                    |
+                    |LC_NUMERIC=$$TMP
                     |""".stripMargin)
     f.setExecutable(true)
   } catch {

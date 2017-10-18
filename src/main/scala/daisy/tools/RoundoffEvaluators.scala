@@ -3,13 +3,11 @@
 package daisy
 package tools
 
-import scala.collection.immutable.Seq
-
 import lang.Trees._
 import lang.Identifiers._
-import lang.TreeOps.allVariablesOf
 import FinitePrecision._
-import Rational.{min, abs, sqrtDown, one}
+import Rational._
+import daisy.utils.CachingMap
 
 trait RoundoffEvaluators extends RangeEvaluators {
 
@@ -29,20 +27,20 @@ trait RoundoffEvaluators extends RangeEvaluators {
     inputValMap: Map[Identifier, Interval],
     inputErrorMap: Map[Identifier, Rational],
     uniformPrecision: Precision,
-    trackRoundoffErrors: Boolean = true): (Rational, Interval) = {
+    trackRoundoffErrors: Boolean = true,
+    approxRoundoff: Boolean = false): (Rational, Interval) = {
 
     val (resRange, intermediateRanges) = evalRange[Interval](expr, inputValMap, Interval.apply)
 
-    // println(intermediateRanges.mkString("\n"))
-
     val (resRoundoff, allErrors) = evalRoundoff[AffineForm](expr, intermediateRanges,
-      allVariablesOf(expr).map(id => (id -> uniformPrecision)).toMap,
-      inputErrorMap.map(x => (x._1 -> AffineForm.fromError(x._2))),
+      Map.empty.withDefaultValue(uniformPrecision),
+      inputErrorMap.mapValues(AffineForm.+/-),
       zeroError = AffineForm.zero,
-      fromError = AffineForm.fromError,
+      fromError = AffineForm.+/-,
       interval2T = AffineForm.apply,
       constantsPrecision = uniformPrecision,
-      trackRoundoffErrors)
+      trackRoundoffErrors,
+      approxRoundoff)
 
     (Interval.maxAbs(resRoundoff.toInterval), resRange)
   }
@@ -61,20 +59,22 @@ trait RoundoffEvaluators extends RangeEvaluators {
     inputValMap: Map[Identifier, Interval],
     inputErrorMap: Map[Identifier, Rational],
     uniformPrecision: Precision,
-    trackRoundoffErrors: Boolean = true): (Rational, Interval) = {
+    trackRoundoffErrors: Boolean = true,
+    approxRoundoff: Boolean = false): (Rational, Interval) = {
 
     val (resRange, intermediateRanges) = evalRange[AffineForm](expr,
-      inputValMap.map(x => (x._1 -> AffineForm(x._2))), AffineForm.apply)
+      inputValMap.mapValues(AffineForm(_)), AffineForm.apply)
 
     val (resRoundoff, allErrors) = evalRoundoff[AffineForm](expr,
-      intermediateRanges.map(x => (x._1 -> x._2.toInterval)),
-      allVariablesOf(expr).map(id => (id -> uniformPrecision)).toMap,
-      inputErrorMap.map(x => (x._1 -> AffineForm.fromError(x._2))),
+      intermediateRanges.mapValues(_.toInterval),
+      Map.empty.withDefaultValue(uniformPrecision),
+      inputErrorMap.mapValues(AffineForm.+/-),
       zeroError = AffineForm.zero,
-      fromError = AffineForm.fromError,
+      fromError = AffineForm.+/-,
       interval2T = AffineForm.apply,
       constantsPrecision = uniformPrecision,
-      trackRoundoffErrors)
+      trackRoundoffErrors,
+      approxRoundoff)
 
     (Interval.maxAbs(resRoundoff.toInterval), resRange.toInterval)
   }
@@ -93,21 +93,23 @@ trait RoundoffEvaluators extends RangeEvaluators {
     inputValMap: Map[Identifier, Interval],
     inputErrorMap: Map[Identifier, Rational],
     uniformPrecision: Precision,
-    trackRoundoffErrors: Boolean = true): (Rational, Interval) = {
+    trackRoundoffErrors: Boolean = true,
+    approxRoundoff: Boolean = false): (Rational, Interval) = {
 
     val (resRange, intermediateRanges) = evalRange[SMTRange](expr,
       inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }),
       SMTRange.apply)
 
     val (resRoundoff, allErrors) = evalRoundoff[AffineForm](expr,
-      intermediateRanges.map(x => (x._1 -> x._2.toInterval)),
-      allVariablesOf(expr).map(id => (id -> uniformPrecision)).toMap,
-      inputErrorMap.map(x => (x._1 -> AffineForm.fromError(x._2))),
+      intermediateRanges.mapValues(_.toInterval),
+      Map.empty.withDefaultValue(uniformPrecision),
+      inputErrorMap.mapValues(AffineForm.+/-),
       zeroError = AffineForm.zero,
-      fromError = AffineForm.fromError,
+      fromError = AffineForm.+/-,
       interval2T = AffineForm.apply,
       constantsPrecision = uniformPrecision,
-      trackRoundoffErrors)
+      trackRoundoffErrors,
+      approxRoundoff)
 
     (Interval.maxAbs(resRoundoff.toInterval), resRange.toInterval)
   }
@@ -123,162 +125,250 @@ trait RoundoffEvaluators extends RangeEvaluators {
    */
   def evalRoundoff[T <: RangeArithmetic[T]](
     expr: Expr,
-    rangeMap: Map[Expr, Interval],
-    precisionMap: Map[Identifier, Precision],
-    initErrorMap: Map[Identifier, T],
+    range: Map[Expr, Interval],
+    precision: Map[Identifier, Precision],
+    freeVarsError: Map[Identifier, T],
     zeroError: T,
     fromError: Rational => T,
     interval2T: Interval => T,
     constantsPrecision: Precision,
-    trackRoundoffErrors: Boolean         // if false, propagate only initial errors
+    trackRoundoffErrors: Boolean, // if false, propagate only initial errors
+    approxRoundoff: Boolean = false
     ): (T, Map[Expr, T]) = {
 
 
-    var intermediateErrors: Map[Expr, T] = Map.empty
+    val intermediateErrors = new CachingMap[Expr, (T, Precision)]
+
+    for ((id, err) <- freeVarsError){
+      intermediateErrors.put(Variable(id), (err, precision(id)))
+    }
 
     // TODO: check the effectiveness of this
     // @inline
-    def computeNewError(range: Interval, propagatedError: T, prec: Precision): T =
+    def computeNewError(range: Interval, propagatedError: T, prec: Precision): (T, Precision) =
       if (trackRoundoffErrors) {
         val actualRange: Interval = range + propagatedError.toInterval
-        val rndoff = prec.absRoundoff(actualRange)
-        propagatedError +/- rndoff
+        var rndoff = prec.absRoundoff(actualRange)
+        if (approxRoundoff) {
+          rndoff = Rational.limitSize(rndoff)
+        }
+        (propagatedError +/- rndoff, prec)
       } else {
-        propagatedError
+        (propagatedError, prec)
       }
 
-    def eval(e: Expr, errorMap: Map[Identifier, T]): (T, Precision) = (e: @unchecked) match {
+    def computeNewErrorTranscendental(range: Interval, propagatedError: T, prec: Precision): (T, Precision) =
+      if (trackRoundoffErrors) {
+        val actualRange: Interval = range + propagatedError.toInterval
+        var rndoff = prec.absTranscendentalRoundoff(actualRange)
+        if (approxRoundoff) {
+          rndoff = Rational.limitSize(rndoff)
+        }
+        (propagatedError +/- rndoff, prec)
+      } else {
+        (propagatedError, prec)
+      }
+
+    def eval(e: Expr): (T, Precision) = intermediateErrors.getOrAdd(e, {
 
       case x @ RealLiteral(r) =>
-        val rndoff = if (isExactInFloats(r, constantsPrecision) || !trackRoundoffErrors) {
+        val error = if (constantsPrecision.canRepresent(r) || !trackRoundoffErrors) {
           zeroError
         } else {
           fromError(constantsPrecision.absRoundoff(r))
         }
-        intermediateErrors += (x -> rndoff)
-        (rndoff, constantsPrecision)
-
-      case x @ Variable(id) =>
-        // TODO: if the error is just a roundoff, then we can also compute it here...
-        val rndoff = errorMap(id)
-        intermediateErrors += (x -> rndoff)
-        (rndoff, precisionMap(id))
+        (error, constantsPrecision)
 
       case x @ Plus(lhs, rhs) =>
-        val range = rangeMap(x)
+        val (errorLhs, precLhs) = eval(lhs)
+        val (errorRhs, precRhs) = eval(rhs)
 
-        val (rndoffLhs, precLhs) = eval(lhs, errorMap)
-        val (rndoffRhs, precRhs) = eval(rhs, errorMap)
-        val propagatedError = rndoffLhs + rndoffRhs
+        val propagatedError = errorLhs + errorRhs
 
-        val prec = getUpperBound(precLhs, precRhs)  // Scala semantics
-        val rndoff = computeNewError(range, propagatedError, prec)
-        intermediateErrors += (x -> rndoff)
-        (rndoff, prec)
+        computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs)  /* Scala semantics */)
 
       case x @ Minus(lhs, rhs) =>
-        val range = rangeMap(x)
+        val (errorLhs, precLhs) = eval(lhs)
+        val (errorRhs, precRhs) = eval(rhs)
 
-        val (rndoffLhs, precLhs) = eval(lhs, errorMap)
-        val (rndoffRhs, precRhs) = eval(rhs, errorMap)
-        val propagatedError = rndoffLhs - rndoffRhs
+        val propagatedError = errorLhs - errorRhs
 
-        val prec = getUpperBound(precLhs, precRhs)
-        val rndoff = computeNewError(range, propagatedError, prec)
-        intermediateErrors += (x -> rndoff)
-        (rndoff, prec)
+        computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs))
 
       case x @ Times(lhs, rhs) =>
-        val range = rangeMap(x)
-        val rangeLhs = rangeMap(lhs)
-        val rangeRhs = rangeMap(rhs)
+        val (errorLhs, precLhs) = eval(lhs)
+        val (errorRhs, precRhs) = eval(rhs)
 
-        val (rndoffLhs, precLhs) = eval(lhs, errorMap)
-        val (rndoffRhs, precRhs) = eval(rhs, errorMap)
+        val rangeLhs = interval2T(range(lhs))
+        val rangeRhs = interval2T(range(rhs))
 
         val propagatedError =
-          interval2T(rangeLhs) * rndoffRhs +
-          interval2T(rangeRhs) * rndoffLhs +
-          rndoffLhs * rndoffRhs
+          rangeLhs * errorRhs +
+          rangeRhs * errorLhs +
+          errorLhs * errorRhs
 
-        val prec = getUpperBound(precLhs, precRhs)
-        val rndoff = computeNewError(range, propagatedError, prec)
-        intermediateErrors += (x -> rndoff)
-        (rndoff, prec)
+        computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs))
 
+      case x @ FMA(fac1, fac2, sum) =>
+        val (errorFac1, precFac1) = eval(fac1)
+        val (errorFac2, precFac2) = eval(fac2)
+        val (errorSum, precSum) = eval(sum)
+
+        val rangeFac1 = interval2T(range(fac1))
+        val rangeFac2 = interval2T(range(fac2))
+        val rangeSum = interval2T(range(sum))
+
+        val propagatedError =
+          rangeFac1 * errorFac2 +
+          rangeFac2 * errorFac1 +
+          errorFac1 * errorFac2 +
+          errorSum
+
+        computeNewError(range(x), propagatedError, getUpperBound(precFac1, precFac2, precSum))
 
       case x @ Division(lhs, rhs) =>
-        val range = rangeMap(x)
-        val rangeLhs = rangeMap(lhs)
-        val rangeRhs = rangeMap(rhs)
+        val (errorLhs, precLhs) = eval(lhs)
+        val (errorRhs, precRhs) = eval(rhs)
 
-        val (rndoffLhs, precLhs) = eval(lhs, errorMap)
-        val (rndoffRhs, precRhs) = eval(rhs, errorMap)
+        val rangeLhs = range(lhs)
+        val rangeRhs = range(rhs)
 
         // inverse, i.e. we are computing x * (1/y)
-        val rightInterval = rangeRhs + rndoffRhs.toInterval // the actual interval, incl errors
+        val rightInterval = rangeRhs + errorRhs.toInterval // the actual interval, incl errors
 
         // the actual error interval can now contain 0, check this
-        if (rightInterval.xlo <= 0 && rightInterval.xhi >= 0) {
+        if (rightInterval.includes(Rational.zero)) {
           throw DivisionByZeroException("trying to divide by error interval containing 0")
         }
-        val a = min(abs(rightInterval.xlo), abs(rightInterval.xhi))
+        val a = Interval.minAbs(rightInterval)
         val errorMultiplier: Rational = -one / (a*a)
-        val invErr = rndoffRhs * errorMultiplier
+        val invErr = errorRhs * errorMultiplier
 
         // error propagation
         val inverse: Interval = rangeRhs.inverse
 
         var propagatedError =
           interval2T(rangeLhs) * invErr +
-          interval2T(inverse) * rndoffLhs +
-          rndoffLhs * invErr
+          interval2T(inverse) * errorLhs +
+          errorLhs * invErr
 
-        val prec = getUpperBound(precLhs, precRhs)
-        val rndoff = computeNewError(range, propagatedError, prec)
-        intermediateErrors += (x -> rndoff)
-        (rndoff, prec)
+        computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs))
 
       case x @ UMinus(t) =>
-        val (rndoff, prec) = eval(t, errorMap)
-        intermediateErrors += (x -> - rndoff)
-        (- rndoff, prec)
+        val (error, prec) = eval(t)
+        (- error, prec)
 
       case x @ Sqrt(t) =>
         // TODO: needs to fail for fixed-point precision
-        val range = rangeMap(x)
-        val rangeT = rangeMap(t)
-        val (errorT, prec) = eval(t, errorMap)
+        val (errorT, prec) = eval(t)
+        val rangeT = range(t)
 
-        val tInterval = rangeT
-        val a = min(abs(tInterval.xlo), abs(tInterval.xhi))
+        if ((errorT.toInterval.xlo + rangeT.xlo) < Rational.zero) {
+          throw DivisionByZeroException("trying to take the square root of a negative number")
+        }
+
+        val a = Interval.minAbs(rangeT)
         val errorMultiplier = Rational(1L, 2L) / sqrtDown(a)
+
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        val rndoff = computeNewError(range, propagatedError, prec)
+        computeNewError(range(x), propagatedError, prec)
 
-        intermediateErrors += (x -> rndoff)
-        (rndoff, prec)
+      case x @ Sin(t) =>
+        // TODO not supported for fixed-points
+        val (errorT, prec) = eval(t)
 
+        // Bound the slope of sin(x) over the range by computing its
+        // derivative (i.e. cos(x)) as an interval and then taking the bound
+        // with the larger absolute value.
+        val deriv =  range(t).cosine
+        val errorMultiplier = if (abs(deriv.xlo) > abs(deriv.xhi)) deriv.xlo else deriv.xhi
+        val propagatedError = errorT * errorMultiplier
+
+        // TODO: check that this operation exists for this precision
+        computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+      case x @ Cos(t) =>
+        // TODO not supported for fixed-points
+        val (errorT, prec) = eval(t)
+
+        // Bound the slope of cos(x) over the range by computing its
+        // derivative (i.e. -sin(x)) as an interval and then taking the bound
+        // with the larger absolute value.
+        val deriv = -range(t).sine
+        val errorMultiplier = if (abs(deriv.xlo) > abs(deriv.xhi)) deriv.xlo else deriv.xhi
+        val propagatedError = errorT * errorMultiplier
+
+        // TODO: check that this operation exists for this precision
+        computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+      case x @ Tan(t) =>
+        // TODO not supported for fixed-points
+        val (errorT, prec) = eval(t)
+
+        // compute the derivative as 1/cos^2(x)
+        val intCosine = range(t).cosine
+        val deriv = (intCosine * intCosine).inverse
+
+        val errorMultiplier = if (abs(deriv.xlo) > abs(deriv.xhi)) deriv.xlo else deriv.xhi
+        val propagatedError = errorT * errorMultiplier
+
+        // TODO: check that this operation exists for this precision
+        computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+      case x @ Exp(t) =>
+        // TODO not supported for fixed-points
+        val (errorT, prec) = eval(t)
+
+        // maximal slope is always at the right ending point
+        val b = range(t).xhi
+
+        // compute the maximal slope over the interval
+        // (exp(x) is the derivative of exp(x))
+        val errorMultiplier = expUp(b)
+
+        val propagatedError = errorT * errorMultiplier
+
+        // TODO: check that this operation exists for this precision
+        computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+      case x @ Log(t) =>
+        // TODO not supported for fixed-points
+        val (errorT, prec) = eval(t)
+
+        // maximal slope is always at the left ending point
+        val a = range(t).xlo
+
+        // compute the maximal slope over the interval (1/x is the derivative of log(x))
+        val errorMultiplier = Rational.one / a
+
+        val propagatedError = errorT * errorMultiplier
+
+        // TODO: check that this operation exists for this precision
+        computeNewErrorTranscendental(range(x), propagatedError, prec)
 
       case x @ Let(id, value, body) =>
-        val (valueRndoff, valuePrec) = eval(value, errorMap)
+        val (valueError, valuePrec) = eval(value)
 
-        // downcast required
-        val idPrec = precisionMap(id)
-        val rndoff = if (idPrec < valuePrec) { // we need to cast down
-          val valueRange = rangeMap(value)
-          computeNewError(valueRange, valueRndoff, idPrec)
+        val idPrec = precision(id)
+        val error = if (idPrec < valuePrec) { // we need to cast down
+          val valueRange = range(value)
+          computeNewError(valueRange, valueError, idPrec)._1
         } else {
-          valueRndoff
+          valueError
         }
 
-        eval(body, errorMap + (id -> rndoff))
+        intermediateErrors.put(Variable(id), (error, valuePrec)) // no problem as identifiers are unique
+        eval(body)
 
-    }
-    val (resRndoff, resPrecision) = eval(expr, initErrorMap)
-    (resRndoff, intermediateErrors)
+      case Variable(_) => throw new Exception("Unknown variable")
+
+      case _ => throw new Exception("Not supported")
+
+    })
+    val (resError, resPrecision) = eval(expr)
+    (resError, intermediateErrors.mapValues(_._1).toMap)
   }
 
 

@@ -7,8 +7,7 @@ package lang
 import scala.collection.immutable.Seq
 import TypeOps._
 import Types._
-import utils.Positioned
-import tools.{Interval, Rational}
+import utils.{Positioned, PrettyPrinter}
 import Identifiers._
 import tools.FinitePrecision.{Float64, Precision}
 import tools.Rational
@@ -21,7 +20,7 @@ object Trees {
       this
     }
 
-    override def toString: String = PrettyPrinter(this)
+    override def toString: String = PrettyPrinter(this, Context())
 
     // copy keeps Identifiers intact, but looses positions
     def deepCopy: Tree
@@ -268,6 +267,12 @@ object Trees {
     val value: T
   }
 
+  /** $encodingof a 16-bit integer literal */
+  case class Int16Literal(value: Int) extends Literal[Int] {
+    val getType = Int16Type
+    def deepCopy: Int16Literal = Int16Literal(value)
+  }
+
   /** $encodingof a 32-bit integer literal */
   case class Int32Literal(value: Int) extends Literal[Int] {
     val getType = Int32Type
@@ -460,6 +465,12 @@ object Trees {
     def deepCopy: Times = Times(lhs.deepCopy, rhs.deepCopy)
   }
 
+  /** $encodingof `(... * ...) + ...` */
+  case class FMA(fac1: Expr, fac2: Expr, s: Expr) extends Expr {
+    val getType = fac1.getType
+    def deepCopy: FMA = FMA(fac1.deepCopy, fac2.deepCopy, s.deepCopy)
+  }
+
   /** $encodingof `... / ...` */
   case class Division(lhs: Expr, rhs: Expr) extends Expr {
     val getType = lhs.getType
@@ -481,7 +492,6 @@ object Trees {
   }
 
   case class Sqrt(t: Expr) extends Expr {
-    require(t.getType == RealType)
     // TODO: this operation may not be available for Float32
     val getType = t.getType
     def deepCopy: Sqrt = Sqrt(t.deepCopy)

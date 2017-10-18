@@ -8,7 +8,7 @@ import analysis.DynamicPhase._
 import lang.Trees._
 import lang.Identifiers._
 import Interval._
-import Rational._
+import Rational.max
 import FinitePrecision._
 
 import daisy.analysis.Sampler._
@@ -70,7 +70,7 @@ trait IntervalSubdivision extends RoundoffEvaluators {
 
       } else {
 
-        initErrorMap ++ missingIDs.map(id => (id -> zero))
+        initErrorMap ++ missingIDs.map(id => (id -> Rational.zero))
 
       }
 
@@ -267,7 +267,7 @@ trait IntervalSubdivision extends RoundoffEvaluators {
         val rErr = computeAndAttachError(rhs, errorMap)  //yErr
 
         val rInt = rhsInterval + rErr.toInterval // the actual interval, incl errors
-        val a = min(abs(rInt.xlo), abs(rInt.xhi))
+        val a = Interval.minAbs(rInt)
         val errorMultiplier = -one / (a*a)
 
         val invErr = rErr * AffineForm(errorMultiplier)
@@ -300,7 +300,7 @@ trait IntervalSubdivision extends RoundoffEvaluators {
         val tError = computeAndAttachError(t, errorMap)
 
         // propagated existing errors
-        val a = min(abs(tInterval.xlo), abs(tInterval.xhi))
+        val a = Interval.minAbs(tInterval)
         val errorMultiplier = Rational(1L, 2L) / sqrtDown(a)
         val propagatedError = tError * AffineForm(errorMultiplier)
 

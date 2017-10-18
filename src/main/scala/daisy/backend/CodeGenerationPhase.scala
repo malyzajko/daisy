@@ -3,132 +3,104 @@
 package daisy
 package backend
 
-import scala.collection.immutable.Seq
+import daisy.utils.CodePrinter
 
-import daisy.lang.{ScalaPrinter, PrettyPrinter}
+import scala.collection.immutable.Seq
 import lang.Trees._
 import lang.TreeOps.allVariablesOf
 import tools.FinitePrecision._
 import lang.Types._
 import lang.Extractors.ArithOperator
-import tools.{Rational, Interval}
+import tools.{Interval, Rational}
 import lang.Identifiers.Identifier
 
-object CodeGenerationPhase extends DaisyPhase {
-
-  override val name = "codegen"
+object CodeGenerationPhase extends PhaseComponent {
+  override val name = "Code Generation"
   override val description = "Generates (executable) code."
+  override val definedOptions: Set[CmdLineOption[Any]] = Set(
+    StringChoiceOption(
+      "lang",
+      Set("C", "Scala"),
+      "Scala",
+      "Language for which to generate code"),
+    FlagOption(
+      "genMain",
+      "Whether to generate a main method to run the code.")
+  )
+  override def apply(cfg: Config) = new CodeGenerationPhase(cfg, name, "codegen")
+}
 
-  // TODO: have this generate C code
-  override val definedOptions: Set[CmdLineOptionDef[Any]] = Set()
-
+class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase {
   implicit val debugSection = DebugSectionBackend
 
-  var reporter: Reporter = null
-
   def run(ctx: Context, prg: Program): (Context, Program) = {
-    reporter = ctx.reporter
-    reporter.info(s"\nStarting $name")
-    val timer = ctx.timers.rangeError.start
+    startRun()
 
-    var mixedPrecision: Boolean = false
-    var uniformPrecision: Precision = Float64
+    var mixedPrecision = cfg.hasFlag("mixedPrecision")
+    var uniformPrecision = cfg.option[Precision]("precision")
+    val lang = cfg.option[String]("lang")
 
-    /* Process relevant options */
-    for (opt <- ctx.options) opt match {
-      // this option is defined in RangeErrorPhase. This is not ideal,
-      // but since for now, Codegen will only be called after RangeErrorPhase
-      // it should be OK for now.
-      case ChoiceOption("precision", s) => s match {
-        case "Float32" => uniformPrecision = Float32
-        case "Float64" => uniformPrecision = Float64
-        case "DoubleDouble" => uniformPrecision = DoubleDouble
-        case "QuadDouble" => uniformPrecision = QuadDouble
-        case "Fixed16" => uniformPrecision = Fixed(16)
-        case "Fixed32" => uniformPrecision = Fixed(32)
-        case _ =>
-          ctx.reporter.warning(s"Unknown precision specified: $s, choosing default ($uniformPrecision)!")
-      }
-      case ParamOption("mixed-precision", _) => mixedPrecision = true
-      case _ => ;
-    }
-
-
-
-    val newProgram = if (ctx.fixedPoint) {
-      if (mixedPrecision) {
-        reporter.error("Mixed-precision code generation is currently not supported for fixed-points.")
-      }
-
-      (uniformPrecision: @unchecked) match {
-
-        case Fixed(b) =>
-          // if we have fixed-point code, we need to generate it first
-          val newDefs = prg.defs.map(fnc => if (!fnc.body.isEmpty && !fnc.precondition.isEmpty) {
-            val newBody = toFixedPointCode(fnc.body.get, Fixed(b),
-              ctx.intermediateRanges(fnc.id), ctx.intermediateAbsErrors(fnc.id))
-            val valDefType = if (b == 16) Int32Type else Int64Type
-            fnc.copy(
-              params = fnc.params.map(vd => ValDef(vd.id.changeType(valDefType))),
-              body = Some(newBody),
-              returnType = valDefType)
-          } else {
-            fnc
-          })
-
-          val newPrg = Program(prg.id, newDefs)
-          val fileLocation = "./output/" + prg.id + ".scala"
-          ctx.reporter.info("generating code in " + fileLocation)
-          writeScalaFile(fileLocation, newPrg)
-          newPrg
-      }
-
-    } else {
-      val precisionMap: Map[Identifier, Map[Identifier, Precision]] = if (mixedPrecision) {
-        ctx.specMixedPrecisions
-      } else {
-        prg.defs.map(fnc =>
-          if (fnc.body.isEmpty) {
-            (fnc.id -> Map[Identifier, Precision]())
-          } else {
-            (fnc.id -> allVariablesOf(fnc.body.get).map(id => (id -> uniformPrecision)).toMap)
+    val newProgram = uniformPrecision match {
+      case FixedPrecision(b) =>
+        if (mixedPrecision) {
+          cfg.reporter.error("Mixed-precision code generation is currently not supported for fixed-points.")
+        }
+        // if we have fixed-point code, we need to generate it first
+        val newDefs = prg.defs.map(fnc => if (!fnc.body.isEmpty && !fnc.precondition.isEmpty) {
+          val newBody = toFixedPointCode(fnc.body.get, FixedPrecision(b),
+            ctx.intermediateRanges(fnc.id), ctx.intermediateAbsErrors(fnc.id))
+          val valDefType = b match {
+            case 8 => Int16Type
+            case 16 => Int32Type
+            case 32 => Int64Type
           }
-        ).toMap
-      }
-      val returnPrecisionMap: Map[Identifier, Precision] = if (mixedPrecision) {
-        ctx.specInferredReturnTypes
-      } else {
-        prg.defs.map(fnc => (fnc.id -> uniformPrecision)).toMap
-      }
+          fnc.copy(
+            params = fnc.params.map(vd => ValDef(vd.id.changeType(valDefType))),
+            body = Some(newBody),
+            returnType = valDefType)
+        } else {
+          fnc
+        })
+        Program(prg.id, newDefs)
+      case up @ FloatPrecision(_) =>
+        val precisionMap: Map[Identifier, Map[Identifier, Precision]] = if (mixedPrecision) {
+          ctx.specMixedPrecisions
+        } else {
+          prg.defs.map(fnc =>
+            if (fnc.body.isEmpty) {
+              (fnc.id -> Map[Identifier, Precision]())
+            } else {
+              (fnc.id -> allVariablesOf(fnc.body.get).map(id => (id -> up)).toMap)
+            }
+          ).toMap
+        }
+        val returnPrecisionMap: Map[Identifier, Precision] = if (mixedPrecision) {
+          ctx.specInferredReturnTypes
+        } else {
+          prg.defs.map(fnc => (fnc.id -> up)).toMap
+        }
 
-      // if we have floating-point code, we need to just change the types
-      val fileLocation = "./output/" + prg.id + ".scala"
-      ctx.reporter.info("generating code in " + fileLocation)
-
-      val typedPrg = assignFloatType(prg, precisionMap, returnPrecisionMap, uniformPrecision)
-
-      writeScalaFile(fileLocation, typedPrg)
-      typedPrg
+        // if we have floating-point code, we need to just change the types
+        assignFloatType(prg, precisionMap, returnPrecisionMap, up)
     }
 
+    writeFile(newProgram, lang, ctx)
 
-
-    timer.stop
-    ctx.reporter.info(s"Finished $name")
-    (ctx, newProgram)
+    finishRun(ctx, newProgram)
   }
 
-  private def writeScalaFile(filename: String, prg: Program): Unit = {
+  private def writeFile(prg: Program, lang: String, ctx: Context): Unit = {
     import java.io.FileWriter
     import java.io.BufferedWriter
+    val filename = "./output/" + prg.id + CodePrinter.suffix(lang)
+    cfg.reporter.info("generating code in " + filename)
     val fstream = new FileWriter(filename)
     val out = new BufferedWriter(fstream)
-    out.write(ScalaPrinter.apply(prg))
-    out.close
+    CodePrinter(prg, ctx, lang, out, cfg)
   }
 
   private def assignFloatType(prg: Program, typeMaps: Map[Identifier, Map[Identifier, Precision]],
-    returnTypes: Map[Identifier, Precision], defaultPrecision: Precision): Program = {
+                              returnTypes: Map[Identifier, Precision], defaultPrecision: Precision): Program = {
 
     def changeType(e: Expr, tpeMap: Map[Identifier, Precision]): (Expr, Precision) = e match {
 
@@ -140,16 +112,11 @@ object CodeGenerationPhase extends DaisyPhase {
         tmp.stringValue = x.stringValue
         (tmp, defaultPrecision)
 
-      case ArithOperator(Seq(l, r), recons) =>
-        val (eLeft, pLeft) = changeType(l, tpeMap)
-        val (eRight, pRight) = changeType(r, tpeMap)
+      case ArithOperator(es_old, recons) =>
+        val (es, ps) = es_old.unzip(changeType(_, tpeMap))
 
-        val prec = getUpperBound(pLeft, pRight)
-        (recons(Seq(eLeft, eRight)), prec)
-
-      case ArithOperator(Seq(t), recons) =>
-        val (e, p) = changeType(t, tpeMap)
-        (recons(Seq(e)), p)
+        val prec = getUpperBound(ps: _*)
+        (recons(es), prec)
 
       case Let(id, value, body) =>
         val (eValue, valuePrec) = changeType(value, tpeMap)
@@ -176,7 +143,7 @@ object CodeGenerationPhase extends DaisyPhase {
           post,
           isField
         )
-      })
+    })
 
 
     Program(prg.id, newDefs)
@@ -188,8 +155,8 @@ object CodeGenerationPhase extends DaisyPhase {
    * @param fixed the (uniform) fixed-point precision to use
    * TODO: we also need to adjust the types, no?
    */
-  def toFixedPointCode(expr: Expr, format: Fixed, intermRanges: Map[Expr, Interval],
-    intermAbsErrors: Map[Expr, Rational]): Expr = {
+  def toFixedPointCode(expr: Expr, format: FixedPrecision, intermRanges: Map[Expr, Interval],
+                       intermAbsErrors: Map[Expr, Rational]): Expr = {
 
     @inline
     def getFractionalBits(e: Expr): Int = {
@@ -201,15 +168,17 @@ object CodeGenerationPhase extends DaisyPhase {
 
     def _toFPCode(e: Expr): Expr = (e: @unchecked) match {
       case x @ Variable(id) => format match {
-        case Fixed(16) => Variable(id.changeType(Int32Type))
-        case Fixed(32) => Variable(id.changeType(Int64Type))
+        case FixedPrecision(8) => Variable(id.changeType(Int16Type))
+        case FixedPrecision(16) => Variable(id.changeType(Int32Type))
+        case FixedPrecision(32) => Variable(id.changeType(Int64Type))
       }
 
       case RealLiteral(r) => // TODO: translate constant
         val f = format.fractionalBits(r)
         format match {
-          case Fixed(16) => Int32Literal((r * Rational.fromDouble(math.pow(2, f))).roundToInt)
-          case Fixed(32) => Int64Literal((r * Rational.fromDouble(math.pow(2, f))).roundToLong)
+          case FixedPrecision(8) => Int16Literal((r * Rational.fromDouble(math.pow(2, f))).roundToInt)
+          case FixedPrecision(16) => Int32Literal((r * Rational.fromDouble(math.pow(2, f))).roundToInt)
+          case FixedPrecision(32) => Int64Literal((r * Rational.fromDouble(math.pow(2, f))).roundToLong)
         }
 
       case UMinus(t) => UMinus(_toFPCode(t))
@@ -246,7 +215,7 @@ object CodeGenerationPhase extends DaisyPhase {
           RightShift(Plus(newLhs, newRhs), (fAligned - fRes))
         } else { // (fAligned < fRes) {
           // TODO: this sounds funny. does this ever happen?
-          reporter.warning("funny shifting condition is happening")
+          cfg.reporter.warning("funny shifting condition is happening")
           LeftShift(Plus(newLhs, newRhs), (fRes - fAligned))
 
         }
@@ -280,7 +249,7 @@ object CodeGenerationPhase extends DaisyPhase {
           RightShift(Minus(newLhs, newRhs), (fAligned - fRes))
         } else { // (fAligned < fRes) {
           // TODO: this sounds funny. does this ever happen?
-          reporter.warning("funny shifting condition is happening")
+          cfg.reporter.warning("funny shifting condition is happening")
           LeftShift(Minus(newLhs, newRhs), (fRes - fAligned))
         }
 
@@ -298,7 +267,7 @@ object CodeGenerationPhase extends DaisyPhase {
           RightShift(mult, (fMult - fRes))
         } else { // (fAligned < fRes) {
           // TODO: this sounds funny. does this ever happen?
-          reporter.warning("funny shifting condition is happening")
+          cfg.reporter.warning("funny shifting condition is happening")
           LeftShift(mult, (fRes - fMult))
         }
 

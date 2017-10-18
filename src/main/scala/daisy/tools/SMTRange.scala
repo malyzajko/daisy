@@ -11,7 +11,6 @@ import lang.Constructors._
 import lang.Identifiers._
 import lang.Types.RealType
 import Rational._
-
 import solvers.Solver
 
 
@@ -108,14 +107,17 @@ object SMTRange {
 
       if (hi - lo <= precisionThreshold || loopCount >= loopThreshold) {
         lo
-      } else
-      {
-        val mid = lo + (hi - lo) / two
+      } else {
+
+        var mid = lo + (hi - lo) / two
+
+        // Make numerator and denominator smaller to avoid unsound dReal results.
+        // It should not matter in which direction to round here.
+        mid = scaleToLongUp(mid)
 
         val solverQuery = And(condition, LessThan(t, RealLiteral(mid)))
         reporter.debug(s"\nloop count: $loopCount, [$lo, $hi], mid: ${mid}")
         reporter.debug(s"solverQuery: $solverQuery")
-
 
         // TODO: make this less inefficient, we are creating a new solver each time.
         val res = Solver.checkSat(solverQuery)
@@ -137,13 +139,16 @@ object SMTRange {
       if (hi - lo <= precisionThreshold || loopCount >= loopThreshold) {
         hi
       } else {
-        //        reporter.warning(s"HI: ACTUALLY doing something low $lo, hi $hi")
-        val mid = lo + (hi - lo) / two
+
+        var mid = lo + (hi - lo) / two
+
+        // Make numerator and denominator smaller to avoid unsound dReal results.
+        // It should not matter in which direction to round here.
+        mid = scaleToLongUp(mid)
 
         val solverQuery = And(condition, LessThan(RealLiteral(mid), t))
         reporter.debug(s"\nloop count: $loopCount, [$lo, $hi], mid: ${mid}")
         reporter.debug(s"solverQuery: $solverQuery")
-
 
         val res = Solver.checkSat(solverQuery)
         res match {
@@ -177,7 +182,6 @@ object SMTRange {
 
     def upperBoundIsTight: Boolean = {
       val solverQuery = And(condition, GreaterThan(t, RealLiteral(i.xhi - precisionThreshold)))
-
       val res = Solver.checkSat(solverQuery)
       res match {
         case Some(true) => true  // SAT
@@ -192,7 +196,7 @@ object SMTRange {
 
 
     if (lang.TreeOps.size(t) == 1) {
-      reporter.warning("Calling tightenRange on simple expression: " + t)
+      //reporter.warning("Calling tightenRange on simple expression: " + t)
       // TODO what to do?
       i
     } else {
@@ -270,6 +274,12 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
   def /(y: SMTRange): SMTRange = this / (y, lowPrecision, lowLoopThreshold)
   def ^(n: SMTRange): SMTRange = this ^ (n, lowPrecision, lowLoopThreshold)
   def squareRoot: SMTRange = this.squareRoot(lowPrecision, lowLoopThreshold)
+  def sine: SMTRange = this.sine(lowPrecision, lowLoopThreshold)
+  def cosine: SMTRange = this.cosine(lowPrecision, lowLoopThreshold)
+  def tangent: SMTRange = this.tangent(lowPrecision, lowLoopThreshold)
+  def exp: SMTRange = this.exp(lowPrecision, lowLoopThreshold)
+  def log: SMTRange = this.log(lowPrecision, lowLoopThreshold)
+
 
   def +(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
 
@@ -337,6 +347,41 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
     val newInterval = tightenBounds(this.interval.squareRoot, newTree, newConstraints,
       precision, maxLoops)
     SMTRange(newInterval, newTree, newConstraints)
+  }
+
+  def sine(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = Sin(this.tree)
+    val newInterval = tightenBounds(this.interval.sine, newTree, this.constraints,
+      precision, maxLoops)
+    SMTRange(newInterval, newTree, this.constraints)
+  }
+
+  def cosine(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = Cos(this.tree)
+    val newInterval = tightenBounds(this.interval.cosine, newTree, this.constraints,
+      precision, maxLoops)
+    SMTRange(newInterval, newTree, this.constraints)
+  }
+
+  def tangent(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = Tan(this.tree)
+    val newInterval = tightenBounds(this.interval.tangent, newTree, this.constraints,
+      precision, maxLoops)
+    SMTRange(newInterval, newTree, this.constraints)
+  }
+
+  def exp(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = Exp(this.tree)
+    val newInterval = tightenBounds(this.interval.exp, newTree, this.constraints,
+      precision, maxLoops)
+    SMTRange(newInterval, newTree, this.constraints)
+  }
+
+  def log(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = Log(this.tree)
+    val newInterval = tightenBounds(this.interval.log, newTree, this.constraints,
+      precision, maxLoops)
+    SMTRange(newInterval, newTree, this.constraints)
   }
 
   // function for now, later may be inlined

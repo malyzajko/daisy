@@ -5,7 +5,7 @@ package daisy
 
 import utils.{NoPosition, OffsetPosition, RangePosition, Position}
 
-abstract class Reporter(val debugSections: Set[DebugSection]) {
+abstract class Reporter(val debugSections: Set[DebugSection], silent: Boolean) {
 
   abstract class Severity
   case object INFO    extends Severity
@@ -41,7 +41,15 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
 
   def onCompilerProgress(current: Int, total: Int): Unit = {}
 
-  final def info(pos: Position, msg: Any): Unit    = emit(account(Message(INFO, pos, msg)))
+  // results get printed also when silent option is on
+  final def result(pos: Position, msg: Any): Unit    = emit(account(Message(INFO, pos, msg)))
+  final def info(pos: Position, msg: Any): Unit    = {
+    if (!silent) {
+      emit(account(Message(INFO, pos, msg)))
+    }
+  }
+
+  //final def info(pos: Position, msg: Any): Unit    = emit(account(Message(INFO, pos, msg)))
   final def warning(pos: Position, msg: Any): Unit = emit(account(Message(WARNING, pos, msg)))
   final def error(pos: Position, msg: Any): Unit   = emit(account(Message(ERROR, pos, msg)))
   final def title(pos: Position, msg: Any): Unit   = emit(account(Message(INFO, pos,
@@ -97,6 +105,7 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
 
 
   // No-position alternatives
+  final def result(msg: Any): Unit        = result(NoPosition, msg)
   final def info(msg: Any): Unit          = info(NoPosition, msg)
   final def warning(msg: Any): Unit       = warning(NoPosition, msg)
   final def error(msg: Any): Unit         = error(NoPosition, msg)
@@ -111,7 +120,7 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
     whenDebug(NoPosition, section)(body)
 }
 
-class DefaultReporter(debugSections: Set[DebugSection]) extends Reporter(debugSections) {
+class DefaultReporter(debugSections: Set[DebugSection], silent: Boolean = false) extends Reporter(debugSections, silent) {
   protected def severityToPrefix(sev: Severity): String = sev match {
     case ERROR    => "[" + Console.RED              + " Error  " + Console.RESET + "]"
     case WARNING  => "[" + Console.YELLOW           + "Warning " + Console.RESET + "]"

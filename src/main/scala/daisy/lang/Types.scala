@@ -47,6 +47,7 @@ object Types {
   case object BooleanType extends TypeTree
   case object UnitType extends TypeTree
   case object IntegerType extends TypeTree
+  case object Int16Type extends TypeTree
   case object Int32Type extends TypeTree
   case object Int64Type extends TypeTree
   case object RealType extends TypeTree

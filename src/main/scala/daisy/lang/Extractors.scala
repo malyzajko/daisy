@@ -22,6 +22,8 @@ object Extractors {
         Some(Seq(t1, t2), (es: Seq[Expr]) => Minus(es(0), es(1)))
       case Times(t1, t2) =>
         Some(Seq(t1, t2), (es: Seq[Expr]) => Times(es(0), es(1)))
+      case FMA(t1, t2, t3) =>
+        Some(Seq(t1,t2,t3), (es: Seq[Expr]) => FMA(es(0), es(1), es(2)))
       case Division(t1, t2) =>
         Some(Seq(t1, t2), (es: Seq[Expr]) => Division(es(0), es(1)))
       case Pow(t1, t2) =>
@@ -61,6 +63,8 @@ object Extractors {
         Some(Seq(t1, t2), (es: Seq[Expr]) => Minus(es(0), es(1)))
       case Times(t1, t2) =>
         Some(Seq(t1, t2), (es: Seq[Expr]) => Times(es(0), es(1)))
+      case FMA(t1, t2, t3) =>
+        Some(Seq(t1,t2,t3), (es: Seq[Expr]) => FMA(es(0), es(1), es(2)))
       case Division(t1, t2) =>
         Some(Seq(t1, t2), (es: Seq[Expr]) => Division(es(0), es(1)))
       case Pow(t1, t2) =>

@@ -1,4 +1,5 @@
-/* Copyright 2015 EPFL, Lausanne */
+// Original work Copyright 2009-2016 EPFL, Lausanne
+// Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy.lang
 
@@ -7,8 +8,6 @@ import scala.annotation.StaticAnnotation
 
 import scala.language.implicitConversions
 import scala.math.{ScalaNumericConversions, ScalaNumber}
-
-//import daisy.annotation._
 
 @ignore
 class ignore     extends StaticAnnotation
@@ -41,6 +40,9 @@ object Real {
 
     @ignore
     def pow(x: Real, y: Real): Real = ???
+
+    @ignore
+    def fma(x: Real, y: Real, z: Real): Real = ???
 }
 
 @ignore

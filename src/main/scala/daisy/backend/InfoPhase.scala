@@ -10,7 +10,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 
 import lang.Trees.{Program, Let, Expr}
-import tools.Rational
+import tools.{Interval, Rational}
 import Rational._
 
 /**
@@ -20,42 +20,43 @@ import Rational._
   Prerequisites:
     -
  */
-object InfoPhase extends DaisyPhase {
+object InfoPhase extends PhaseComponent {
+  override val name = "Info"
+  override val description = "Prints interesting information"
+  override val definedOptions: Set[CmdLineOption[Any]] = Set(
+    StringOption(
+      "info-log",
+      "Which file to write analysis results to. Default prints nothing, output file is created in rawdata/")
+  )
+  override def apply(cfg: Config) = new InfoPhase(cfg, name, "info")
+}
 
-  override val name = "info phase"
-  override val description = "prints interesting information"
-  override val definedOptions: Set[CmdLineOptionDef[Any]] = Set(
-    ParamOptionDef("info-log", "which file to write analysis results to, " +
-      "default prints nothing, output file is created in rawdata/", "")
-    )
-
-  // implicit val debugSection = ???
-
-  var reporter: Reporter = null
+class InfoPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase {
 
   override def run(ctx: Context, prg: Program): (Context, Program) = {
-    reporter = ctx.reporter
-    reporter.info(s"----- Results: -----")
-    val timer = ctx.timers.info.start
+    startRun()
 
-    var out: BufferedWriter = null
+    val out = cfg.option[Option[String]]("info-log")
+      .map(f => new BufferedWriter(new FileWriter("log/"+f)))
+      .orNull
 
-    /* Process relevant options */
-    for (opt <- ctx.options) opt match {
-      case ParamOption("info-log", file) if file != "" =>
-        out = new BufferedWriter(new FileWriter(s"log/$file"))
-      case _ => ;
-    }
+    for (fnc <- functionsToConsider(prg)){
 
-    for (fnc <- prg.defs) if (!fnc.precondition.isEmpty && !fnc.body.isEmpty){
-
-      reporter.info(fnc.id)
+      cfg.reporter.result(fnc.id)
 
       val absError = ctx.resultAbsoluteErrors.get(fnc.id)
       val range = ctx.resultRealRanges.get(fnc.id)
 
       val absErrorString = absError match {
-        case Some(x) => x.toString
+        case Some(x) =>
+          ctx.specResultErrorBounds.get(fnc.id) match {
+            case Some(specError) =>
+              if (x > specError) {
+                cfg.reporter.warning("Error bound is not satisfied!")
+              }
+            case _ =>
+          }
+          x.toString
         case None => "-"
       }
       val rangeString = range match {
@@ -72,10 +73,10 @@ object InfoPhase extends DaisyPhase {
         case None =>
           (absError, range) match {
             case (Some(e), Some(r)) =>
-              if (r.xlo <= zero && zero <= r.xhi) {
+              if (r.includes(zero)) {
                 "n/a"
               } else {
-                max(abs(e / r.xlo), abs(e / r.xhi)).toString
+                (e / Interval.minAbs(r)).toString
               }
 
             case _ => "-"
@@ -84,7 +85,7 @@ object InfoPhase extends DaisyPhase {
 
       val infoString: String =
         s"abs-error: ${absErrorString}, real range: ${rangeString},\nrel-error: ${relErrorString}"
-      reporter.info(infoString)
+      cfg.reporter.result(infoString)
 
       if (out != null) {
         out.write(fnc.id.toString + " ")
@@ -94,19 +95,11 @@ object InfoPhase extends DaisyPhase {
 
 
     if (solvers.Solver.unknownCounter != 0) {
-      reporter.warning(s"Solver returned unknown or timed out ${solvers.Solver.unknownCounter} times.")
+      cfg.reporter.warning(s"Solver returned unknown or timed out ${solvers.Solver.unknownCounter} times.")
 
     }
 
     if (out != null){ out.close }
-    timer.stop
-    ctx.reporter.info(s"--------------------")
-    (ctx, prg)
+    finishRun(ctx, prg)
   }
-
-  private def getLastExpression(e: Expr): Expr = e match {
-    case Let(_, _, body) => getLastExpression(body)
-    case _ => e
-  }
-
 }

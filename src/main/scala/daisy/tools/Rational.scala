@@ -62,6 +62,14 @@ object Rational {
     Rational(n, d)
   }
 
+  def powerTwo(exp: Int): Rational = {
+    if (exp < 0) {
+      Rational(oneBigInt, twoBigInt.pow(-exp))
+    } else {
+      Rational(twoBigInt.pow(exp), oneBigInt)
+    }
+  }
+
   def fromReal(dbl: Double): Rational = {
     val (n, d) = real2Fraction(dbl.toString)
     Rational(n, d)
@@ -76,30 +84,74 @@ object Rational {
   val one = Rational(oneBigInt, oneBigInt)
   val two = Rational(twoBigInt, oneBigInt)
 
-  // TODO/FIXME: unit test this? it is probably also not fully correctly rounded
+
   // This computes an approximation of the square root (only), since sqrt(x)
   // is not necessarily a rational number.
   def sqrtUp(x: Rational): Rational = {
-    // println("scaled: " + Rational.scaleToIntsUp(x).doubleValue)
-    // fromDouble(DirectedRounding.sqrtUp(Rational.scaleToIntsUp(x).doubleValue))
     val dblValue = Rational.scaleToIntsUp(x).doubleValue
     val mpfrSqrt = MPFRFloat.sqrt(MPFRFloat.fromDouble(dblValue))
     val mpfrString = mpfrSqrt.toString
-    // println(mpfrString)
     Rational.fromString(mpfrString)
   }
   def sqrtDown(x: Rational): Rational = {
-    // fromDouble(DirectedRounding.sqrtDown(Rational.scaleToIntsDown(x).doubleValue))
     val dblValue = Rational.scaleToIntsDown(x).doubleValue
     val mpfrSqrt = MPFRFloat.sqrt(MPFRFloat.fromDouble(dblValue))
     val mpfrString = mpfrSqrt.toString
-    // println(mpfrString)
     Rational.fromString(mpfrString)
   }
 
-  def sqrtUpNoScaling(x: Rational): Rational = ??? // fromDouble(DirectedRounding.sqrtUp(x.doubleValue))
-  def sqrtDownNoScaling(x: Rational): Rational = ???// fromDouble(DirectedRounding.sqrtDown(x.doubleValue))
+  def sineBounded(x: Rational, order: Int = 1): (Rational, Rational) = {
+    (sineDown(x), sineUp(x))
+  }
 
+  def sineUp(x: Rational): Rational = {
+    val dblValue = Rational.scaleToIntsUp(x).doubleValue
+    val mpfrexp = MPFRFloat.sin(MPFRFloat.fromDouble(dblValue))
+    val mpfrString = mpfrexp.toString
+    Rational.fromString(mpfrString)
+  }
+
+  def sineDown(x: Rational): Rational = {
+    val dblValue = Rational.scaleToIntsDown(x).doubleValue
+    val mpfrexp = MPFRFloat.sin(MPFRFloat.fromDouble(dblValue))
+    val mpfrString = mpfrexp.toString
+    Rational.fromString(mpfrString)
+  }
+
+  def expUp(x: Rational): Rational = {
+    val dblValue = Rational.scaleToIntsUp(x).doubleValue
+    val mpfrexp = MPFRFloat.exp(MPFRFloat.fromDouble(dblValue))
+    val mpfrString = mpfrexp.toString
+    Rational.fromString(mpfrString)
+  }
+  def expDown(x: Rational): Rational = {
+    val dblValue = Rational.scaleToIntsDown(x).doubleValue
+    val mpfrexp = MPFRFloat.exp(MPFRFloat.fromDouble(dblValue))
+    val mpfrString = mpfrexp.toString
+    Rational.fromString(mpfrString)
+  }
+
+  def logUp(x: Rational): Rational = {
+    val dblValue = Rational.scaleToIntsUp(x).doubleValue
+    val mpfrlog = MPFRFloat.log(MPFRFloat.fromDouble(dblValue))
+    val mpfrString = mpfrlog.toString
+    Rational.fromString(mpfrString)
+  }
+  def logDown(x: Rational): Rational = {
+    val dblValue = Rational.scaleToIntsDown(x).doubleValue
+    val mpfrlog = MPFRFloat.log(MPFRFloat.fromDouble(dblValue))
+    val mpfrString = mpfrlog.toString
+    Rational.fromString(mpfrString)
+  }
+
+
+  /*
+    Constructors for rationals.
+  */
+  /*def apply(dbl: Double): Rational = {    // ambiguous
+    val (n, d) = double2Fraction(dbl)
+    Rational(n, d)
+  }*/
 
   // Takes a string representing a real value and returns a fraction equal to it.
   // We assume this string comes directly from variable.toString, so it does not
@@ -380,6 +432,7 @@ object Rational {
     }
 
   private val mathContext = new java.math.MathContext(64, java.math.RoundingMode.HALF_EVEN)
+  private val mathContextUp = new java.math.MathContext(64, java.math.RoundingMode.UP)
 
   def niceDoubleString(d: Double): String = {
     // TODO: is there a library function maybe for this?
@@ -394,6 +447,11 @@ object Rational {
         removeTrailingZeroes(digitsOnly)
     }
   }
+
+  def limitSize(r: Rational): Rational =
+    if (r.n.bitLength > 100) {
+    Rational.fromDouble(r.doubleValue())
+    } else r
 }
 
 /**
@@ -492,6 +550,11 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
     }
   }
 
+  // round value towards 0
+  def toBigInt: BigInt = {
+    n / d
+  }
+
   override def equals(other: Any): Boolean = other match {
     case x: Rational => this.compare(x) == 0
     case x: Double => this.toDouble == x  // TODO: not ideal
@@ -512,13 +575,13 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
   override def doubleValue(): Double = {
     val bigN = new java.math.BigDecimal(n.bigInteger, mathContext)
     val bigD = new java.math.BigDecimal(d.bigInteger, mathContext)
-    val res = bigN.divide(bigD, mathContext)
+    val res = bigN.divide(bigD, mathContextUp)
     res.doubleValue
   }
   override def floatValue(): Float = {// Predef.double2Double(doubleValue).floatValue
     val bigN = new java.math.BigDecimal(n.bigInteger, mathContext)
     val bigD = new java.math.BigDecimal(d.bigInteger, mathContext)
-    val res = bigN.divide(bigD, mathContext)
+    val res = bigN.divide(bigD, mathContextUp)
     res.floatValue
   }
   override def intValue(): Int = Predef.double2Double(doubleValue).intValue

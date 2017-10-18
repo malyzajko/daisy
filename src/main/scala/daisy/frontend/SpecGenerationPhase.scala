@@ -20,26 +20,21 @@ import lang.Identifiers._
   Prerequisites:
     -
  */
-object SpecGenerationPhase extends DaisyPhase {
-
+object SpecGenerationPhase extends PhaseComponent {
   override val name = "spec gen"
   override val description = "generates specs"
-  // override val definedOptions: Set[OptionDef] = Set()
+  override def apply(cfg: Config) = new SpecGenerationPhase(cfg, name, "specGen")
+}
 
-  // implicit val debugSection = ???
-
-  var reporter: Reporter = null
+class SpecGenerationPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase {
 
   override def run(ctx: Context, prg: Program): (Context, Program) = {
-    reporter = ctx.reporter
-    reporter.info(s"\nStarting $name")
-    val timer = ctx.timers.specGen.start
+    startRun()
 
-
-    for (fnc <- prg.defs) if (fnc.precondition.isEmpty && !fnc.body.isEmpty) {
+    for (fnc <- functionsToConsider(prg)) {
 
       val f = fnc.body.get
-      reporter.info("---------------" + fnc.id + "---------------")
+      cfg.reporter.info("---------------" + fnc.id + "---------------")
 
       // constraint that body needs to be bigger than 0 (less than 0 would be similar)
       // val bodyNotZeroConstraint = LessThan(RealLiteral(zero), f)
@@ -50,7 +45,7 @@ object SpecGenerationPhase extends DaisyPhase {
         )
 
       for (bodyNotZeroConstraint <- notZeroConstraints) {
-        reporter.info("\nbodyNotZeroConstraint: " + bodyNotZeroConstraint)
+        cfg.reporter.info("\nbodyNotZeroConstraint: " + bodyNotZeroConstraint)
 
         var currentModels: Map[Identifier, Seq[Rational]] = freeVariablesOf(f).map({
           case id => (id -> Seq[Rational]())
@@ -58,17 +53,17 @@ object SpecGenerationPhase extends DaisyPhase {
         var currentConstraint: Expr = BooleanLiteral(true)
 
         for (i <- 0 until 5) {
-          // reporter.info("currentModels: " + currentModels)
-          // reporter.info("currentConstraint: " + currentConstraint)
+          // cfg.reporter.info("currentModels: " + currentModels)
+          // cfg.reporter.info("currentConstraint: " + currentConstraint)
 
-          val solver = new Z3Solver(ctx)
+          val solver = new Z3Solver(cfg)
           solver.assertConstraint(bodyNotZeroConstraint)
           solver.assertConstraint(currentConstraint)
 
           solver.checkSat match {
             case Some(true) =>  // SAT
               val model = solver.getModel
-              // reporter.info("model: " + model)
+              // cfg.reporter.info("model: " + model)
 
               currentModels = currentModels.map({
                 case (id, seq) =>
@@ -81,7 +76,7 @@ object SpecGenerationPhase extends DaisyPhase {
                 }).toMap
 
             case Some(false) =>
-              reporter.info("constraint UNSAT")
+              cfg.reporter.info("constraint UNSAT")
 
             case _ =>
               // break
@@ -89,8 +84,8 @@ object SpecGenerationPhase extends DaisyPhase {
           }
         }
 
-        reporter.info("currentModels: " + currentModels)
-        reporter.info("currentConstraint: " + currentConstraint)
+        cfg.reporter.info("currentModels: " + currentModels)
+        cfg.reporter.info("currentConstraint: " + currentConstraint)
 
       }
       // if the above was successful, i.e. we have more than two models,
@@ -106,10 +101,7 @@ object SpecGenerationPhase extends DaisyPhase {
 
     }
 
-
-    timer.stop
-    ctx.reporter.info(s"Finished $name")
-    (ctx, prg)
+    finishRun(ctx, prg)
   }
 
 

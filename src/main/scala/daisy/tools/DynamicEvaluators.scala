@@ -4,7 +4,6 @@ package daisy
 package tools
 
 import analysis._
-import analysis.DynamicPhase._
 import lang.Trees._
 import lang.Identifiers._
 import Interval._
@@ -17,6 +16,10 @@ import MPFRFloat.{abs => mpfr_abs, max => mpfr_max, min => mpfr_min}
 import scala.collection.immutable._
 
 trait DynamicEvaluators {
+
+  val cfg: Config
+
+  val inputRangeFactor: Rational = Rational.fromString(cfg.option[Option[String]]("inputRangeFactor").getOrElse("1"))
 
   var dynamicSamplesDefault: Int = 100000
 
@@ -148,5 +151,79 @@ trait DynamicEvaluators {
 
   }
 
+  def evalRational(expr: Expr, _valMap: Map[Identifier, Rational]): Rational = {
+    var valMap = _valMap
 
+    def eval(e: Expr): Rational = (e: @unchecked) match {
+
+      case Variable(id) => valMap(id)
+      case RealLiteral(r) => r
+      case Plus(x, y) => eval(x) + eval(y)
+      case Minus(x, y) => eval(x) - eval(y)
+      case Times(x, y) => eval(x) * eval(y)
+      case Division(x, y) => eval(x) / eval(y)
+      case UMinus(x) => - eval(x)
+      case Let(id, v, b) =>
+        valMap += (id -> eval(v))
+        eval(b)
+
+    }
+    eval(expr)
+
+  }
+
+  def evalDouble(expr: Expr, _valMap: Map[Identifier, Double]): Double = {
+    var valMap = _valMap
+
+    def eval(e: Expr): Double = (e: @unchecked) match {
+
+      case Variable(id) => valMap(id)
+      case RealLiteral(r) => r.toDouble
+      case Plus(x, y) => eval(x) + eval(y)
+      case Minus(x, y) => eval(x) - eval(y)
+      case Times(x, y) => eval(x) * eval(y)
+      case Division(x, y) => eval(x) / eval(y)
+      case Pow(x, y) => math.pow(eval(x), eval(y))
+      case UMinus(x) => - eval(x)
+      case Sqrt(x) => math.sqrt(eval(x))
+      case Sin(x) => math.sin(eval(x))
+      case Cos(x) => math.cos(eval(x))
+      case Tan(x) => math.tan(eval(x))
+      case Exp(x) => math.exp(eval(x))
+      case Log(x) => math.log(eval(x))
+      case Let(id, v, b) =>
+        valMap += (id -> eval(v))
+        eval(b)
+
+    }
+    eval(expr)
+
+  }
+
+  def evalMPFR(expr: Expr, _valMap: Map[Identifier, MPFRFloat]): MPFRFloat = {
+    var valMap = _valMap
+
+    def eval(e: Expr): MPFRFloat = (e: @unchecked) match {
+
+      case Variable(id) => valMap(id)
+      case r: RealLiteral => MPFRFloat.fromString(r.stringValue)
+      case Plus(x, y) => eval(x) + eval(y)
+      case Minus(x, y) => eval(x) - eval(y)
+      case Times(x, y) => eval(x) * eval(y)
+      case Division(x, y) => eval(x) / eval(y)
+      case Pow(x, y) => MPFRFloat.pow(eval(x), eval(y))
+      case UMinus(x) => - eval(x)
+      case Sqrt(x) => MPFRFloat.sqrt(eval(x) )
+      case Sin(x) => MPFRFloat.sin(eval(x))
+      case Cos(x) => MPFRFloat.cos(eval(x))
+      case Tan(x) => MPFRFloat.tan(eval(x))
+      case Exp(x) => MPFRFloat.exp(eval(x))
+      case Log(x) => MPFRFloat.log(eval(x))
+      case Let(id, v, b) =>
+        valMap += (id -> eval(v))
+        eval(b)
+
+    }
+    eval(expr)
+  }
 }
