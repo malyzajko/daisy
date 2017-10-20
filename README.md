@@ -78,6 +78,11 @@ Currently, this is
 * MPFR: Daisy uses a [Java binding](https://github.com/kframework/mpfr-java).
 (TODO: figure out whether we used the static or dynamic binding)
 
+## Contributors
+
+In no particular order: Saksham Sharma, Einar Horn, Debasmita Lohar, Heiko Becker, Ezequiel Postan, 
+Fabian Ritter, Anastasiia Izycheva, Raphael Monat, Fariha Nasir, and Robert Bastian.
+
 ## Documentation
 
 To come.
