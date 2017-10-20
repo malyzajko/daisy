@@ -52,7 +52,7 @@ object Identifiers {
     def isDeltaId: Boolean = this.toString.contains("delta")
     def isEpsilonId: Boolean = this.toString.contains("eps")
 
-    def freshen: Identifier = FreshIdentifier(name, tpe, alwaysShowUniqueID).copiedFrom(this)
+    def freshen: Identifier = FreshIdentifier(name, tpe, alwaysShowUniqueID)
 
     override def compare(that: Identifier): Int = {
       val ord = implicitly[Ordering[(String, Int, Int)]]

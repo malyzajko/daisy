@@ -17,9 +17,6 @@ object Evaluators {
 
     def eval(e: Expr): AffineForm = (e: @unchecked) match {
 
-      case Delta(id) => valMap(id)
-      case Epsilon(id) => valMap(id)
-
       case Variable(id) => valMap(id)
       case RealLiteral(r) => AffineForm(r)
       case Plus(x, y) => eval(x) + eval(y)
@@ -43,9 +40,6 @@ object Evaluators {
     var valMap: Map[Identifier, Interval] = _valMap
 
     def eval(e: Expr): Interval = (e: @unchecked) match {
-
-      case Delta(id) => valMap(id)
-      case Epsilon(id) => valMap(id)
 
       case Variable(id) => valMap(id)
       case RealLiteral(r) => Interval(r)
@@ -71,9 +65,6 @@ object Evaluators {
     var valMap: Map[Identifier, SMTRange] = _valMap
 
     def eval(e: Expr): SMTRange = (e: @unchecked) match {
-
-      case Delta(id) => valMap(id)
-      case Epsilon(id) => valMap(id)
 
       case Variable(id) => valMap(id)
       case RealLiteral(r) => SMTRange(r)

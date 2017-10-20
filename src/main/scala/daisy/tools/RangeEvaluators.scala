@@ -36,12 +36,6 @@ trait RangeEvaluators {
 
     def eval(e: Expr): T = intermediateRanges.getOrAdd(e, {
 
-      // TODO: these should ideally be also put initially into intermediateRanges,
-      // once Deltas and Epsilons are Variables
-      case x @ Delta(id) => initValMap(id)
-
-      case x @ Epsilon(id) => initValMap(id)
-
       case x @ RealLiteral(r) => rangeFromReal(r)
 
       case x @ Plus(lhs, rhs) => eval(lhs) + eval(rhs)

@@ -108,9 +108,7 @@ class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
         (Variable(id.changeType(FinitePrecisionType(tpeMap(id)))), tpeMap(id))
 
       case x @ RealLiteral(r) =>
-        val tmp = FinitePrecisionLiteral(r, defaultPrecision)
-        tmp.stringValue = x.stringValue
-        (tmp, defaultPrecision)
+        (FinitePrecisionLiteral(r, defaultPrecision, x.stringValue), defaultPrecision)
 
       case ArithOperator(es_old, recons) =>
         val (es, ps) = es_old.unzip(changeType(_, tpeMap))

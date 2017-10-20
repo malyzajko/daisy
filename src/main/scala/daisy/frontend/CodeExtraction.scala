@@ -425,11 +425,7 @@ trait CodeExtraction extends ASTExtractors {
 
         case ExInt32Literal(v) => Int32Literal(v)
 
-        case ExImplicitInt2Real(i) => {
-          val tmp = RealLiteral(tools.Rational(i))
-          tmp.stringValue = i.toString
-          tmp
-        }
+        case ExImplicitInt2Real(i) => RealLiteral(tools.Rational(i), i.toString)
 
         case ExBooleanLiteral(v) => BooleanLiteral(v)
 
@@ -438,10 +434,7 @@ trait CodeExtraction extends ASTExtractors {
         //   tmp.stringValue = d.toString
         //   tmp
 
-        case ExImplicitDouble2Real(d) => // RealLiteral(d.toString)
-          val tmp = RealLiteral(tools.Rational.fromString(d.toString))
-          tmp.stringValue = d.toString
-          tmp
+        case ExImplicitDouble2Real(d) => RealLiteral(tools.Rational.fromString(d.toString), d.toString)
 
         case ex @ ExIdentifier(sym, tpt) if dctx.isVariable(sym) =>
           (dctx.vars.get(sym): @unchecked) match {

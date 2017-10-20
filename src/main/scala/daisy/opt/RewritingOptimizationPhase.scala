@@ -139,7 +139,6 @@ class RewritingOptimizationPhase(val cfg: Config, val name: String, val shortNam
     // we assign a very high fitness to signal that something is wrong
     // the offending expression should be filtered out "naturally"
     val (bestExprFound, _) = runGenetic(initExpr,
-      (e: Expr) => e.deepCopy,
       (e: Expr) => {
         try {
           val fitness = roundoffFunction(e, inputValMap, inputErrors)

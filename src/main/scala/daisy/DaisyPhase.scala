@@ -41,7 +41,7 @@ abstract class DaisyPhase extends Pipeline[Program, Program] {
     }
     cfg.option[List[String]]("functions") match {
       case Nil =>
-      case fncs => funs.filter(f => fncs.contains(f.id.toString))
+      case fncs => funs = funs.filter(f => fncs.contains(f.id.toString))
     }
     funs
   }

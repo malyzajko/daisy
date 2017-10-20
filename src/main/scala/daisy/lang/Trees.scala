@@ -15,15 +15,7 @@ import tools.Rational
 object Trees {
 
   abstract class Tree extends Positioned with Serializable {
-    def copiedFrom(o: Tree): this.type = {
-      setPos(o)
-      this
-    }
-
     override def toString: String = PrettyPrinter(this, Context())
-
-    // copy keeps Identifiers intact, but looses positions
-    def deepCopy: Tree
   }
 
   sealed abstract class Definition extends Tree {
@@ -43,10 +35,7 @@ object Trees {
    */
   case class ValDef(id: Identifier) extends Definition with Typed {
     self: Serializable =>
-
     val getType = id.getType
-
-    def deepCopy: ValDef = ValDef(id)
   }
 
   /**
@@ -59,16 +48,7 @@ object Trees {
     precondition: Option[Expr],
     body: Option[Expr],
     postcondition: Option[Expr],
-    isField: Boolean = false) extends Definition {
-
-    def deepCopy: FunDef = FunDef(id,
-      returnType,
-      params.map(_.deepCopy),
-      precondition.map(_.deepCopy),
-      body.map(_.deepCopy),
-      postcondition.map(_.deepCopy),
-      isField)
-  }
+    isField: Boolean = false) extends Definition
 
   /**
     A program is currently one (and only one) top-level object with a
@@ -76,26 +56,14 @@ object Trees {
     We ignore package and import information.
     // TODO: constructor block
    */
-  case class Program(id: Identifier, defs: Seq[FunDef]) extends Definition {
-    def deepCopy: Program = Program(id, defs.map(_.deepCopy))
-  }
-
-
+  case class Program(id: Identifier, defs: Seq[FunDef]) extends Definition
 
   /** Represents an expression in Leon. */
-  sealed abstract class Expr extends Tree with Typed {
-
-    override def deepCopy: Expr
-  }
+  sealed abstract class Expr extends Tree with Typed
 
   /** Trait which gets mixed-in to expressions without subexpressions */
   trait Terminal {
     self: Expr =>
-  }
-
-  /** Trait which allows to get and Identifier from the Expr */
-  trait Identifiable {
-    def getId: Identifier
   }
 
   /** Stands for an undefined Expr, similar to `???` or `null`
@@ -105,7 +73,6 @@ object Trees {
    */
   case class NoTree(tpe: TypeTree) extends Expr with Terminal {
     val getType = tpe
-    def deepCopy: NoTree = NoTree(tpe)
   }
 
   /* Specifications */
@@ -120,7 +87,6 @@ object Trees {
    */
   case class Error(tpe: TypeTree, description: String) extends Expr with Terminal {
     val getType = tpe
-    def deepCopy: Error = Error(tpe, description)
   }
 
   /** Precondition of an [[Expressions.Expr]]. Corresponds to the Leon keyword *require*
@@ -136,7 +102,6 @@ object Trees {
         Untyped
       }
     }
-    def deepCopy: Require = Require(pred.deepCopy, body.deepCopy)
   }
 
   /** Postcondition of an [[Expressions.Expr]]. Corresponds to the Leon keyword *ensuring*
@@ -155,7 +120,6 @@ object Trees {
     }
     /** Converts this ensuring clause to the body followed by an assert statement */
     // def toAssert: Expr = {...}
-    def deepCopy: Ensuring = Ensuring(body.deepCopy, pred.deepCopy)
   }
 
   /** Local assertions with customizable error message
@@ -172,39 +136,33 @@ object Trees {
         Untyped
       }
     }
-    def deepCopy: Assert = Assert(pred.deepCopy, error, body.deepCopy)
   }
-
 
   /** Variable
    * @param id The identifier of this variable
    */
-  case class Variable(id: Identifier) extends Expr with Terminal {
+  trait Variable extends Expr with Terminal {
+    val id: Identifier
     val getType = id.getType
-    def deepCopy: Variable = Variable(id)
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case Variable(tid) => id == tid
+      case _ => false
+    }
   }
 
-  /**
-   * Delta
-   * Should be a special subclass of the variable. Not inherited to enable the case distinction
-   */
-  // TODO Anastasiia: try to make it Variable Subclass and overcome case-to-case inheritance problem
-  case class Delta(id: Identifier) extends Expr with Terminal with Identifiable {
-    val getType = id.getType
-    def deepCopy: Delta = Delta(id)
-    def toVariable: Variable = Variable(id)
-    override def getId: Identifier = id
+  object Variable {
+    def apply(id: Identifier): Variable = ConcreteVariable(id)
+    def unapply(arg: Variable): Option[Identifier] = Some(arg.id)
   }
 
-  /**
-   * Epsilon
-   * Should be a special subclass of the variable. Not inherited to enable the case distinction
-   */
-  case class Epsilon(id: Identifier) extends Expr with Terminal with Identifiable {
-    val getType = id.getType
-    def deepCopy: Epsilon = Epsilon(id)
-    def toVariable: Variable = Variable(id)
-    override def getId: Identifier = id
+  private case class ConcreteVariable(id: Identifier) extends Variable {
+    override def equals(obj: scala.Any): Boolean = super.equals(obj)
+  }
+  case class Delta(id: Identifier) extends Variable{
+    override def equals(obj: scala.Any): Boolean = super.equals(obj)
+  }
+  case class Epsilon(id: Identifier) extends Variable {
+    override def equals(obj: scala.Any): Boolean = super.equals(obj)
   }
 
 
@@ -226,7 +184,6 @@ object Trees {
         Untyped
       }
     }
-    def deepCopy: Let = Let(binder, value.deepCopy, body.deepCopy)
   }
 
   /* Control flow */
@@ -239,14 +196,11 @@ object Trees {
     returnType: TypeTree) extends Expr {
     // require(fd.params.size == args.size)
     val getType = returnType
-    def deepCopy: FunctionInvocation = FunctionInvocation(fdId, params.map(_.deepCopy), args.map(_.deepCopy),
-      returnType)
   }
 
   /** $encodingof `if(...) ... else ...` */
   case class IfExpr(cond: Expr, thenn: Expr, elze: Expr) extends Expr {
     val getType = leastUpperBound(thenn.getType, elze.getType).getOrElse(Untyped).unveilUntyped
-    def deepCopy: IfExpr = IfExpr(cond.deepCopy, thenn.deepCopy, elze.deepCopy)
   }
 
   /** $encodingof `(args) => body` */
@@ -259,7 +213,6 @@ object Trees {
     /* def withParamSubst(realArgs: Seq[Expr], e: Expr) = {
       replaceFromIDs(paramSubst(realArgs), e)
     } */
-    def deepCopy: Lambda = Lambda(args.map(_.deepCopy), body.deepCopy)
   }
 
   /** Literals */
@@ -270,82 +223,55 @@ object Trees {
   /** $encodingof a 16-bit integer literal */
   case class Int16Literal(value: Int) extends Literal[Int] {
     val getType = Int16Type
-    def deepCopy: Int16Literal = Int16Literal(value)
   }
 
   /** $encodingof a 32-bit integer literal */
   case class Int32Literal(value: Int) extends Literal[Int] {
     val getType = Int32Type
-    def deepCopy: Int32Literal = Int32Literal(value)
   }
 
   // Long
   case class Int64Literal(value: Long) extends Literal[Long] {
     val getType = Int64Type
-    def deepCopy: Int64Literal = Int64Literal(value)
   }
 
   /** $encodingof an infinite precision integer literal */
   case class IntegerLiteral(value: BigInt) extends Literal[BigInt] {
     val getType = IntegerType
-    def deepCopy: IntegerLiteral = IntegerLiteral(value)
   }
 
   /** $encodingof a boolean literal '''true''' or '''false''' */
   case class BooleanLiteral(value: Boolean) extends Literal[Boolean] {
     val getType = BooleanType
-    def deepCopy: BooleanLiteral = BooleanLiteral(value)
   }
 
   /** $encodingof the unit literal `()` */
   case class UnitLiteral() extends Literal[Unit] {
     val getType = UnitType
     val value = ()
-    def deepCopy: UnitLiteral = UnitLiteral()
   }
 
   // the string is exactly what the user wrote
   case class RealLiteral(value: Rational) extends Literal[Rational] {
     val getType = RealType
+    protected var _stringValue: String = null
+    def stringValue = _stringValue
+  }
 
-    private var _stringValue: String = null
-    def stringValue_=(s: String): Unit = {
-      if (_stringValue == null) {
-        _stringValue = s
-      } else {
-        throw new Exception("'stringValue' is a write-only-once field, but you tried twice!")
-      }
-    }
-    def stringValue: String = _stringValue
-    def deepCopy: RealLiteral = {
-      val tmp = RealLiteral(value)
-      tmp.stringValue = this.stringValue
-      tmp
+  object RealLiteral {
+    def apply(value: Rational, stringValue: String): RealLiteral = {
+      val r = RealLiteral(value)
+      r._stringValue = stringValue
+      r
     }
   }
 
-  case class FinitePrecisionLiteral(value: Rational, prec: Precision) extends Literal[Rational] {
+  case class FinitePrecisionLiteral(value: Rational, prec: Precision, stringValue: String) extends Literal[Rational] {
     val getType = FinitePrecisionType(prec)
-
-    private var _stringValue: String = null
-    def stringValue_=(s: String): Unit = {
-      if (_stringValue == null) {
-        _stringValue = s
-      } else {
-        throw new Exception("'stringValue' is a write-only-once field, but you tried twice!")
-      }
-    }
-    def stringValue: String = _stringValue
-    def deepCopy: FinitePrecisionLiteral = {
-      val tmp = FinitePrecisionLiteral(value, prec)
-      tmp.stringValue = this.stringValue
-      tmp
-    }
   }
 
   case class Downcast(expr: Expr, newType: TypeTree) extends Expr {
     val getType = newType
-    def deepCopy: Downcast = Downcast(expr.deepCopy, newType)
   }
 
   /* Propositional logic */
@@ -359,7 +285,6 @@ object Trees {
         Untyped
       }
     }
-    def deepCopy: Equals = Equals(lhs.deepCopy, rhs.deepCopy)
   }
 
   /** $encodingof `... && ...`
@@ -377,7 +302,6 @@ object Trees {
         Untyped
       }
     }
-    def deepCopy: And = And(exprs.map(_.deepCopy))
   }
 
   object And {
@@ -399,7 +323,6 @@ object Trees {
         Untyped
       }
     }
-    def deepCopy: Or = Or(exprs.map(_.deepCopy))
   }
 
   object Or {
@@ -421,7 +344,6 @@ object Trees {
         Untyped
       }
     }
-    def deepCopy: Implies = Implies(lhs.deepCopy, rhs.deepCopy)
   }
 
   /** $encodingof `!...`
@@ -436,7 +358,6 @@ object Trees {
         Untyped
       }
     }
-    def deepCopy: Not = Not(expr.deepCopy)
   }
 
   /* Arithmetic */
@@ -444,37 +365,31 @@ object Trees {
   /** $encodingof `... +  ...` */
   case class Plus(lhs: Expr, rhs: Expr) extends Expr {
     val getType = lhs.getType
-    def deepCopy: Plus = Plus(lhs.deepCopy, rhs.deepCopy)
   }
 
   /** $encodingof `... -  ...` */
   case class Minus(lhs: Expr, rhs: Expr) extends Expr {
     val getType = lhs.getType
-    def deepCopy: Minus = Minus(lhs.deepCopy, rhs.deepCopy)
   }
 
   /** $encodingof `- ... for BigInts` */
   case class UMinus(expr: Expr) extends Expr {
     val getType = expr.getType
-    def deepCopy: UMinus = UMinus(expr.deepCopy)
   }
 
   /** $encodingof `... * ...` */
   case class Times(lhs: Expr, rhs: Expr) extends Expr {
     val getType = lhs.getType
-    def deepCopy: Times = Times(lhs.deepCopy, rhs.deepCopy)
   }
 
   /** $encodingof `(... * ...) + ...` */
   case class FMA(fac1: Expr, fac2: Expr, s: Expr) extends Expr {
     val getType = fac1.getType
-    def deepCopy: FMA = FMA(fac1.deepCopy, fac2.deepCopy, s.deepCopy)
   }
 
   /** $encodingof `... / ...` */
   case class Division(lhs: Expr, rhs: Expr) extends Expr {
     val getType = lhs.getType
-    def deepCopy: Division = Division(lhs.deepCopy, rhs.deepCopy)
   }
 
   case class Pow(lhs: Expr, rhs: Expr) extends Expr {
@@ -488,43 +403,36 @@ object Trees {
         Untyped
       }
     }
-    def deepCopy: Pow = Pow(lhs.deepCopy, rhs.deepCopy)
   }
 
   case class Sqrt(t: Expr) extends Expr {
     // TODO: this operation may not be available for Float32
     val getType = t.getType
-    def deepCopy: Sqrt = Sqrt(t.deepCopy)
   }
 
   case class Sin(t: Expr) extends Expr {
     require(t.getType == RealType)
     val getType = RealType
-    def deepCopy: Sin = Sin(t.deepCopy)
   }
 
   case class Cos(t: Expr) extends Expr {
     require(t.getType == RealType)
     val getType = RealType
-    def deepCopy: Cos = Cos(t.deepCopy)
   }
 
   case class Tan(t: Expr) extends Expr {
     require(t.getType == RealType)
     val getType = RealType
-    def deepCopy: Tan = Tan(t.deepCopy)
   }
 
   case class Exp(t: Expr) extends Expr {
     require(t.getType == RealType)
     val getType = RealType
-    def deepCopy: Exp = Exp(t.deepCopy)
   }
 
   case class Log(t: Expr) extends Expr {
     require(t.getType == RealType)
     val getType = RealType
-    def deepCopy: Log = Log(t.deepCopy)
   }
 
   /*  Comparisons */
@@ -532,40 +440,33 @@ object Trees {
   /** $encodingof `... < ...` */
   case class LessThan(lhs: Expr, rhs: Expr) extends Expr {
     val getType = BooleanType
-    def deepCopy: LessThan = LessThan(lhs.deepCopy, rhs.deepCopy)
   }
   /** $encodingof `... > ...` */
   case class GreaterThan(lhs: Expr, rhs: Expr) extends Expr {
     val getType = BooleanType
-    def deepCopy: GreaterThan = GreaterThan(lhs.deepCopy, rhs.deepCopy)
   }
   /** $encodingof `... <= ...` */
   case class LessEquals(lhs: Expr, rhs: Expr) extends Expr {
     val getType = BooleanType
-    def deepCopy: LessEquals = LessEquals(lhs.deepCopy, rhs.deepCopy)
   }
   /** $encodingof `... >= ...` */
   case class GreaterEquals(lhs: Expr, rhs: Expr) extends Expr {
     val getType = BooleanType
-    def deepCopy: GreaterEquals = GreaterEquals(lhs.deepCopy, rhs.deepCopy)
   }
 
   /* Shifts */
   case class RightShift(t: Expr, by: Int) extends Expr {
     val getType = t.getType
-    def deepCopy: RightShift = RightShift(t.deepCopy, by)
   }
 
   case class LeftShift(t: Expr, by: Int) extends Expr {
     val getType = t.getType
-    def deepCopy: LeftShift = LeftShift(t.deepCopy, by)
   }
 
   /* Specs */
 
   case class AbsError(lhs: Expr, rhs: Expr) extends Expr {
     val getType = BooleanType
-    def deepCopy: AbsError = AbsError(lhs.deepCopy, rhs.deepCopy)
   }
 
   /*  Program structure  */

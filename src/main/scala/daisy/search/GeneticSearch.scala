@@ -25,17 +25,16 @@ trait GeneticSearch[T] {
   /** This is a general genetic algorithm.
 
     @param inputExpr expression to rewrite
-    @param copy function to perform a deep copy
     @param fitnessFnc fitness function to guide the search, assumes that smaller is better
     @return AST and fitness value of best expression found)
    */
-  def runGenetic(inputExpr: T, copy: T => T, fitnessFnc: T => Rational): (T, Rational) = {
+  def runGenetic(inputExpr: T, fitnessFnc: T => Rational): (T, Rational) = {
 
     val initialFitness = fitnessFnc(inputExpr)
 
     // initialize population: expr with its fitness value
     var currentPopulation: Seq[(T, Rational)] =
-      Array.fill(populationSize)((copy(inputExpr), initialFitness)).toList
+      Array.fill(populationSize)((inputExpr, initialFitness)).toList
 
     var globalBest: (T, Rational) = (inputExpr, initialFitness)
 

@@ -235,8 +235,7 @@ trait RewritingOps {
   def commutativity0 (expr: Expr): Option[Expr] = {
     // +-commutative
     expr match {
-      case Plus(a, b) =>
-        Some(Plus(b.deepCopy, a.deepCopy))
+      case Plus(a, b) => Some(Plus(b, a))
       case _ => None
     }
   }
@@ -244,8 +243,7 @@ trait RewritingOps {
   def commutativity1 (expr: Expr): Option[Expr] = {
     // *-commutative
     expr match {
-      case Times(a, b) =>
-        Some(Times(b.deepCopy, a.deepCopy))
+      case Times(a, b) => Some(Times(b, a))
       case _ => None
     }
   }
@@ -256,8 +254,7 @@ trait RewritingOps {
   def associativity0 (expr: Expr): Option[Expr] = {
     // associate-+r+
     expr match {
-      case Plus(a, Plus(b, c)) =>
-        Some(Plus(Plus(a.deepCopy, b.deepCopy), c.deepCopy))
+      case Plus(a, Plus(b, c)) => Some(Plus(Plus(a, b), c))
       case _ => None
     }
   }
@@ -265,8 +262,7 @@ trait RewritingOps {
   def associativity1 (expr: Expr): Option[Expr] = {
     // associate-+l+
     expr match {
-      case Plus(Plus(a, b), c) =>
-        Some(Plus(a.deepCopy, Plus(b.deepCopy, c.deepCopy)))
+      case Plus(Plus(a, b), c) => Some(Plus(a, Plus(b, c)))
       case _ => None
     }
   }
@@ -274,8 +270,7 @@ trait RewritingOps {
   def associativity2 (expr: Expr): Option[Expr] = {
     // associate-+r-
     expr match {
-      case Plus(a, Minus(b, c)) =>
-        Some(Minus(Plus(a.deepCopy, b.deepCopy), c.deepCopy))
+      case Plus(a, Minus(b, c)) => Some(Minus(Plus(a, b), c))
       case _ => None
     }
   }
@@ -283,8 +278,7 @@ trait RewritingOps {
   def associativity3 (expr: Expr): Option[Expr] = {
     // associate-+l-
     expr match {
-      case Plus(Minus(a, b), c) =>
-        Some(Minus(a.deepCopy, Minus(b.deepCopy, c.deepCopy)))
+      case Plus(Minus(a, b), c) => Some(Minus(a, Minus(b, c)))
       case _ => None
     }
   }
@@ -292,8 +286,7 @@ trait RewritingOps {
   def associativity4 (expr: Expr): Option[Expr] = {
     // associate--r+
     expr match {
-      case Minus(a, Plus(b, c)) =>
-        Some(Minus(Minus(a.deepCopy, b.deepCopy), c.deepCopy))
+      case Minus(a, Plus(b, c)) => Some(Minus(Minus(a, b), c))
       case _ => None
     }
   }
@@ -301,8 +294,7 @@ trait RewritingOps {
   def associativity5 (expr: Expr): Option[Expr] = {
     // associate--l+
     expr match {
-      case Minus(Plus(a, b), c) =>
-        Some(Plus(a.deepCopy, Minus(b.deepCopy, c.deepCopy)))
+      case Minus(Plus(a, b), c) => Some(Plus(a, Minus(b, c)))
       case _ => None
     }
   }
@@ -310,8 +302,7 @@ trait RewritingOps {
   def associativity6 (expr: Expr): Option[Expr] = {
     // associate--l-
     expr match {
-      case Minus(Minus(a, b), c) =>
-        Some(Minus(a.deepCopy, Plus(b.deepCopy, c.deepCopy)))
+      case Minus(Minus(a, b), c) => Some(Minus(a, Plus(b, c)))
       case _ => None
     }
   }
@@ -319,8 +310,7 @@ trait RewritingOps {
   def associativity7 (expr: Expr): Option[Expr] = {
     // associate--r-
     expr match {
-      case Minus(a, Minus(b, c)) =>
-        Some(Plus(Minus(a.deepCopy, b.deepCopy), c.deepCopy))
+      case Minus(a, Minus(b, c)) => Some(Plus(Minus(a, b), c))
       case _ => None
     }
   }
@@ -328,8 +318,7 @@ trait RewritingOps {
   def associativity8 (expr: Expr): Option[Expr] = {
     // associate-*r*
     expr match {
-      case Times(a, Times(b, c)) =>
-        Some(Times(Times(a.deepCopy, b.deepCopy), c.deepCopy))
+      case Times(a, Times(b, c)) => Some(Times(Times(a, b), c))
       case _ => None
     }
   }
@@ -337,8 +326,7 @@ trait RewritingOps {
   def associativity9 (expr: Expr): Option[Expr] = {
     // associate-*l*
     expr match {
-      case Times(Times(a, b), c) =>
-        Some(Times(a.deepCopy, Times(b.deepCopy, c.deepCopy)))
+      case Times(Times(a, b), c) => Some(Times(a, Times(b, c)))
       case _ => None
     }
   }
@@ -346,8 +334,7 @@ trait RewritingOps {
   def associativity10 (expr: Expr): Option[Expr] = {
     // associate-*r/
     expr match {
-      case Times(a, Division(b, c)) =>
-        Some(Division(Times(a.deepCopy, b.deepCopy), c.deepCopy))
+      case Times(a, Division(b, c)) => Some(Division(Times(a, b), c))
       case _ => None
     }
   }
@@ -355,8 +342,7 @@ trait RewritingOps {
   def associativity11 (expr: Expr): Option[Expr] = {
     // associate-*l/
     expr match {
-      case Times(Division(a, b), c) =>
-        Some(Division(Times(a.deepCopy, c.deepCopy), b.deepCopy))
+      case Times(Division(a, b), c) => Some(Division(Times(a, c), b))
       case _ => None
     }
   }
@@ -364,8 +350,7 @@ trait RewritingOps {
   def associativity12 (expr: Expr): Option[Expr] = {
     // associate-/r*
     expr match {
-      case Division(a, Times(b, c)) =>
-        Some(Division(Division(a.deepCopy, b.deepCopy), c.deepCopy))
+      case Division(a, Times(b, c)) => Some(Division(Division(a, b), c))
       case _ => None
     }
   }
@@ -373,8 +358,7 @@ trait RewritingOps {
   def associativity13 (expr: Expr): Option[Expr] = {
     // associate-/l*
     expr match {
-      case Division(Times(b, c), a) =>
-        Some(Division(b.deepCopy, Division(a.deepCopy, c.deepCopy)))
+      case Division(Times(b, c), a) => Some(Division(b, Division(a, c)))
       case _ => None
     }
   }
@@ -382,8 +366,7 @@ trait RewritingOps {
   def associativity14 (expr: Expr): Option[Expr] = {
     // associate-/r/
     expr match {
-      case Division(a, Division(b, c)) =>
-        Some(Times(Division(a.deepCopy, b.deepCopy), c.deepCopy))
+      case Division(a, Division(b, c)) => Some(Times(Division(a, b), c))
       case _ => None
     }
   }
@@ -391,8 +374,7 @@ trait RewritingOps {
   def associativity15 (expr: Expr): Option[Expr] = {
     // associate-/l/
     expr match {
-      case Division(Division(b, c), a) =>
-        Some(Division(b.deepCopy, Times(a.deepCopy, c.deepCopy)))
+      case Division(Division(b, c), a) => Some(Division(b, Times(a, c)))
       case _ => None
     }
   }
@@ -403,8 +385,7 @@ trait RewritingOps {
   def distributivity0 (expr: Expr): Option[Expr] = {
     // distribute-lft-in
     expr match {
-      case Times(a, Plus(b, c)) =>
-        Some(Plus(Times(a.deepCopy, b.deepCopy), Times(a.deepCopy, c.deepCopy)))
+      case Times(a, Plus(b, c)) => Some(Plus(Times(a, b), Times(a, c)))
       case _ => None
     }
   }
@@ -412,8 +393,7 @@ trait RewritingOps {
   def distributivity1 (expr: Expr): Option[Expr] = {
     // distribute-rgt-in
     expr match {
-      case Times(a, Plus(b, c)) =>
-        Some(Plus(Times(b.deepCopy, a.deepCopy), Times(c.deepCopy, a.deepCopy)))
+      case Times(a, Plus(b, c)) => Some(Plus(Times(b, a), Times(c, a)))
       case _ => None
     }
   }
@@ -421,8 +401,7 @@ trait RewritingOps {
   def distributivity2 (expr: Expr): Option[Expr] = {
     // distribute-lft-out
     expr match {
-      case Plus(Times(a, b), Times(a1, c)) if (a==a1) =>
-        Some(Times(a.deepCopy, Plus(b.deepCopy, c.deepCopy)))
+      case Plus(Times(a, b), Times(a1, c)) if (a==a1) => Some(Times(a, Plus(b, c)))
       case _ => None
     }
   }
@@ -430,8 +409,7 @@ trait RewritingOps {
   def distributivity3 (expr: Expr): Option[Expr] = {
     // distribute-lft-out--
     expr match {
-      case Minus(Times(a, b), Times(a1, c)) if (a==a1) =>
-        Some(Times(a.deepCopy, Minus(b.deepCopy, c.deepCopy)))
+      case Minus(Times(a, b), Times(a1, c)) if (a==a1) => Some(Times(a, Minus(b, c)))
       case _ => None
     }
   }
@@ -439,8 +417,7 @@ trait RewritingOps {
   def distributivity4 (expr: Expr): Option[Expr] = {
     // distribute-rgt-out
     expr match {
-      case Plus(Times(b, a), Times(c, a1)) if (a==a1) =>
-        Some(Times(a.deepCopy, Plus(b.deepCopy, c.deepCopy)))
+      case Plus(Times(b, a), Times(c, a1)) if (a==a1) => Some(Times(a, Plus(b, c)))
       case _ => None
     }
   }
@@ -448,8 +425,7 @@ trait RewritingOps {
   def distributivity5 (expr: Expr): Option[Expr] = {
     // distribute-rgt-out--
     expr match {
-      case Minus(Times(b, a), Times(c, a1)) if (a==a1) =>
-        Some(Times(a.deepCopy, Minus(b.deepCopy, c.deepCopy)))
+      case Minus(Times(b, a), Times(c, a1)) if (a==a1) => Some(Times(a, Minus(b, c)))
       case _ => None
     }
   }
@@ -457,8 +433,7 @@ trait RewritingOps {
   def distributivity6 (expr: Expr): Option[Expr] = {
     // distribute-lft1-in
     expr match {
-      case Plus(Times(b, a), a1) if (a==a1) =>
-        Some(Times(Plus(b.deepCopy, RealLiteral(one)), a.deepCopy))
+      case Plus(Times(b, a), a1) if (a==a1) => Some(Times(Plus(b, RealLiteral(one)), a))
       case _ => None
     }
   }
@@ -466,8 +441,7 @@ trait RewritingOps {
   def distributivity7 (expr: Expr): Option[Expr] = {
     // distribute-rgt1-in
     expr match {
-      case Plus(a1, Times(c, a)) if (a==a1) =>
-        Some(Times(Plus(c.deepCopy, RealLiteral(one)), a.deepCopy))
+      case Plus(a1, Times(c, a)) if (a==a1) => Some(Times(Plus(c, RealLiteral(one)), a))
       case _ => None
     }
   }
@@ -475,8 +449,7 @@ trait RewritingOps {
   def distributivity8 (expr: Expr): Option[Expr] = {
     // distribute-lft-neg-in
     expr match {
-      case UMinus(Times(a, b)) =>
-        Some(Times(UMinus(a.deepCopy), b.deepCopy))
+      case UMinus(Times(a, b)) => Some(Times(UMinus(a), b))
       case _ => None
     }
   }
@@ -484,8 +457,7 @@ trait RewritingOps {
   def distributivity9 (expr: Expr): Option[Expr] = {
     // distribute-rgt-neg-in
     expr match {
-      case UMinus(Times(a, b)) =>
-        Some(Times(a.deepCopy, UMinus(b.deepCopy)))
+      case UMinus(Times(a, b)) => Some(Times(a, UMinus(b)))
       case _ => None
     }
   }
@@ -493,8 +465,7 @@ trait RewritingOps {
   def distributivity10 (expr: Expr): Option[Expr] = {
     // distribute-lft-neg-out
     expr match {
-      case Times(UMinus(a), b) =>
-        Some(UMinus(Times(a.deepCopy, b.deepCopy)))
+      case Times(UMinus(a), b) => Some(UMinus(Times(a, b)))
       case _ => None
     }
   }
@@ -502,8 +473,7 @@ trait RewritingOps {
   def distributivity11 (expr: Expr): Option[Expr] = {
     // distribute-rgt-neg-out
     expr match {
-      case Times(a, UMinus(b)) =>
-        Some(UMinus(Times(a.deepCopy, b.deepCopy)))
+      case Times(a, UMinus(b)) => Some(UMinus(Times(a, b)))
       case _ => None
     }
   }
@@ -511,8 +481,7 @@ trait RewritingOps {
   def distributivity12 (expr: Expr): Option[Expr] = {
     // distribute-neg-in
     expr match {
-      case UMinus(Plus(a, b)) =>
-        Some(Plus(UMinus(a.deepCopy), UMinus(b.deepCopy)))
+      case UMinus(Plus(a, b)) => Some(Plus(UMinus(a), UMinus(b)))
       case _ => None
     }
   }
@@ -520,8 +489,7 @@ trait RewritingOps {
   def distributivity13 (expr: Expr): Option[Expr] = {
     // distribute-neg-out
     expr match {
-      case Plus(UMinus(a), UMinus(b)) =>
-        Some(UMinus(Plus(a.deepCopy, b.deepCopy)))
+      case Plus(UMinus(a), UMinus(b)) => Some(UMinus(Plus(a, b)))
       case _ => None
     }
   }
@@ -530,7 +498,7 @@ trait RewritingOps {
     // distribute-inv-in
     expr match {
       case Division(RealLiteral(o), Times(a, b)) if (o==one)=>
-        Some(Times(Division(RealLiteral(1), a.deepCopy), Division(RealLiteral(1), b.deepCopy)))
+        Some(Times(Division(RealLiteral(1), a), Division(RealLiteral(1), b)))
       case _ => None
     }
   }
@@ -539,7 +507,7 @@ trait RewritingOps {
     // distribute-inv-out
     expr match {
       case Times(Division(RealLiteral(o), a), Division(RealLiteral(o2), b)) if (o==one && o2==one) =>
-        Some(Division(RealLiteral(1), Times(a.deepCopy, b.deepCopy)))
+        Some(Division(RealLiteral(1), Times(a, b)))
       case _ => None
     }
   }
@@ -547,8 +515,7 @@ trait RewritingOps {
   def distributivity16 (expr: Expr): Option[Expr] = {
     // distribute-inv-neg
     expr match {
-      case Division(RealLiteral(o), UMinus(a)) if (o==one) =>
-        Some(UMinus(Division(RealLiteral(1), a.deepCopy)))
+      case Division(RealLiteral(o), UMinus(a)) if (o==one) => Some(UMinus(Division(RealLiteral(1), a)))
       case _ => None
     }
   }
@@ -556,8 +523,7 @@ trait RewritingOps {
   def distributivity17 (expr: Expr): Option[Expr] = {
     // distribute-neg-inv
     expr match {
-      case UMinus(Division(RealLiteral(o), a)) if (o==one) =>
-        Some(Division(RealLiteral(1), UMinus(a.deepCopy)))
+      case UMinus(Division(RealLiteral(o), a)) if (o==one) => Some(Division(RealLiteral(1), UMinus(a)))
       case _ => None
     }
   }
@@ -565,8 +531,7 @@ trait RewritingOps {
   def distributivity18 (expr: Expr): Option[Expr] = {
     // distribute-frac-neg
     expr match {
-      case Division(UMinus(a), b) =>
-        Some(UMinus(Division(a.deepCopy, b.deepCopy)))
+      case Division(UMinus(a), b) => Some(UMinus(Division(a, b)))
       case _ => None
     }
   }
@@ -574,8 +539,7 @@ trait RewritingOps {
   def distributivity19 (expr: Expr): Option[Expr] = {
     // distribute-neg-frac
     expr match {
-      case UMinus(Division(a, b)) =>
-        Some(Division(UMinus(a.deepCopy), b.deepCopy))
+      case UMinus(Division(a, b)) => Some(Division(UMinus(a), b))
       case _ => None
     }
   }
@@ -586,8 +550,7 @@ trait RewritingOps {
   def diffOfSqCanon0 (expr: Expr): Option[Expr] = {
     // difference-of-squares
     expr match {
-      case Minus(Times(a1, a), Times(b1, b)) if (b==b1 && a==a1) =>
-        Some(Times(Plus(a.deepCopy, b.deepCopy), Minus(a.deepCopy, b.deepCopy)))
+      case Minus(Times(a1, a), Times(b1, b)) if (b==b1 && a==a1) => Some(Times(Plus(a, b), Minus(a, b)))
       case _ => None
     }
   }
@@ -596,7 +559,7 @@ trait RewritingOps {
     // difference-of-sqr-1
     expr match {
       case Minus(Times(a1, a), RealLiteral(o)) if (a==a1 && o==one) =>
-        Some(Times(Plus(a.deepCopy, RealLiteral(one)), Minus(a.deepCopy, RealLiteral(one))))
+        Some(Times(Plus(a, RealLiteral(one)), Minus(a, RealLiteral(one))))
       case _ => None
     }
   }
@@ -607,9 +570,8 @@ trait RewritingOps {
   def diffOfSqFlip0 (expr: Expr): Option[Expr] = {
     // flip-+
     expr match {
-      case Plus(a, b) =>
-        Some(Division(Minus(Times(a.deepCopy, a.deepCopy), Times(b.deepCopy, b.deepCopy)),
-          Minus(a.deepCopy, b.deepCopy)))
+      case Plus(a, b) => Some(Division(Minus(Times(a, a), Times(b, b)),
+          Minus(a, b)))
       case _ => None
     }
   }
@@ -617,9 +579,8 @@ trait RewritingOps {
   def diffOfSqFlip1 (expr: Expr): Option[Expr] = {
     // flip--
     expr match {
-      case Minus(a, b) =>
-        Some(Division(Minus(Times(a.deepCopy, a.deepCopy), Times(b.deepCopy, b.deepCopy)),
-          Plus(a.deepCopy, b.deepCopy)))
+      case Minus(a, b) => Some(Division(Minus(Times(a, a), Times(b, b)),
+          Plus(a, b)))
       case _ => None
     }
   }
@@ -630,8 +591,7 @@ trait RewritingOps {
   def idReduce0 (expr: Expr): Option[Expr] = {
     // +-lft-identity
     expr match {
-      case Plus(RealLiteral(z), a) if (z==zero) =>
-        Some(a.deepCopy)
+      case Plus(RealLiteral(z), a) if (z==zero) => Some(a)
       case _ => None
     }
   }
@@ -639,8 +599,7 @@ trait RewritingOps {
   def idReduce1 (expr: Expr): Option[Expr] = {
     // +-rgt-identity
     expr match {
-      case Plus(a, RealLiteral(z)) if (z==zero) =>
-        Some(a.deepCopy)
+      case Plus(a, RealLiteral(z)) if (z==zero) => Some(a)
       case _ => None
     }
   }
@@ -648,8 +607,7 @@ trait RewritingOps {
   def idReduce2 (expr: Expr): Option[Expr] = {
     // +-inverses
     expr match {
-      case Minus(a1, a) if (a==a1) =>
-        Some(RealLiteral(zero))
+      case Minus(a1, a) if (a==a1) => Some(RealLiteral(zero))
       case _ => None
     }
   }
@@ -657,8 +615,7 @@ trait RewritingOps {
   def idReduce3 (expr: Expr): Option[Expr] = {
     // sub0-neg
     expr match {
-      case Minus(RealLiteral(z), b) if (z==zero) =>
-        Some(UMinus(b.deepCopy))
+      case Minus(RealLiteral(z), b) if (z==zero) => Some(UMinus(b))
       case _ => None
     }
   }
@@ -666,8 +623,7 @@ trait RewritingOps {
   def idReduce4 (expr: Expr): Option[Expr] = {
     // remove-double-neg
     expr match {
-      case UMinus(UMinus(a)) =>
-        Some(a.deepCopy)
+      case UMinus(UMinus(a)) => Some(a)
       case _ => None
     }
   }
@@ -675,8 +631,7 @@ trait RewritingOps {
   def idReduce5 (expr: Expr): Option[Expr] = {
     // *-lft-identity
     expr match {
-      case Times(RealLiteral(o), a) if (o==one) =>
-        Some(a.deepCopy)
+      case Times(RealLiteral(o), a) if (o==one) => Some(a)
       case _ => None
     }
   }
@@ -684,8 +639,7 @@ trait RewritingOps {
   def idReduce6 (expr: Expr): Option[Expr] = {
     // *-rgt-identity
     expr match {
-      case Times(a, RealLiteral(o)) if (o==one) =>
-        Some(a.deepCopy)
+      case Times(a, RealLiteral(o)) if (o==one) => Some(a)
       case _ => None
     }
   }
@@ -693,8 +647,7 @@ trait RewritingOps {
   def idReduce7 (expr: Expr): Option[Expr] = {
     // *-inverses
     expr match {
-      case Division(a1, a) if (a==a1) =>
-        Some(RealLiteral(one))
+      case Division(a1, a) if (a==a1) => Some(RealLiteral(one))
       case _ => None
     }
   }
@@ -702,8 +655,7 @@ trait RewritingOps {
   def idReduce8 (expr: Expr): Option[Expr] = {
     // remove-double-div
     expr match {
-      case Division(RealLiteral(o), Division(RealLiteral(o2), a)) if (o==one && o2==one) =>
-        Some(a.deepCopy)
+      case Division(RealLiteral(o), Division(RealLiteral(o2), a)) if (o==one && o2==one) => Some(a)
       case _ => None
     }
   }
@@ -711,8 +663,7 @@ trait RewritingOps {
   def idReduce9 (expr: Expr): Option[Expr] = {
     // div0
     expr match {
-      case Division(RealLiteral(z), a) if (z==zero) =>
-        Some(RealLiteral(zero))
+      case Division(RealLiteral(z), a) if (z==zero) => Some(RealLiteral(zero))
       case _ => None
     }
   }
@@ -720,8 +671,7 @@ trait RewritingOps {
   def idReduce10 (expr: Expr): Option[Expr] = {
     // mul0
     expr match {
-      case Times(RealLiteral(z), a) if (z==zero) =>
-        Some(RealLiteral(zero))
+      case Times(RealLiteral(z), a) if (z==zero) => Some(RealLiteral(zero))
       case _ => None
     }
   }
@@ -729,8 +679,7 @@ trait RewritingOps {
   def idReduce11 (expr: Expr): Option[Expr] = {
     // mul-1-neg
     expr match {
-      case Times(UMinus(RealLiteral(o)), a) if (o==one) =>
-        Some(UMinus(a.deepCopy))
+      case Times(UMinus(RealLiteral(o)), a) if (o==one) => Some(UMinus(a))
       case _ => None
     }
   }
@@ -741,8 +690,7 @@ trait RewritingOps {
   def fracTrans0 (expr: Expr): Option[Expr] = {
     // sub-div
     expr match {
-      case Minus(Division(a, c), Division(b, c1)) if (c==c1) =>
-        Some(Division(Minus(a.deepCopy, b.deepCopy), c.deepCopy))
+      case Minus(Division(a, c), Division(b, c1)) if (c==c1) => Some(Division(Minus(a, b), c))
       case _ => None
     }
   }
@@ -750,9 +698,8 @@ trait RewritingOps {
   def fracTrans1 (expr: Expr): Option[Expr] = {
     // frac-add
     expr match {
-      case Plus(Division(a, b), Division(c, d)) =>
-        Some(Division(Plus(Times(a.deepCopy, d.deepCopy), Times(b.deepCopy, c.deepCopy)),
-          Times(b.deepCopy, d.deepCopy)))
+      case Plus(Division(a, b), Division(c, d)) => Some(Division(Plus(Times(a, d), Times(b, c)),
+          Times(b, d)))
       case _ => None
     }
   }
@@ -760,9 +707,8 @@ trait RewritingOps {
   def fracTrans2 (expr: Expr): Option[Expr] = {
     // frac-sub
     expr match {
-      case Minus(Division(a, b), Division(c, d)) =>
-        Some(Division(Minus(Times(a.deepCopy, d.deepCopy), Times(b.deepCopy, c.deepCopy)),
-          Times(b.deepCopy, d.deepCopy)))
+      case Minus(Division(a, b), Division(c, d)) => Some(Division(Minus(Times(a, d), Times(b, c)),
+          Times(b, d)))
       case _ => None
     }
   }
@@ -770,8 +716,7 @@ trait RewritingOps {
   def fracTrans3 (expr: Expr): Option[Expr] = {
     // frac-times
     expr match {
-      case Times(Division(a, b), Division(c, d)) =>
-        Some(Division(Times(a.deepCopy, c.deepCopy), Times(b.deepCopy, d.deepCopy)))
+      case Times(Division(a, b), Division(c, d)) => Some(Division(Times(a, c), Times(b, d)))
       case _ => None
     }
   }
@@ -779,8 +724,7 @@ trait RewritingOps {
   def fracTrans4 (expr: Expr): Option[Expr] = {
     // frac-2neg
     expr match {
-      case Division(a, b) =>
-        Some(Division(UMinus(a.deepCopy), UMinus(b.deepCopy)))
+      case Division(a, b) => Some(Division(UMinus(a), UMinus(b)))
       case _ => None
     }
   }
@@ -791,8 +735,7 @@ trait RewritingOps {
   def fracDist0 (expr: Expr): Option[Expr] = {
     // div-sub
     expr match {
-      case Division(Minus(a, b), c) =>
-        Some(Minus(Division(a.deepCopy, c.deepCopy), Division(b.deepCopy, c.deepCopy)))
+      case Division(Minus(a, b), c) => Some(Minus(Division(a, c), Division(b, c)))
       case _ => None
     }
   }
@@ -800,8 +743,7 @@ trait RewritingOps {
   def fracDist1 (expr: Expr): Option[Expr] = {
     // times-frac
     expr match {
-      case Division(Times(a, b), Times(c, d)) =>
-        Some(Times(Division(a.deepCopy, c.deepCopy), Division(b.deepCopy, d.deepCopy)))
+      case Division(Times(a, b), Times(c, d)) => Some(Times(Division(a, c), Division(b, d)))
       case _ => None
     }
   }

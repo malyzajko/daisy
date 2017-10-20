@@ -20,6 +20,7 @@ libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % "2.11.11",
     "org.scalatest" % "scalatest_2.11" % "2.2.4" % "test",
     "com.storm-enroute" %% "scalameter" % "0.7",
+    "com.regblanc" % "scala-smtlib_2.11" % "0.2",
     "org.fusesource.hawtjni" % "hawtjni-runtime" % "1.9"  //for JNI
 )
 

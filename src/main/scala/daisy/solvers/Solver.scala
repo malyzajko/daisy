@@ -405,8 +405,8 @@ abstract class SMTLibSolver(val cfg: Config) {
      * ===== Logic =====
      */
     case Not(u)          => Core.Not(toSMT(u))
-    case And(sub)                  => Core.And(sub.map(toSMT): _*)
-    case Or(sub)                   => Core.Or(sub.map(toSMT): _*)
+    case And(sub)                  => Core.And(sub.map(toSMT))
+    case Or(sub)                   => Core.Or(sub.map(toSMT))
 
     case Equals(a, b)    => Core.Equals(toSMT(a), toSMT(b))
     case Implies(a, b)   => Core.Implies(toSMT(a), toSMT(b))

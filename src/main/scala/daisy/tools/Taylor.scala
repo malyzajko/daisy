@@ -177,8 +177,6 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
     var resExpr = ex
 
     def simpleRound(e: Expr): Expr = e match {
-      case x @ Delta(id) => x
-      case x @ Epsilon(id) => x
       case x @ Variable(id) => x
 
       case x @ RealLiteral(r) =>
@@ -341,8 +339,6 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
     var resExpr = easySimplify(ex)
 
     def simpleRound(e: Expr): Expr = e match {
-      case x @ Delta(id) => x
-      case x @ Epsilon(id) => x
       case x @ Variable(id) => x
       case x @ RealLiteral(r) => x
 
@@ -757,20 +753,20 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
       listFailed.map(removeDeltasFromMap).map(_.keySet.map(_.globalId)))
 
     // both deltas and epsilons
-    val deltas: Set[Expr with Identifiable] = deltasOf(simple) ++ epsilonsOf(simple)
+    val deltas: Set[Variable] = deltasOf(simple) ++ epsilonsOf(simple)
     // todo fix fold or map
     // cfg.reporter.warning("Amount of runs for the first remainder term " + Math.pow(deltas.size, 2) * intervals.size)
     val firstTerm = deltas.map(wrt => {
       // val wrtSt = System.currentTimeMillis()
       // first derivative
       val tmp = easySimplify(
-        getPartialDerivative(simple, wrt.getId))
+        getPartialDerivative(simple, wrt.id))
       val tmpValOut = deltas.par.map(wrtIn => {
         // val start = System.currentTimeMillis()
         // second derivative
-        if (containsVariables(tmp, wrtIn.getId)) {
+        if (containsVariables(tmp, wrtIn.id)) {
           val tmpIn = easySimplify(Times(wrt, Times(wrtIn, moreSimplify(
-            getPartialDerivative(tmp, wrtIn.getId)))))
+            getPartialDerivative(tmp, wrtIn.id)))))
 
           // cfg.reporter.warning(s"=============WRT $wrt * $wrtIn===============")
           // cfg.reporter.warning(s"Second derivative $tmpIn")
@@ -808,7 +804,7 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
     val epsilons: Set[Epsilon] = epsilonsOf(simple)
     val secondTerm = epsilons.par.map(wrt => {
       val tmp = Times(wrt, Times(wrt,
-        getPartialDerivative(simple, wrt.getId)))
+        getPartialDerivative(simple, wrt.id)))
       val tmpVal = intervals.par.map(x => {
         val interval = evaluateInterval(replaceDeltasWithZeros(tmp), x)
         if (interval.isDefined) {

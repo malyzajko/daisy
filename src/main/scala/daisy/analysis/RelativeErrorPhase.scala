@@ -14,6 +14,7 @@ import tools.{SMTRange, Evaluators, Interval, Rational, AffineForm, DivisionByZe
 import Rational._
 import tools.FinitePrecision._
 import Interval._
+import daisy.utils.CachingMap
 
 import solvers.{Solver, Z3Solver}
 import smtlib.parser.Commands.{AttributeOption, SetOption}
@@ -216,8 +217,6 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
         // do not call evaluation function on all subintervals
         // if simplified expression is delta or RealLiteral
         val tmpForMax = tmpExpr match {
-          case x @ Delta(id) => List(evaluateOpt(tmpExpr, inputValMap, rangeMethod))
-          case x @ Epsilon(id) => List(evaluateOpt(tmpExpr, inputValMap, rangeMethod))
           case x @ Variable(id) => List(evaluateOpt(tmpExpr, inputValMap, rangeMethod))
           case x @ RealLiteral(r) => List(evaluateOpt(tmpExpr, inputValMap, rangeMethod))
           case _ => newSet.map(interval => {
@@ -362,103 +361,40 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
    */
   def evaluateSMTReuse(expr: Expr, _intMap: collection.immutable.Map[Identifier, SMTRange] = Map.empty): SMTRange = {
 
-    var intMap = _intMap
-    // TODO check whether the copy is the best solution here
-    val exprCopy = expr.deepCopy
-    var smtRangeMap: collection.immutable.Map[Expr, SMTRange] = Map.empty
+    // TODO check whether the expr is the best solution here
+    val smtRangeMap: collection.mutable.Map[Expr, SMTRange] = new CachingMap[Expr, SMTRange]
+    for ((id, smtrange) <- _intMap) {
+      smtRangeMap.put(Variable(id), smtrange)
+    }
 
-    def evalSMT(e: Expr): SMTRange = e match {
+    def evalSMT(e: Expr): SMTRange = smtRangeMap.getOrElse(e, e match {
 
-      case x @ Delta(id) =>
-        intMap(id)
+      case RealLiteral(r) => SMTRange(r)
 
-      case x @ Epsilon(id) =>
-        intMap(id)
+      case Plus(lhs, rhs) => evalSMT(lhs) + (evalSMT(rhs), precisionDefault, loopLower)
 
-      case x @ Variable(id) =>
-        intMap(id)
+      case Minus(lhs, rhs) => evalSMT(lhs) - (evalSMT(rhs), precisionDefault, loopLower)
 
-      case x @ RealLiteral(r) =>
-        val smtRange = SMTRange(r)
-        smtRangeMap = smtRangeMap + (x -> smtRange)
-        smtRange
+      case Times(lhs, rhs) => evalSMT(lhs) * (evalSMT(rhs), precisionDefault, loopLower)
 
-      case x @ Plus(lhs, rhs) =>
-        if (smtRangeMap.contains(x)) {
-          smtRangeMap(x)
-        } else {
-          val smtRange = evalSMT(lhs) + (evalSMT(rhs), precisionDefault, loopLower)
-          smtRangeMap = smtRangeMap + (x -> smtRange)
-          smtRange
-        }
+      case Division(lhs, rhs) => evalSMT(lhs) / (evalSMT(rhs), precisionDefault, loopLower)
 
-      case x @ Minus(lhs, rhs) =>
-        if (smtRangeMap.contains(x)) {
-          smtRangeMap(x)
-        } else {
-          val smtRange = evalSMT(lhs) - (evalSMT(rhs), precisionDefault, loopLower)
-          smtRangeMap = smtRangeMap + (x -> smtRange)
-          smtRange
-        }
+      case Pow(lhs, rhs) => evalSMT(lhs) ^ (evalSMT(rhs), precisionDefault, loopLower)
 
-      case x @ Times(lhs, rhs) =>
-        if (smtRangeMap.contains(x)) {
-          smtRangeMap(x)
-        } else {
-          val smtRange = evalSMT(lhs) * (evalSMT(rhs), precisionDefault, loopLower)
-          smtRangeMap = smtRangeMap + (x -> smtRange)
-          smtRange
-        }
+      case UMinus(t) => - evalSMT(t)
 
-      case x @ Division(lhs, rhs) =>
-        if (smtRangeMap.contains(x)) {
-          smtRangeMap(x)
-        } else {
-          val smtRange = evalSMT(lhs) / (evalSMT(rhs), precisionDefault, loopLower)
-          smtRangeMap = smtRangeMap + (x -> smtRange)
-          smtRange
-        }
+      case Sqrt(t) => evalSMT(t).squareRoot(precisionDefault, loopDefault)
 
-      case x @ Pow(lhs, rhs) =>
-        if (smtRangeMap.contains(x)) {
-          smtRangeMap(x)
-        } else {
-          val smtRange = evalSMT(lhs) ^ (evalSMT(rhs), precisionDefault, loopLower)
-          smtRangeMap = smtRangeMap + (x -> smtRange)
-          smtRange
-        }
-
-      case x @ UMinus(t) =>
-        if (smtRangeMap.contains(x)) {
-          smtRangeMap(x)
-        } else {
-          val smtRange = - evalSMT(t)
-          smtRangeMap = smtRangeMap + (x -> smtRange)
-          smtRange
-        }
-
-      case x @ Sqrt(t) =>
-        if (smtRangeMap.contains(x)) {
-          smtRangeMap(x)
-        } else {
-          val smtRange = evalSMT(t).squareRoot(precisionDefault, loopDefault)
-          smtRangeMap = smtRangeMap + (x -> smtRange)
-          smtRange
-        }
-
-      case Let(id, value, body) =>
-        if (intMap.contains(id)) {
-          intMap(id)
-        } else {
+      case Let(id, value, body) => {
           val smtRange = evalSMT(value)
-          intMap += (id -> smtRange)
+          smtRangeMap += (Variable(id) -> smtRange)
           evalSMT(body)
         }
 
       case _ =>
         throw new IllegalArgumentException("Unknown expression. Evaluation failed")
-    }
-    evalSMT(exprCopy)
+    })
+    evalSMT(expr)
   }
 
   def compareMaps(first: Map[Identifier, Interval], second: Map[Identifier, Interval]): Boolean = {

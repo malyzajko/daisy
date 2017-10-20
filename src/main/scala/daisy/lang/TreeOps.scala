@@ -123,7 +123,7 @@ object TreeOps {
     val newEs = es.map(rec)
     val newV = {
       if ((newEs zip es).exists { case (bef, aft) => aft ne bef }) {
-        builder(newEs).copiedFrom(e)
+        builder(newEs)
       } else {
         e
       }
