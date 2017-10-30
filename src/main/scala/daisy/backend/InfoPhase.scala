@@ -20,29 +20,24 @@ import Rational._
   Prerequisites:
     -
  */
-object InfoPhase extends PhaseComponent {
+object InfoPhase extends DaisyPhase {
   override val name = "Info"
+  override val shortName = "info"
   override val description = "Prints interesting information"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     StringOption(
       "info-log",
       "Which file to write analysis results to. Default prints nothing, output file is created in rawdata/")
   )
-  override def apply(cfg: Config) = new InfoPhase(cfg, name, "info")
-}
 
-class InfoPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase {
-
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
-
-    val out = cfg.option[Option[String]]("info-log")
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
+    val out = ctx.option[Option[String]]("info-log")
       .map(f => new BufferedWriter(new FileWriter("log/"+f)))
       .orNull
 
-    for (fnc <- functionsToConsider(prg)){
+    for (fnc <- functionsToConsider(ctx, prg)){
 
-      cfg.reporter.result(fnc.id)
+      ctx.reporter.result(fnc.id)
 
       val absError = ctx.resultAbsoluteErrors.get(fnc.id)
       val range = ctx.resultRealRanges.get(fnc.id)
@@ -52,7 +47,7 @@ class InfoPhase(val cfg: Config, val name: String, val shortName: String) extend
           ctx.specResultErrorBounds.get(fnc.id) match {
             case Some(specError) =>
               if (x > specError) {
-                cfg.reporter.warning("Error bound is not satisfied!")
+                ctx.reporter.warning("Error bound is not satisfied!")
               }
             case _ =>
           }
@@ -85,7 +80,7 @@ class InfoPhase(val cfg: Config, val name: String, val shortName: String) extend
 
       val infoString: String =
         s"abs-error: ${absErrorString}, real range: ${rangeString},\nrel-error: ${relErrorString}"
-      cfg.reporter.result(infoString)
+      ctx.reporter.result(infoString)
 
       if (out != null) {
         out.write(fnc.id.toString + " ")
@@ -95,11 +90,11 @@ class InfoPhase(val cfg: Config, val name: String, val shortName: String) extend
 
 
     if (solvers.Solver.unknownCounter != 0) {
-      cfg.reporter.warning(s"Solver returned unknown or timed out ${solvers.Solver.unknownCounter} times.")
+      ctx.reporter.warning(s"Solver returned unknown or timed out ${solvers.Solver.unknownCounter} times.")
 
     }
 
     if (out != null){ out.close }
-    finishRun(ctx, prg)
+    (ctx, prg)
   }
 }

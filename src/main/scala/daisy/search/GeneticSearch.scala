@@ -12,10 +12,9 @@ import Rational._
 
 // The MutationRules should probably not be mixed-in to the generic genetic program
 trait GeneticSearch[T] {
-  val cfg: Config
 
-  val maxGenerations = cfg.option[Long]("rewrite-generations").toInt
-  val populationSize = cfg.option[Long]("rewrite-population-size").toInt
+  var maxGenerations = 30
+  var populationSize = 30
   require(populationSize % 2 == 0)
   val tournamentSize = 4
 

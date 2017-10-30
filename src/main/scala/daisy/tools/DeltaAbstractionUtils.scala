@@ -10,18 +10,12 @@ import lang.TreeOps.freeVariablesOf
 import tools.FinitePrecision.Float64
 
 trait DeltaAbstractionUtils {
-  val cfg: Config
-
   val deltaName = "delta"
   val epsilonName = "eps"
 
   val zero = RealLiteral(Rational.zero)
   val one = RealLiteral(Rational.one)
   val two = RealLiteral(Rational.two)
-
-  // scala quirk, cfg is not yet defined when the trait's constructor is called
-  lazy val trackRoundoffErrs = !cfg.hasFlag("noRoundoff")
-  lazy val denormals = cfg.hasFlag("denormals")
 
   val deltaIntervalFloat64 = Interval(-Float64.machineEpsilon, Float64.machineEpsilon)
   val epsilonIntervalFloat64 = Interval(-Float64.denormalsError, Float64.denormalsError)
@@ -62,14 +56,14 @@ trait DeltaAbstractionUtils {
   // returns the delta-abstracted expression, as well as the list of deltas
   // corresponding to transcendental functions
   def deltaAbstract(expr: Expr, deltaToVarMap: Map[Variable, Delta],
-    epsToVarMap: Map[Variable,Epsilon]): (Expr, Seq[Identifier]) = {
+    epsToVarMap: Map[Variable,Epsilon], denormals: Boolean): (Expr, Seq[Identifier]) = {
 
     var transcendentalDeltas = Seq[Identifier]()
 
     def _deltaAbstract(e: Expr): Expr = (e: @unchecked) match {
 
       // x -> x * (1 + delta)
-      case x: Variable if trackRoundoffErrs && denormals =>
+      case x: Variable if denormals =>
         // initial error
         if (deltaToVarMap.contains(x))
           if (epsToVarMap.contains(x)) {
@@ -84,16 +78,16 @@ trait DeltaAbstractionUtils {
             Plus(Times(x, Plus(one, getADelta)), getAnEpsilon)
           }
       // x -> x * (1 + delta)
-      case x: Variable if trackRoundoffErrs =>
+      case x: Variable =>
         // initial error
         if (deltaToVarMap.contains(x)) {
           Times(x, Plus(one, deltaToVarMap(x)))
         } else {
           Times(x, Plus(one, getADelta))
         }
-      case x: Variable =>
-        // no initial error
-        x
+      // case x: Variable =>
+      //   // no initial error
+      //   x
 
       // c -> c * (1 + delta)   ## except if representable directly
       case x: RealLiteral =>

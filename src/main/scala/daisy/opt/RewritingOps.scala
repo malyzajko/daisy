@@ -12,9 +12,6 @@ import scala.util.Random
 
 trait RewritingOps {
 
-  val cfg: Config
-
-  // NOTE: this is mutable (so that the value can be set by the user with command-line)
   var rand: Random
 
   implicit val debugSection: DebugSection
@@ -29,22 +26,22 @@ trait RewritingOps {
   def _mutate(expr: Expr, _index: Int, activeRules: Seq[Expr => Option[Expr]]): Expr = {
     var index = _index
     var mutationSuccess = false
-    cfg.reporter.debug(s"\nmutate $expr at index $index")
+    //ctx.reporter.debug(s"\nmutate $expr at index $index")
     // pick a node in expr to mutate, for this the tree is implicitly indexed
     // in a depth-first manner
     def rewrite(e: Expr): Expr = {
       val candidateMutants: Seq[Expr] = activeRules.flatMap(x => x(e))
 
       if (candidateMutants.length == 0) { // picked a node that cannot be rewritten
-        // cfg.reporter.warning("picked node with nothing to mutate")
-        // cfg.reporter.warning("Expression with nothing to mutate: " + e)
+        // ctx.reporter.warning("picked node with nothing to mutate")
+        // ctx.reporter.warning("Expression with nothing to mutate: " + e)
         countUnmodified = countUnmodified + 1
         e
       } else {
         mutationSuccess = true
         // pick randomly one from the list (this may not be the most efficient method)
         val mutatedNode = candidateMutants(rand.nextInt(candidateMutants.size))
-        cfg.reporter.debug("mutatedNode: " + mutatedNode)
+        //ctx.reporter.debug("mutatedNode: " + mutatedNode)
 
         // TODO simplification (once, twice, until fixpoint?)
 
@@ -89,15 +86,11 @@ trait RewritingOps {
             val (t, c) = mapNth(es.head, count + 1)
             (builder(Seq(t)), c)
 
-          } else if (es.size == 2) { // binary operator
-
+          } else { // binary operator
+            assert(es.size == 2)
             val (lhs, countLhs) = mapNth(es(0), count + 1)
             val (rhs, countRhs) = mapNth(es(1), countLhs)
             (builder(Seq(lhs, rhs)), countRhs)
-
-          } else {
-            cfg.reporter.error("found more than binary operator, don't know what to do with it")
-            null
           }
 
         }

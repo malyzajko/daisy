@@ -18,7 +18,7 @@ object Main {
     FlagOption(
       "silent",
       "Don't print anything, except for results."),
-    MultiChoiceOptionDef(
+    MultiChoiceOption(
       "debug",
       DebugSections.all.map(s => s.name -> s).toMap,
       "For which sections to print debug info"),
@@ -92,11 +92,7 @@ object Main {
       "Include parameter for denormals in the FP abstraction (for optimization-based approach only).")
   )
 
-  /*
-    For now these are phases, but it should be anything that
-    needs command-line options.
-   */
-  lazy val allComponents: Set[Component] = Set(
+  lazy val allPhases: Set[DaisyPhase] = Set(
     analysis.SpecsProcessingPhase,
     analysis.AbsErrorPhase,
     analysis.RangePhase,
@@ -111,64 +107,176 @@ object Main {
     backend.InfoPhase,
     frontend.ExtractionPhase)
 
-  var cfg: Config = _
+  // all available options from all phases
+  private val allOptions: Set[CmdLineOption[Any]] =
+    globalOptions ++ allPhases.flatMap(_.definedOptions)
+
+  var ctx: Context = null
 
   def main(args: Array[String]): Unit = {
+    // TODO: only needs to be run once at compile time, maybe make this into a test
+    verifyCmdLineOptions()
 
-    cfg = Config(args: _*)
+    ctx = processOptions(args.toList)
+    ctx.timers.total.start
 
-    val pipeline = computePipeline(cfg)
+    if (ctx.hasFlag("help")) {
+      showHelp(ctx.reporter)
+    } else {
 
-    cfg.reporter.info("\n************ Starting Daisy ************")
+      val pipeline = computePipeline(ctx)
 
-    try { // for debugging it's better to have these off.
-      pipeline.run(Context(), Program(null, Nil))
-    } catch {
-      case tools.DivisionByZeroException(msg) =>
-        cfg.reporter.warning(msg)
-      case tools.DenormalRangeException(msg) =>
-        cfg.reporter.warning(msg)
-      case tools.OverflowException(msg) =>
-        cfg.reporter.warning(msg)
-      case e: java.lang.UnsatisfiedLinkError =>
-        cfg.reporter.warning("A library could not be loaded: " + e)
-      //case e: DaisyFatalError => cfg.reporter.info("Something really bad happened. Cannot continue.")
+      ctx.reporter.info("\n************ Starting Daisy ************")
+
+      try { // for debugging it's better to have these off.
+        pipeline.run(ctx, Program(null, Nil))
+      } catch {
+        case tools.DivisionByZeroException(msg) =>
+          ctx.reporter.warning(msg)
+        case tools.DenormalRangeException(msg) =>
+          ctx.reporter.warning(msg)
+        case tools.OverflowException(msg) =>
+          ctx.reporter.warning(msg)
+        case e: java.lang.UnsatisfiedLinkError =>
+          ctx.reporter.warning("A library could not be loaded: " + e)
+        //case e: DaisyFatalError => ctx.reporter.info("Something really bad happened. Cannot continue.")
+      }
     }
 
-    cfg.timers.get("total").stop
-    cfg.reporter.info("time: \n" + cfg.timers.toString)
+    ctx.timers.get("total").stop
+    ctx.reporter.info("time: \n" + ctx.timers.toString)
   }
 
-  private def computePipeline(cfg: Config): Pipeline[Program, Program] = {
+  private def computePipeline(ctx: Context): Pipeline[Program, Program] = {
 
-    var pipeline: Pipeline[Program, Program] = frontend.ExtractionPhase(cfg)
+    var pipeline: Pipeline[Program, Program] = frontend.ExtractionPhase
 
-    pipeline >>= analysis.SpecsProcessingPhase(cfg)
+    pipeline >>= analysis.SpecsProcessingPhase
 
-    if (cfg.hasFlag("rewrite")) {
-      pipeline >>= opt.RewritingOptimizationPhase(cfg)
+    if (ctx.hasFlag("rewrite")) {
+      pipeline >>= opt.RewritingOptimizationPhase
     }
 
-    if (cfg.hasFlag("dynamic")) {
-      pipeline >>= analysis.DynamicPhase(cfg)
+    if (ctx.hasFlag("dynamic")) {
+      pipeline >>= analysis.DynamicPhase
     } else {
-      if (cfg.hasFlag("three-address") || (cfg.fixedPoint && cfg.hasFlag("codegen"))) {
-        pipeline >>= transform.TACTransformerPhase(cfg)
+      if (ctx.hasFlag("three-address") || (ctx.fixedPoint && ctx.hasFlag("codegen"))) {
+        pipeline >>= transform.TACTransformerPhase
       }
 
       // TODO: this is very ugly
-      if (cfg.hasFlag("subdiv") && cfg.option[PhaseComponent]("analysis") == analysis.DataflowPhase) {
-        pipeline >>= analysis.DataflowSubdivisionPhase(cfg)
+      if (ctx.hasFlag("subdiv") && ctx.option[DaisyPhase]("analysis") == analysis.DataflowPhase) {
+        pipeline >>= analysis.DataflowSubdivisionPhase
       } else {
-        pipeline >>= cfg.option[PhaseComponent]("analysis").apply(cfg)
+        pipeline >>= ctx.option[DaisyPhase]("analysis")
       }
 
-      pipeline >>= backend.InfoPhase(cfg)
+      pipeline >>= backend.InfoPhase
 
-      if (cfg.hasFlag("codegen")) {
-        pipeline >>= backend.CodeGenerationPhase(cfg)
+      if (ctx.hasFlag("codegen")) {
+        pipeline >>= backend.CodeGenerationPhase
       }
     }
     pipeline
+  }
+
+  private def showHelp(reporter: Reporter): Nothing = {
+    reporter.info("usage: [--help] [--debug=<N>] [..] <files>")
+    reporter.info("")
+    for (opt <- Main.globalOptions.toSeq.sortBy(_.name)) {
+      reporter.info(opt.helpLine)
+    }
+    reporter.info("")
+    reporter.info("Additional options, by component:")
+
+    for (c <- Main.allPhases.toSeq.sortBy(_.name) if c.definedOptions.nonEmpty) {
+      reporter.info("")
+      reporter.info(s"${c.name} Phase")
+      for(opt <- c.definedOptions.toSeq.sortBy(_.name)) {
+        reporter.info(opt.helpLine)
+      }
+    }
+    sys.exit(0)
+  }
+
+  private def verifyCmdLineOptions(): Unit = {
+    val allOpts =
+      Main.globalOptions.toList.map((_, "global")) ++
+      Main.allPhases.flatMap(c => c.definedOptions.toList.map((_, c.name)))
+    allOpts.groupBy(_._1.name).collect{
+      case (name, opts) if opts.size > 1 =>
+        Console.err.println(s"Duplicate command line option '$name' in " +
+         opts.map("'"+_._2+"'").mkString(", "))
+    }
+  }
+
+  def processOptions(args: List[String]): Context = {
+    val initReporter = new DefaultReporter(Set(), false)
+
+    val argsMap: Map[String, String] =
+      args.filter(_.startsWith("--")).map(_.drop(2).split("=", 2).toList match {
+      case List(name, value) => name -> value
+      case List(name) => name -> "yes"
+    }).toMap
+
+
+    argsMap.keySet.diff(allOptions.map(_.name)).foreach {
+      name => initReporter.warning(s"Unknown option: $name")
+    }
+
+    // go through all options and check if they are defined, else use default
+    val opts: Map[String, Any] = allOptions.map({
+      case FlagOption(name, _) => name -> argsMap.get(name).isDefined
+
+      case StringOption(name, _) => name -> argsMap.get(name)
+
+      case MultiStringOption(name, _, _) =>
+        name -> argsMap.get(name).map(_.stripPrefix("[").stripPrefix("]").split(":").toList).getOrElse(Nil)
+
+      case NumOption(name, default, _) => argsMap.get(name) match {
+          case None => name -> default
+          case Some(s) => try {
+            name -> s.toLong
+          } catch {
+            case e: NumberFormatException =>
+              initReporter.warning("Can't parse argument for option $name, using default")
+              name -> default
+          }
+        }
+
+      case ChoiceOption(name, choices, default, _) => argsMap.get(name) match {
+        case Some(s) if choices.keySet.contains(s) => name -> choices(s)
+        case Some(s) =>
+          initReporter.warning(s"Unknown choice value for $name: $s. Options: " +
+            s"${choices.keySet.toSeq.sorted.mkString(", ")}. Using default $default")
+          name -> choices(default)
+        case None => name -> choices(default)
+      }
+
+      case MultiChoiceOption(name, choices, _) => argsMap.get(name) match {
+        case Some("all") | Some("[all]") =>
+          name -> choices.values.toList
+        case Some(ss) => name -> ss.stripPrefix("[").stripSuffix("]").split(":").toList.filter {
+          case "all" =>
+            initReporter.warning(s"'all' in list for $name, ignoring"); false
+          case s if !choices.keySet.contains(s) =>
+            initReporter.warning(s"Unknown choice value for $name: $s. Options: ${choices.keySet.toSeq.sorted.mkString(", ")}"); false
+          case _ => true
+        }.map(choices(_))
+        case None => name -> Nil
+      }
+    }).toMap
+
+    val inputFile: String = args.filterNot(_.startsWith("-")).toSeq match {
+      case fs if fs.isEmpty => showHelp(initReporter)
+      case fs if fs.size > 1 => initReporter.fatalError("More than one input file." + fs.mkString(":"))
+      case fs => fs.head
+    }
+
+    Context(
+      file = inputFile,
+      options = opts
+    )
+
   }
 }

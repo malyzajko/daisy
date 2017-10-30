@@ -33,8 +33,9 @@ import Sampler._
   Prerequisites:
     - SpecsProcessingPhase
  */
-object DynamicPhase extends PhaseComponent {
+object DynamicPhase extends DaisyPhase with DynamicEvaluators {
   override val name = "Dynamic"
+  override val shortName = "dynamic"
   override val description = "dynamic evaluation of errors"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     NumOption(
@@ -55,32 +56,26 @@ object DynamicPhase extends PhaseComponent {
       0,
       "Seed to use for random number generator. 0 for System.currentTimeMillis()")
   )
-  override def apply(cfg: Config) = new DynamicPhase(cfg, name, "dynamic")
-}
 
-class DynamicPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
-    with DynamicEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
+    val numSamples = ctx.option[Long]("sampleSize")
+    inputRangeFactor = Rational.fromString(ctx.option[Option[String]]("inputRangeFactor").getOrElse("1"))
 
-    val numSamples = cfg.option[Long]("sampleSize")
-    val inputRangeFactor: Rational = Rational.fromString(cfg.option[Option[String]]("inputRangeFactor").getOrElse("1"))
-
-    val useRationals = false //!cfg.hasFlag("mpfr")
-    val logToFile = cfg.hasFlag("dynamic-log")
-    val useRoundoff = !cfg.hasFlag("noRoundoff")
-    val seed = if (cfg.option[Long]("dynamic-custom-seed") == 0) {
+    val useRationals = false //!ctx.hasFlag("mpfr")
+    val logToFile = ctx.hasFlag("dynamic-log")
+    val useRoundoff = !ctx.hasFlag("noRoundoff")
+    val seed = if (ctx.option[Long]("dynamic-custom-seed") == 0) {
       System.currentTimeMillis()
     } else {
-      cfg.option[Long]("dynamic-custom-seed")
+      ctx.option[Long]("dynamic-custom-seed")
     }
 
-    if (useRationals) { cfg.reporter.info("using Rational")
-    } else { cfg.reporter.info("using MPFR") }
+    if (useRationals) { ctx.reporter.info("using Rational")
+    } else { ctx.reporter.info("using MPFR") }
 
-    cfg.reporter.info("seed: " + seed)
+    ctx.reporter.info("seed: " + seed)
 
     // val timestamp: Long = System.currentTimeMillis / 1000
     // val fstream = new FileWriter(s"rawdata/${filePrefix}_${prg.id}_$timestamp.txt")
@@ -108,8 +103,8 @@ class DynamicPhase(val cfg: Config, val name: String, val shortName: String) ext
 
       val id = fnc.id
       val body = fnc.body.get
-      cfg.reporter.info("evaluating " + id + "...")
-      //cfg.reporter.info(s"expression is $body")
+      ctx.reporter.info("evaluating " + id + "...")
+      //ctx.reporter.info(s"expression is $body")
 
       val inputRanges: Map[Identifier, Interval] = ctx.specInputRanges(id).map({
         case (id, i) =>
@@ -125,7 +120,7 @@ class DynamicPhase(val cfg: Config, val name: String, val shortName: String) ext
         var i = 0
         while (i < numSamples) {
           i = i + 1
-          // if (i % 10000 == 0) cfg.reporter.info(s"i: $i")  // showing progress
+          // if (i % 10000 == 0) ctx.reporter.info(s"i: $i")  // showing progress
 
           // does not consider input roundoff errors
           val strInputs: Map[Identifier, String] = sampler.nextString
@@ -157,7 +152,7 @@ class DynamicPhase(val cfg: Config, val name: String, val shortName: String) ext
             s" ${measurer.minAbsError}" +
             s" ${measurer.minRelError}\n")
         }
-        cfg.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError}" +
+        ctx.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError}" +
           s" maxRelError: ${measurer.maxRelError}")
 
       } else {
@@ -172,7 +167,7 @@ class DynamicPhase(val cfg: Config, val name: String, val shortName: String) ext
         var i = 0
         while (i < numSamples) {
           i = i + 1
-          // if (i % 10000 == 0) cfg.reporter.info(s"i: $i")
+          // if (i % 10000 == 0) ctx.reporter.info(s"i: $i")
 
           // WITH input errors
 
@@ -204,7 +199,7 @@ class DynamicPhase(val cfg: Config, val name: String, val shortName: String) ext
           assert(currentMaxAbs <= measurer.maxAbsError.doubleValue)
           currentMaxAbs = measurer.maxAbsError.doubleValue
           if (abs(dblOutput) <= java.lang.Double.MIN_NORMAL) {
-            cfg.reporter.warning(s"THE SUBNORMAL")
+            ctx.reporter.warning(s"THE SUBNORMAL")
             i = i - 1
           }
         }
@@ -221,7 +216,7 @@ class DynamicPhase(val cfg: Config, val name: String, val shortName: String) ext
             s" ${measurer.avrgRelError.toDoubleString}" +
             s" ${measurer.avrgUlpError}\n")
         }
-        cfg.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError.toDoubleString}" +
+        ctx.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError.toDoubleString}" +
           s" maxRelError: ${measurer.maxRelError.toDoubleString}")
 
       }
@@ -229,10 +224,8 @@ class DynamicPhase(val cfg: Config, val name: String, val shortName: String) ext
 
     }
 
-    finishRun(ctx, prg)
-
     if (logToFile) {
-      logFile.write(s"\ntime: ${cfg.timers.get(shortName)}\n\n")
+      logFile.write(s"\ntime: ${ctx.timers.get(shortName)}\n\n")
       logFile.close()
     }
 

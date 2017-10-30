@@ -10,18 +10,14 @@ import utils._
 import scala.tools.nsc.{Settings,CompilerCommand}
 import java.io.File
 
-object ExtractionPhase extends PhaseComponent {
+object ExtractionPhase extends DaisyPhase {
   override val name = "Scalac Extraction"
+  override val shortName = "frontend"
   override val description = "Extraction of trees from the Scala Compiler"
-  override def apply(cfg: Config) = new ExtractionPhase(cfg, name, "frontend")
-}
 
-class ExtractionPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase {
   implicit val debug = DebugSectionFrontend
 
-  def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
-
+  def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val settings = new Settings
 
     // def getFiles(path: String): Option[Array[String]] =
@@ -29,7 +25,7 @@ class ExtractionPhase(val cfg: Config, val name: String, val shortName: String) 
 
     val scalaLib = Option(scala.Predef.getClass.getProtectionDomain.getCodeSource).map{
       _.getLocation.getPath
-    }.getOrElse(cfg.reporter.fatalError(
+    }.getOrElse(ctx.reporter.fatalError(
       "No Scala library found."
     ))
 
@@ -51,7 +47,7 @@ class ExtractionPhase(val cfg: Config, val name: String, val shortName: String) 
     settings.skip.value        = List("patmat")
 
     // this may fail, since the libFiles are relative to the main directory
-    val compilerOpts = cfg.libFiles ++ List(cfg.file)
+    val compilerOpts = ctx.libFiles ++ List(ctx.file)
 
     val command = new CompilerCommand(compilerOpts, settings) {
       override val cmdName = "daisy"
@@ -61,20 +57,20 @@ class ExtractionPhase(val cfg: Config, val name: String, val shortName: String) 
     // Debugging code for classpath crap
     // new scala.tools.util.PathResolver(settings).Calculated.basis.foreach { cp =>
     //   cp.foreach( p =>
-    //     cfg.reporter.debug(" => "+p.toString)
+    //     ctx.reporter.debug(" => "+p.toString)
     //   )
     // }
 
-    val compiler = new ScalaCompiler(settings, cfg)
+    val compiler = new ScalaCompiler(settings, ctx)
     val run = new compiler.Run
     run.compile(command.files)
 
     compiler.daisyExtraction.compiledProgram match {
-        case Some(pgm) => finishRun(ctx, pgm)
-        case None => cfg.reporter.fatalError("Failed to extract Daisy program.")
+        case Some(pgm) => (ctx, pgm)
+        case None => ctx.reporter.fatalError("Failed to extract Daisy program.")
       }
     } else {
-      cfg.reporter.fatalError("No input program.")
+      ctx.reporter.fatalError("No input program.")
     }
   }
 }

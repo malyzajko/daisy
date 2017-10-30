@@ -14,8 +14,9 @@ import lang.Extractors.ArithOperator
 import tools.{Interval, Rational}
 import lang.Identifiers.Identifier
 
-object CodeGenerationPhase extends PhaseComponent {
+object CodeGenerationPhase extends DaisyPhase {
   override val name = "Code Generation"
+  override val shortName = "codegen"
   override val description = "Generates (executable) code."
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     StringChoiceOption(
@@ -27,23 +28,22 @@ object CodeGenerationPhase extends PhaseComponent {
       "genMain",
       "Whether to generate a main method to run the code.")
   )
-  override def apply(cfg: Config) = new CodeGenerationPhase(cfg, name, "codegen")
-}
 
-class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase {
   implicit val debugSection = DebugSectionBackend
 
-  def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
+  var reporter: Reporter = null
 
-    var mixedPrecision = cfg.option[Option[String]]("mixed-precision").isDefined
-    var uniformPrecision = cfg.option[Precision]("precision")
-    val lang = cfg.option[String]("lang")
+  def runPhase(ctx: Context, prg: Program): (Context, Program) = {
+    var mixedPrecision = ctx.option[Option[String]]("mixed-precision").isDefined
+    var uniformPrecision = ctx.option[Precision]("precision")
+    val lang = ctx.option[String]("lang")
+
+    reporter = ctx.reporter
 
     val newProgram = uniformPrecision match {
       case FixedPrecision(b) =>
         if (mixedPrecision) {
-          cfg.reporter.error("Mixed-precision code generation is currently not supported for fixed-points.")
+          ctx.reporter.error("Mixed-precision code generation is currently not supported for fixed-points.")
         }
         // if we have fixed-point code, we need to generate it first
         val newDefs = prg.defs.map(fnc => if (!fnc.body.isEmpty && !fnc.precondition.isEmpty) {
@@ -86,17 +86,17 @@ class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
 
     writeFile(newProgram, lang, ctx)
 
-    finishRun(ctx, newProgram)
+    (ctx, newProgram)
   }
 
   private def writeFile(prg: Program, lang: String, ctx: Context): Unit = {
     import java.io.FileWriter
     import java.io.BufferedWriter
     val filename = "./output/" + prg.id + CodePrinter.suffix(lang)
-    cfg.reporter.info("generating code in " + filename)
+    ctx.reporter.info("generating code in " + filename)
     val fstream = new FileWriter(filename)
     val out = new BufferedWriter(fstream)
-    CodePrinter(prg, ctx, lang, out, cfg)
+    CodePrinter(prg, ctx, lang, out)
   }
 
   private def assignFloatType(prg: Program, typeMaps: Map[Identifier, Map[Identifier, Precision]],
@@ -155,6 +155,11 @@ class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
    */
   def toFixedPointCode(expr: Expr, format: FixedPrecision, intermRanges: Map[Expr, Interval],
                        intermAbsErrors: Map[Expr, Rational]): Expr = {
+    val newType = format match {
+      case FixedPrecision(8) => Int16Type
+      case FixedPrecision(16) => Int32Type
+      case FixedPrecision(32) => Int64Type
+    }
 
     @inline
     def getFractionalBits(e: Expr): Int = {
@@ -165,11 +170,7 @@ class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
 
 
     def _toFPCode(e: Expr): Expr = (e: @unchecked) match {
-      case x @ Variable(id) => format match {
-        case FixedPrecision(8) => Variable(id.changeType(Int16Type))
-        case FixedPrecision(16) => Variable(id.changeType(Int32Type))
-        case FixedPrecision(32) => Variable(id.changeType(Int64Type))
-      }
+      case x @ Variable(id) => Variable(id.changeType(newType))
 
       case RealLiteral(r) => // TODO: translate constant
         val f = format.fractionalBits(r)
@@ -213,7 +214,7 @@ class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
           RightShift(Plus(newLhs, newRhs), (fAligned - fRes))
         } else { // (fAligned < fRes) {
           // TODO: this sounds funny. does this ever happen?
-          cfg.reporter.warning("funny shifting condition is happening")
+          //reporter.warning("funny shifting condition is happening")
           LeftShift(Plus(newLhs, newRhs), (fRes - fAligned))
 
         }
@@ -247,7 +248,7 @@ class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
           RightShift(Minus(newLhs, newRhs), (fAligned - fRes))
         } else { // (fAligned < fRes) {
           // TODO: this sounds funny. does this ever happen?
-          cfg.reporter.warning("funny shifting condition is happening")
+          //reporter.warning("funny shifting condition is happening")
           LeftShift(Minus(newLhs, newRhs), (fRes - fAligned))
         }
 
@@ -265,7 +266,7 @@ class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
           RightShift(mult, (fMult - fRes))
         } else { // (fAligned < fRes) {
           // TODO: this sounds funny. does this ever happen?
-          cfg.reporter.warning("funny shifting condition is happening")
+          //reporter.warning("funny shifting condition is happening")
           LeftShift(mult, (fRes - fMult))
         }
 
@@ -278,7 +279,7 @@ class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
         Division(LeftShift(_toFPCode(lhs), shift), _toFPCode(rhs))
 
       case Let(id, value, body) =>
-        Let(id, _toFPCode(value), _toFPCode(body))
+        Let(id.changeType(newType), _toFPCode(value), _toFPCode(body))
     }
 
     _toFPCode(expr)

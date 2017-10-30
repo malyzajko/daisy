@@ -16,8 +16,8 @@ import lang.Identifiers._
 
 object DRealSolver {
 
-  def checkSat(query: Expr, cfg: Config): Option[Boolean] = {
-    val solver = new DRealSolver(cfg)
+  def checkSat(query: Expr, ctx: Context): Option[Boolean] = {
+    val solver = new DRealSolver(ctx)
     solver.writeLogic()
     solver.assertConstraint(query)
     val res = solver.checkSat
@@ -25,13 +25,13 @@ object DRealSolver {
     res
   }
 
-  def checkAndGetModel(query: Expr, cfg: Config): Option[Model] = ???
+  def checkAndGetModel(query: Expr, ctx: Context): Option[Model] = ???
 
   // global counter of "Unknown"s or timeouts
   var unknownCounter = 0
 }
 
-class DRealSolver(cfg: Config) extends SMTLibSolver(cfg) {
+class DRealSolver(ctx: Context) extends SMTLibSolver(ctx) {
 
   override def targetName: String = "dReal"
 
@@ -58,7 +58,7 @@ class DRealSolver(cfg: Config) extends SMTLibSolver(cfg) {
 
     interpreter.eval(cmd) match {
       case err @ ErrorResponse(msg) if !rawOut =>
-        cfg.reporter.warning(s"Unexpected error from $targetName solver: $msg")
+        ctx.reporter.warning(s"Unexpected error from $targetName solver: $msg")
         // Store that there was an error. Now all following check()
         // invocations will return None
         addError()
@@ -73,7 +73,7 @@ class DRealSolver(cfg: Config) extends SMTLibSolver(cfg) {
 
   def getNewInterpreter: DRealInterpreter = {
     val opts = interpreterOpts
-    cfg.reporter.debug("Invoking solver " + targetName + " with " + opts.mkString(" "))
+    ctx.reporter.debug("Invoking solver " + targetName + " with " + opts.mkString(" "))
 
     new DRealInterpreter("dReal", opts.toArray)
   }

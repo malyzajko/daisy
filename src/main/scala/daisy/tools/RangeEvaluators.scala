@@ -68,7 +68,7 @@ trait RangeEvaluators {
         intermediateRanges.put(Variable(id), eval(value))
         eval(body)
 
-      case Variable(_) => throw new Exception("Unknown variable")
+      case Variable(id) => throw new Exception("Unknown variable: " + id)
 
       case _ =>
         throw new Exception("Not supported")

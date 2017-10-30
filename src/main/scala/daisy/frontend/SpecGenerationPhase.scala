@@ -20,21 +20,16 @@ import lang.Identifiers._
   Prerequisites:
     -
  */
-object SpecGenerationPhase extends PhaseComponent {
+object SpecGenerationPhase extends DaisyPhase {
   override val name = "spec gen"
+  override val shortName = "specGen"
   override val description = "generates specs"
-  override def apply(cfg: Config) = new SpecGenerationPhase(cfg, name, "specGen")
-}
 
-class SpecGenerationPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase {
-
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
-
-    for (fnc <- functionsToConsider(prg)) {
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
+    for (fnc <- functionsToConsider(ctx, prg)) {
 
       val f = fnc.body.get
-      cfg.reporter.info("---------------" + fnc.id + "---------------")
+      ctx.reporter.info("---------------" + fnc.id + "---------------")
 
       // constraint that body needs to be bigger than 0 (less than 0 would be similar)
       // val bodyNotZeroConstraint = LessThan(RealLiteral(zero), f)
@@ -45,7 +40,7 @@ class SpecGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
         )
 
       for (bodyNotZeroConstraint <- notZeroConstraints) {
-        cfg.reporter.info("\nbodyNotZeroConstraint: " + bodyNotZeroConstraint)
+        ctx.reporter.info("\nbodyNotZeroConstraint: " + bodyNotZeroConstraint)
 
         var currentModels: Map[Identifier, Seq[Rational]] = freeVariablesOf(f).map({
           case id => (id -> Seq[Rational]())
@@ -53,17 +48,17 @@ class SpecGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
         var currentConstraint: Expr = BooleanLiteral(true)
 
         for (i <- 0 until 5) {
-          // cfg.reporter.info("currentModels: " + currentModels)
-          // cfg.reporter.info("currentConstraint: " + currentConstraint)
+          // ctx.reporter.info("currentModels: " + currentModels)
+          // ctx.reporter.info("currentConstraint: " + currentConstraint)
 
-          val solver = new Z3Solver(cfg)
+          val solver = new Z3Solver(ctx)
           solver.assertConstraint(bodyNotZeroConstraint)
           solver.assertConstraint(currentConstraint)
 
           solver.checkSat match {
             case Some(true) =>  // SAT
               val model = solver.getModel
-              // cfg.reporter.info("model: " + model)
+              // ctx.reporter.info("model: " + model)
 
               currentModels = currentModels.map({
                 case (id, seq) =>
@@ -76,7 +71,7 @@ class SpecGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
                 }).toMap
 
             case Some(false) =>
-              cfg.reporter.info("constraint UNSAT")
+              ctx.reporter.info("constraint UNSAT")
 
             case _ =>
               // break
@@ -84,8 +79,8 @@ class SpecGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
           }
         }
 
-        cfg.reporter.info("currentModels: " + currentModels)
-        cfg.reporter.info("currentConstraint: " + currentConstraint)
+        ctx.reporter.info("currentModels: " + currentModels)
+        ctx.reporter.info("currentConstraint: " + currentConstraint)
 
       }
       // if the above was successful, i.e. we have more than two models,
@@ -101,7 +96,7 @@ class SpecGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
 
     }
 
-    finishRun(ctx, prg)
+    (ctx, prg)
   }
 
 

@@ -31,7 +31,7 @@ trait CodeExtraction extends ASTExtractors {
   import StructuralExtractors._
   import scala.collection.immutable.Set
 
-  val cfg: Config
+  val ctx: Context
 
   implicit val debugSection = DebugSectionFrontend
 
@@ -75,7 +75,7 @@ trait CodeExtraction extends ASTExtractors {
           " (Tree: " + strWr.toString + " ; Class: " + t.getClass + ")"
         }.getOrElse("")
 
-      cfg.reporter.error(pos, msg + debugInfo)
+      ctx.reporter.error(pos, msg + debugInfo)
     }
   }
 
@@ -138,7 +138,7 @@ trait CodeExtraction extends ASTExtractors {
                 None
 
               case tree =>
-                cfg.reporter.error(tree)
+                ctx.reporter.error(tree)
                 outOfSubsetError(tree, "Unexpected def in top-level object of class: " + tree.getClass);
             }
             t
@@ -146,7 +146,7 @@ trait CodeExtraction extends ASTExtractors {
             outOfSubsetError(NoPosition, "Unexpected top-level object found: " + x)
         }
 
-        // cfg.reporter.info("defsToDefs: " + defsToDefs)
+        // ctx.reporter.info("defsToDefs: " + defsToDefs)
 
         // Step 2: fill in function bodies
         val daisyProgram = defs.head match {
@@ -154,15 +154,15 @@ trait CodeExtraction extends ASTExtractors {
             val id = FreshIdentifier(n)
             val funDefs = templ.body.flatMap {
               case ExFunctionDef(sym, _, _, _, rhs) =>
-                // cfg.reporter.info("going to extract: " + sym)
+                // ctx.reporter.info("going to extract: " + sym)
                 Some(extractFunBody(sym, rhs))
               case _ => None
             }
             DaisyProgram(id, funDefs)
         }
 
-        cfg.reporter.debug("Extracted the following program:")
-        cfg.reporter.debug(daisyProgram)
+        ctx.reporter.debug("Extracted the following program:")
+        ctx.reporter.debug(daisyProgram)
 
         Some(daisyProgram)
       } catch {
@@ -188,7 +188,7 @@ trait CodeExtraction extends ASTExtractors {
 
     private def isLibrary(u: CompilationUnit) = {
       // TODO: big hack
-      u.source.file.absolute.path.endsWith(self.cfg.libFiles.head)
+      u.source.file.absolute.path.endsWith(self.ctx.libFiles.head)
     }
 
     private def getSelectChain(e: Tree): List[String] = {
@@ -197,7 +197,7 @@ trait CodeExtraction extends ASTExtractors {
         case Ident(name) => List(name)
         case EmptyTree => List()
         case _ =>
-          cfg.reporter.internalError("getSelectChain: unexpected Tree:\n" + e.toString)
+          ctx.reporter.internalError("getSelectChain: unexpected Tree:\n" + e.toString)
       }
       rec(e).reverseMap(_.toString)
     }
@@ -325,7 +325,7 @@ trait CodeExtraction extends ASTExtractors {
       } catch {
         case e: OutOfSubsetException =>
           e.emit()
-          cfg.reporter.error(sym.pos, "Function " + tmpFunDef.id.name + " could not be extracted.")
+          ctx.reporter.error(sym.pos, "Function " + tmpFunDef.id.name + " could not be extracted.")
           NoTree(returnType)
       }
 
@@ -371,7 +371,7 @@ trait CodeExtraction extends ASTExtractors {
 
       var rest = tmpRest
 
-      // cfg.reporter.info("extracting: " + current)
+      // ctx.reporter.info("extracting: " + current)
 
       val res = current match {
 
@@ -451,7 +451,7 @@ trait CodeExtraction extends ASTExtractors {
           }
 
         case ex @  ExIdentifier(sym, tpt) =>
-          cfg.reporter.info("matched ex id")
+          ctx.reporter.info("matched ex id")
           null
 
         /* ----- Unary ops ----- */

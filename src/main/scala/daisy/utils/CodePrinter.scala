@@ -1,25 +1,24 @@
 // Original work Copyright 2009-2016 EPFL, Lausanne
 // Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
-package daisy.utils
+package daisy
+package utils
 
 import java.io.BufferedWriter
-
-import daisy.{Config, Context}
-import daisy.lang.Trees._
-import daisy.lang.Types._
-
 import scala.collection.immutable.HashMap
+
+import lang.Trees._
+import lang.Types._
 
 object CodePrinter {
   val suffix: Map[String, String] = HashMap("C" -> ".c", "Scala" -> ".scala")
 
-  def apply(t: Program, ctx: Context, lang: String, out: BufferedWriter, cfg: Config): Unit = {
+  def apply(t: Program, ctx: Context, lang: String, out: BufferedWriter): Unit = {
     val printer = lang match {
-      case "C" => new CPrinter(out, cfg)
-      case "Scala" => new ScalaPrinter(out, cfg)
+      case "C" => new CPrinter(out, ctx)
+      case "Scala" => new ScalaPrinter(out, ctx)
     }
-    printer.pp(t, None)(0, ctx)
+    printer.pp(t, None)(0)
     out.close()
   }
 
@@ -27,7 +26,7 @@ object CodePrinter {
 
 abstract class CodePrinter(buffer: Appendable) extends PrettyPrinter(buffer) {
 
-  override def pp(tree: Tree, parent: Option[Tree])(implicit lvl: Int, ctx: Context): Unit = {
+  override def pp(tree: Tree, parent: Option[Tree])(implicit lvl: Int): Unit = {
     implicit val p = Some(tree)
 
     tree match {

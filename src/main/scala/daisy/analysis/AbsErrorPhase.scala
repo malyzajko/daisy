@@ -14,8 +14,6 @@ import tools.Interval._
   This phase computes roundoff errors for a given precision and data type
   and attaches the information to the trees.
 
-  TODO: make parametric in data type
-
   Note:
     - if we want to use separation of errors, then the range computation needs
     to compute the actual (but real-valued) ranges, as
@@ -29,26 +27,20 @@ import tools.Interval._
     - SpecsProcessingPhase
     - RangePhase (check you are computing the correct ranges)
  */
-
-object AbsErrorPhase extends PhaseComponent {
+object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
   override val name = "Roundoff"
+  override val shortName = "roundoff"
   override val description = "Computes roundoff errors"
-  override def apply(cfg: Config) = new AbsErrorPhase(cfg, name, "roundoff")
-}
 
-class AbsErrorPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
-    with tools.RoundoffEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
+    val trackInitialErrs = !ctx.hasFlag("noInitialErrors")
+    val trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
+    val uniformPrecision = ctx.option[Precision]("precision")
 
-    val trackInitialErrs = !cfg.hasFlag("noInitialErrors")
-    val trackRoundoffErrs = !cfg.hasFlag("noRoundoff")
-    val uniformPrecision = cfg.option[Precision]("precision")
-
-    val res: Map[Identifier, (Rational, Map[Expr, Rational])] = 
-      functionsToConsider(prg).map(fnc => {
+    val res: Map[Identifier, (Rational, Map[Expr, Rational])] =
+      functionsToConsider(ctx, prg).map(fnc => {
 
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
@@ -95,11 +87,10 @@ class AbsErrorPhase(val cfg: Config, val name: String, val shortName: String) ex
       fnc.id -> (Interval.maxAbs(resRoundoff.toInterval), allErrors.mapValues(aa => Interval.maxAbs(aa.toInterval)))
     }).toMap
 
-    finishRun(
-      ctx.copy(
-        resultAbsoluteErrors = res.mapValues(_._1),
-        intermediateAbsErrors = res.mapValues(_._2)),
-      prg)
+    (ctx.copy(
+      resultAbsoluteErrors = res.mapValues(_._1),
+      intermediateAbsErrors = res.mapValues(_._2)),
+    prg)
   }
 
 }

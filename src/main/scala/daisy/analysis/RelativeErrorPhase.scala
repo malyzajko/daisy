@@ -35,8 +35,11 @@ import scala.util.control.Breaks._
  * Prerequisites:
  * - SpecsProcessingPhase
  */
-object RelativeErrorPhase extends PhaseComponent {
+object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdivision
+  with tools.RoundoffEvaluators {
+
   override val name = "Relative Error"
+  override val shortName = "relative"
   override val description = "Computes relative errors directly."
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     StringChoiceOption(
@@ -67,42 +70,45 @@ object RelativeErrorPhase extends PhaseComponent {
       "taylor",
       "Approach for expressions")
   )
-  override def apply(cfg: Config) = new RelativeErrorPhase(cfg, name, "relError")
-}
 
-class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
-    with tools.Taylor with tools.Subdivision with tools.RoundoffEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
-  // default parameters for the complete run
-  val divLimit: Int = cfg.option[Long]("rel-divLimit").toInt
-  val divRemainder: Int = cfg.option[Long]("rel-divRemainder").toInt
-  val rangeMethod: String = cfg.option[String]("rel-rangeMethod")
-  // val subdiv: String = cfg.option[String]("rel-subdiv")
-  val approach: String = cfg.option[String]("approach")
-  val uniformPrecision: Precision = cfg.option[Precision]("precision")
+  var divLimit: Int = 0
+  var divRemainder: Int = 0
+  var rangeMethod: String = null
+  // val subdiv: String = ctx.option[String]("rel-subdiv")
+  var approach: String = null
+  var uniformPrecision: Precision = null
 
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
+  var ctx: Context = null
 
-    for (fnc <- functionsToConsider(prg)){
+  override def runPhase(_ctx: Context, prg: Program): (Context, Program) = {
+    ctx = _ctx
+    divLimit = ctx.option[Long]("rel-divLimit").toInt
+    divRemainder = ctx.option[Long]("rel-divRemainder").toInt
+    rangeMethod = ctx.option[String]("rel-rangeMethod")
+    // subdiv: String = ctx.option[String]("rel-subdiv")
+    approach = ctx.option[String]("approach")
+    uniformPrecision = ctx.option[Precision]("precision")
 
-      cfg.reporter.info("Evaluating " + fnc.id + "...")
+    for (fnc <- functionsToConsider(ctx, prg)){
+
+      ctx.reporter.info("Evaluating " + fnc.id + "...")
       val bodyReal = fnc.body.get
       val deltaVarMap = mapDeltasToVars(bodyReal)
       val epsVarMap = mapEpsilonsToVars(bodyReal)
-      val bodyDeltaAbs = if (denormals) {
-        deltaAbstract(bodyReal, deltaVarMap, epsVarMap)._1
+      val bodyDeltaAbs = if (ctx.hasFlag("denormals")) {
+        deltaAbstract(bodyReal, deltaVarMap, epsVarMap, true)._1
       } else {
-        deltaAbstract(bodyReal, deltaVarMap, Map.empty)._1
+        deltaAbstract(bodyReal, deltaVarMap, Map.empty, false)._1
       }
-      // cfg.reporter.warning(s"bodyDelta $bodyDeltaAbs")
+      // ctx.reporter.warning(s"bodyDelta $bodyDeltaAbs")
       // Step 1: disregard initial errors for now
       // (f(x) - fl(x))/ f(x)
 
       val relErrorExpr = Division(Minus(bodyReal, bodyDeltaAbs), bodyReal)
 
-      cfg.reporter.info("\n" + fnc.id + ", bodyReal: " + bodyReal)
+      ctx.reporter.info("\n" + fnc.id + ", bodyReal: " + bodyReal)
 
       val startTime = System.currentTimeMillis
 
@@ -126,7 +132,7 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
           case "taylor" => getRelErrorTaylorApprox(relErrorExpr, inputValMap, bodyReal)
           case "naive" => getRelErrorNaive(relErrorExpr, inputValMap, bodyReal)
         }
-        cfg.reporter.warning("Failed on " + tmpList.distinct.size + " sub-domain(s)")
+        ctx.reporter.warning("Failed on " + tmpList.distinct.size + " sub-domain(s)")
 
         val list = mergeIntervals(tmpList, inputValMap)
 
@@ -134,35 +140,35 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
         // say it is not possible to compute
         if (relError.isDefined && (list.size < 30)) {
           val time = System.currentTimeMillis
-          cfg.reporter.info("relError: " + relError.get.toString + ", time: " + (time - startTime))
+          ctx.reporter.info("relError: " + relError.get.toString + ", time: " + (time - startTime))
           if (list.nonEmpty) {
-            cfg.reporter.info("On several sub-intervals relative error cannot be computed.")
-            cfg.reporter.info("Computing absolute error on these sub-intervals.")
+            ctx.reporter.info("On several sub-intervals relative error cannot be computed.")
+            ctx.reporter.info("Computing absolute error on these sub-intervals.")
             for (mapEntry <- list) {
               // here we compute the abs error for intervals where rel error is not possible
               val absError = getAbsError(bodyReal, mapEntry, inputErrorMap, uniformPrecision)
-              cfg.reporter.info(s"For intervals $mapEntry, absError: $absError, time: " +
+              ctx.reporter.info(s"For intervals $mapEntry, absError: $absError, time: " +
                 (System.currentTimeMillis - time))
             }
           }
         } else {
-          cfg.reporter.info("Not possible to get relative error, compute the absolute instead, time:" +
+          ctx.reporter.info("Not possible to get relative error, compute the absolute instead, time:" +
             (System.currentTimeMillis - startTime))
           val time = System.currentTimeMillis
           // fixme for JetEngine DivByZeroException is thrown
           val absError = getAbsError(bodyReal, inputValMap, inputErrorMap, uniformPrecision)
-          cfg.reporter.info(s"absError: $absError, time: " +
+          ctx.reporter.info(s"absError: $absError, time: " +
             (System.currentTimeMillis - time))
         }
       }
       catch {
         case e: Throwable => {
-          cfg.reporter.info("Something went wrong while computing the relative error.")
-          cfg.reporter.info(e.printStackTrace())}
+          ctx.reporter.info("Something went wrong while computing the relative error.")
+          ctx.reporter.info(e.printStackTrace())}
       }
 
     }
-    finishRun(ctx, prg)
+    (ctx, prg)
   }
 
   /**
@@ -181,39 +187,39 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
     // val newSet = getSubintervals(inputValMap, bodyReal, ctx, subdiv, divLimit)
     val newSet = getEqualSubintervals(inputValMap, divLimit)
 
-    cfg.reporter.ifDebug { debug =>
-      cfg.reporter.debug(s"EXPRESSION is $relErrorExpr")
-      cfg.reporter.debug("The set we got")
+    ctx.reporter.ifDebug { debug =>
+      ctx.reporter.debug(s"EXPRESSION is $relErrorExpr")
+      ctx.reporter.debug("The set we got")
 
       // output subintervals without deltas
       for (entry <- newSet){
-        cfg.reporter.debug("============================================")
+        ctx.reporter.debug("============================================")
         for (mapEntry <- entry if !(mapEntry._1.isDeltaId|| mapEntry._1.isEpsilonId)) {
-          cfg.reporter.debug(mapEntry._1 + " -> " + mapEntry._2)
+          ctx.reporter.debug(mapEntry._1 + " -> " + mapEntry._2)
         }
       }
-      cfg.reporter.debug(s"We need to evaluate expression on " + newSet.size + " intervals")
-      cfg.reporter.debug("there are " + deltasOf(relErrorExpr).size + " deltas")
+      ctx.reporter.debug(s"We need to evaluate expression on " + newSet.size + " intervals")
+      ctx.reporter.debug("there are " + deltasOf(relErrorExpr).size + " deltas")
     }
 
     val taylorFirst = getDerivative(relErrorExpr)
 
-    // cfg.reporter.warning(s"the taylor expression we got is ")
-    // taylorFirst.foreach(x=>{cfg.reporter.debug(s"term is $x")})
-    cfg.reporter.info("Computing the error ...")
+    // ctx.reporter.warning(s"the taylor expression we got is ")
+    // taylorFirst.foreach(x=>{ctx.reporter.debug(s"term is $x")})
+    ctx.reporter.info("Computing the error ...")
 
-    cfg.reporter.info(s"subdiv for remainder $divRemainder")
+    ctx.reporter.info(s"subdiv for remainder $divRemainder")
     // separate timer for remainder
     val remainderTime = System.currentTimeMillis
     val remainderMap = getEqualSubintervals(inputValMap, divLimit, divRemainder)
     val taylorRemainder = getTaylorRemainder(relErrorExpr, remainderMap)
-    cfg.reporter.info(s"The taylor remainder value is $taylorRemainder, time: " +
+    ctx.reporter.info(s"The taylor remainder value is $taylorRemainder, time: " +
       (System.currentTimeMillis - remainderTime))
     if (taylorRemainder.isDefined) {
       val errForSum = taylorFirst.map(x => {
         val (expr, wrt) = x
         val tmpExpr = moreSimplify(Times(replaceDeltasWithZeros(expr), Delta(wrt)))
-        cfg.reporter.debug(s"Evaluate the term $tmpExpr")
+        ctx.reporter.debug(s"Evaluate the term $tmpExpr")
         // do not call evaluation function on all subintervals
         // if simplified expression is delta or RealLiteral
         val tmpForMax = tmpExpr match {
@@ -221,7 +227,7 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
           case x @ RealLiteral(r) => List(evaluateOpt(tmpExpr, inputValMap, rangeMethod))
           case _ => newSet.map(interval => {
             val tmp = evaluateOpt(tmpExpr, interval, rangeMethod)
-            cfg.reporter.debug("err on " + removeDeltasFromMap(interval) + s" is $tmp")
+            ctx.reporter.debug("err on " + removeDeltasFromMap(interval) + s" is $tmp")
             if (tmp.isEmpty && !listFailInterval.contains(interval) && !listFailed.contains(interval)) {
               listFailInterval = listFailInterval :+ interval
             }
@@ -230,7 +236,7 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
         }
         tmpForMax.max(optionAbsOrdering)
       })
-      cfg.reporter.debug(s"we need to sum $errForSum")
+      ctx.reporter.debug(s"we need to sum $errForSum")
 
       errForSum.foreach(x => {
         if (finalErr.isDefined) {
@@ -246,7 +252,7 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
     }
 
     listFailInterval = (listFailInterval ++ listFailed).toSet.toList
-    cfg.reporter.debug("print what is ACTUALLY in ListFailed " +
+    ctx.reporter.debug("print what is ACTUALLY in ListFailed " +
       listFailed.map(removeDeltasFromMap).map(_.keySet.map(_.globalId)))
     (finalErr, listFailInterval)
   }
@@ -265,22 +271,22 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
     // get intervals subdivision for the complete divLimit
     val newSet = getEqualSubintervals(inputValMap, divLimit).par
 
-    cfg.reporter.ifDebug { debug =>
-      cfg.reporter.debug("The set we got")
+    ctx.reporter.ifDebug { debug =>
+      ctx.reporter.debug("The set we got")
       // output subintervals without deltas
       for (entry <- newSet) {
         for (mapEntry <- entry if !(mapEntry._1.isDeltaId|| mapEntry._1.isEpsilonId))
-          cfg.reporter.debug(mapEntry._1 + " -> " + mapEntry._2)
+          ctx.reporter.debug(mapEntry._1 + " -> " + mapEntry._2)
       }
     }
 
-    cfg.reporter.info("Computing the error ...")
+    ctx.reporter.info("Computing the error ...")
     val errors = newSet.map(x => {
       val tmp = evaluateOpt(relErrorExpr, x, rangeMethod)
       if (tmp.isEmpty) listFailInterval = listFailInterval :+ x
       tmp
     })
-    cfg.reporter.debug(errors)
+    ctx.reporter.debug(errors)
     (errors.max, listFailInterval)
   }
 
@@ -306,7 +312,7 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
         case("smtcomplete") =>
           Some(maxAbs(evaluateSMTComplete(relErrorExpr, inputValMap).toInterval))
 
-        // case _ => cfg.reporter.error("Something went wrong. Unknown range method")
+        // case _ => ctx.reporter.error("Something went wrong. Unknown range method")
       }
     }
     catch{
@@ -329,7 +335,7 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
         trackRoundoffErrors = true)._1
 
     case _ =>
-      cfg.reporter.fatalError(s"Range method $rangeMethod is not supported.")
+      ctx.reporter.fatalError(s"Range method $rangeMethod is not supported.")
   }
 
   val precisionLower = Rational.fromReal(0.01)
@@ -439,8 +445,8 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
     if (listFailIntervals.nonEmpty) {
       // sort the maps
       val tmpList = listFailIntervals.map(removeDeltasFromMap).sortWith(compareMaps)
-      cfg.reporter.debug("===== sorted maps ======")
-      tmpList.foreach(x => {cfg.reporter.debug(s"map: $x")})
+      ctx.reporter.debug("===== sorted maps ======")
+      tmpList.foreach(x => {ctx.reporter.debug(s"map: $x")})
 
       // merge all the possible maps in the list
       var ready = false
@@ -452,8 +458,8 @@ class RelativeErrorPhase(val cfg: Config, val name: String, val shortName: Strin
         ready = tmpMerged.equals(tmpSrc)
         tmpMerged = tmpSrc
       }
-      cfg.reporter.debug("===== merged ======")
-      tmpMerged.foreach(x => {cfg.reporter.debug(s"map: $x")})
+      ctx.reporter.debug("===== merged ======")
+      tmpMerged.foreach(x => {ctx.reporter.debug(s"map: $x")})
       tmpMerged
 
     } else {

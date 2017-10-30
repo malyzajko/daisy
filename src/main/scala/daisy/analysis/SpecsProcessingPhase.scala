@@ -31,25 +31,22 @@ import lang.Trees.Program
   Prerequisite:
     None
  */
-object SpecsProcessingPhase extends PhaseComponent {
+object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
   override val name = "Specs processing"
+  override val shortName = "specs"
   override val description = "Processes the specifications for later phases."
-  override val definedOptions: Set[CmdLineOption[Any]] = Set()
-  override def apply(cfg: Config) = new SpecsProcessingPhase(cfg, name, "specs")
-}
 
-class SpecsProcessingPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
-    with PrecisionsParser {
   implicit val debugSection = DebugSectionAnalysis
 
-  val defaultPrecision = cfg.option[Precision]("precision")
+  var reporter: Reporter = null
 
-  def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
+  def runPhase(ctx: Context, prg: Program): (Context, Program) = {
+    reporter = ctx.reporter
 
-    //
+    val defaultPrecision = ctx.option[Precision]("precision")
+
     val precisionMap: Map[Identifier, (Map[Identifier, Precision], Precision)] =
-      cfg.option[Option[String]]("mixed-precision") match {
+      ctx.option[Option[String]]("mixed-precision") match {
 
       case Some(file) =>
         // maps from fnc/variable names to their respective identifiers
@@ -80,8 +77,8 @@ class SpecsProcessingPhase(val cfg: Config, val name: String, val shortName: Str
         Map()
     }
 
-    // cfg.reporter.info("precision map:")
-    // cfg.reporter.info(precisionMap)
+    // ctx.reporter.info("precision map:")
+    // ctx.reporter.info(precisionMap)
 
     var allRanges: Map[Identifier, Map[Identifier, Interval]] = Map()
     var allErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
@@ -139,14 +136,14 @@ class SpecsProcessingPhase(val cfg: Config, val name: String, val shortName: Str
             val tmp = ranges.values.head
             resRanges += (fnc.id -> PartialInterval(tmp._1, tmp._2))
           } else if (ranges.size > 1) {
-            cfg.reporter.error("Tuples are not supported.")
+            ctx.reporter.error("Tuples are not supported.")
           }
 
           if (errors.size == 1) {
             val tmp = errors.values.head
             resErrors += (fnc.id -> tmp)
           } else if (errors.size > 1) {
-            cfg.reporter.error("Tuples are not supported.")
+            ctx.reporter.error("Tuples are not supported.")
           }
 
           // requiredOutputRanges += (fnc.id -> ranges.map( x =>
@@ -156,25 +153,24 @@ class SpecsProcessingPhase(val cfg: Config, val name: String, val shortName: Str
 
 
         case _ =>
-          // cfg.reporter.info("No post-condition found\n")
+          // ctx.reporter.info("No post-condition found\n")
 
       }
 
     }
 
-    cfg.reporter.debug("range bounds: " + resRanges.mkString("\n"))
-    cfg.reporter.debug("error bounds: " + resErrors.mkString("\n"))
+    ctx.reporter.debug("range bounds: " + resRanges.mkString("\n"))
+    ctx.reporter.debug("error bounds: " + resErrors.mkString("\n"))
 
-    finishRun(
-      ctx.copy(
-        specInputRanges = allRanges,
-        specInputErrors = allErrors,
-        specResultRangeBounds = resRanges,
-        specResultErrorBounds = resErrors,
-        specMixedPrecisions = precisionMap.mapValues(_._1),
-        specInferredReturnTypes = precisionMap.mapValues(_._2),
-        specAdditionalConstraints = additionalConst),
-      prg)
+    (ctx.copy(
+      specInputRanges = allRanges,
+      specInputErrors = allErrors,
+      specResultRangeBounds = resRanges,
+      specResultErrorBounds = resErrors,
+      specMixedPrecisions = precisionMap.mapValues(_._1),
+      specInferredReturnTypes = precisionMap.mapValues(_._2),
+      specAdditionalConstraints = additionalConst),
+    prg)
   }
 
   def extractPreCondition(expr: Expr): (Map[Identifier, (Rational, Rational)],
@@ -273,8 +269,8 @@ class SpecsProcessingPhase(val cfg: Config, val name: String, val shortName: Str
     bufferedSource.close
     parse(overallFunction, sourceText) match {
       case Success(precisionsTree, _) => treeToMap(precisionsTree)
-      case Failure(msg, _) => cfg.reporter.fatalError("Failure during the parsing of the type assignment file: " + msg)
-      case Error(msg, _) => cfg.reporter.fatalError("Error during the parsing of the type assignment file: " + msg)
+      case Failure(msg, _) => reporter.fatalError("Failure during the parsing of the type assignment file: " + msg)
+      case Error(msg, _) => reporter.fatalError("Error during the parsing of the type assignment file: " + msg)
     }
   }
 

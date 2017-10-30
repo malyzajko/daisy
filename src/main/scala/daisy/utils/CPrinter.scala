@@ -1,18 +1,18 @@
 // Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
-package daisy.utils
+package daisy
+package utils
 
-import daisy.lang.TreeOps
-import daisy.{Config, Context}
-import daisy.lang.Trees._
-import daisy.lang.Types.{FinitePrecisionType, Int16Type, Int32Type, Int64Type}
-import daisy.tools.FinitePrecision._
+import lang.TreeOps
+import lang.Trees._
+import lang.Types.{FinitePrecisionType, Int16Type, Int32Type, Int64Type}
+import tools.FinitePrecision._
 
 // GenerateDaisyInput: If we are interested in generating a real valued program, that will later be again used as input to Daisy
 // importString: import and package statements inlcuded at top of generated file
-class CPrinter private[utils] (buffer: Appendable, cfg: Config) extends CodePrinter(buffer) {
+class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
 
-  override def pp(tree: Tree, parent: Option[Tree])(implicit lvl: Int, ctx: Context): Unit = {
+  override def pp(tree: Tree, parent: Option[Tree])(implicit lvl: Int): Unit = {
     implicit val p = Some(tree)
 
     tree match {
@@ -29,7 +29,7 @@ class CPrinter private[utils] (buffer: Appendable, cfg: Config) extends CodePrin
           case x: Let => ;
           case _ => sb.append("return ")
         }
-        pp(e, p)(lvl, ctx)
+        pp(e, p)(lvl)
         e match {
           case x: Let => ;
           case _ => sb.append(";")
@@ -61,7 +61,7 @@ class CPrinter private[utils] (buffer: Appendable, cfg: Config) extends CodePrin
 
       case Program(id, defs) =>
         assert(lvl == 0)
-        if (cfg.option[List[String]]("comp-opts").nonEmpty &&
+        if (ctx.option[List[String]]("comp-opts").nonEmpty &&
             defs.exists(_.body.exists(TreeOps.exists { case FMA(_, _, _) => true }))){
           sb.append(
             """#pragma STDC FP_CONTRACT OFF
@@ -78,9 +78,9 @@ class CPrinter private[utils] (buffer: Appendable, cfg: Config) extends CodePrin
           sb.append("#include <qd/dd_real.h>\n")
         }
         defs.foreach {
-          m => pp(m, p)(lvl, ctx)
+          m => pp(m, p)(lvl)
         }
-        if (cfg.hasFlag("genMain")) {
+        if (ctx.hasFlag("genMain")) {
           sb.append(
             """
               |#include <stdio.h>
@@ -111,7 +111,7 @@ class CPrinter private[utils] (buffer: Appendable, cfg: Config) extends CodePrin
           ind
           sb.append("/* ")
           sb.append("@pre : ")
-          pp(prec, p)(lvl, ctx)
+          pp(prec, p)(lvl)
           sb.append(" */")
         }}
 
@@ -119,7 +119,7 @@ class CPrinter private[utils] (buffer: Appendable, cfg: Config) extends CodePrin
           ind
           sb.append("/*")
           sb.append("@post: ")
-          pp(post, p)(lvl, ctx)
+          pp(post, p)(lvl)
           sb.append("*/")
           sb.append("\n")
         }}
@@ -147,7 +147,7 @@ class CPrinter private[utils] (buffer: Appendable, cfg: Config) extends CodePrin
         nl(lvl+1)
         fd.body match {
           case Some(body@Let(_,_,_)) =>
-            pp(body, p)(lvl+1, ctx)
+            pp(body, p)(lvl+1)
           case Some(body) =>
             sb.append("return ")
             pp(body,p)

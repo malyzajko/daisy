@@ -11,15 +11,14 @@ import FinitePrecision._
 
 
 /**
-  ??? Description goes here
-
   Computes and stores intermediate ranges.
 
   Prerequisites:
     - SpecsProcessingPhase
  */
-object DataflowPhase extends PhaseComponent {
+object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSubdivision {
   override val name = "Dataflow Error"
+  override val shortName = "analysis"
   override val description = "Computes ranges and absolute errors via dataflow analysis"
 
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
@@ -29,36 +28,31 @@ object DataflowPhase extends PhaseComponent {
       "affine",
       "Method for error analysis")
   )
-  override def apply(cfg: Config) = new DataflowPhase(cfg, name, "analysis")
-}
 
-class DataflowPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
-    with RoundoffEvaluators with IntervalSubdivision {
   implicit val debugSection = DebugSectionAnalysis
 
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
 
-    val rangeMethod = cfg.option[String]("rangeMethod")
-    val errorMethod = cfg.option[String]("errorMethod")
+    val rangeMethod = ctx.option[String]("rangeMethod")
+    val errorMethod = ctx.option[String]("errorMethod")
 
-    val trackInitialErrs = !cfg.hasFlag("noInitialErrors")
-    val trackRoundoffErrs = !cfg.hasFlag("noRoundoff")
+    val trackInitialErrs = !ctx.hasFlag("noInitialErrors")
+    val trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
 
-    val mixedPrecision = cfg.option[Option[String]]("mixed-precision").isDefined
-    val uniformPrecision = cfg.option[Precision]("precision")
+    val mixedPrecision = ctx.option[Option[String]]("mixed-precision").isDefined
+    val uniformPrecision = ctx.option[Precision]("precision")
 
-    cfg.reporter.info(s"using $rangeMethod for ranges, $errorMethod for errors")
+    ctx.reporter.info(s"using $rangeMethod for ranges, $errorMethod for errors")
     if (!mixedPrecision) {
-      cfg.reporter.info(s"error analysis for uniform $uniformPrecision precision")
+      ctx.reporter.info(s"error analysis for uniform $uniformPrecision precision")
     }
 
 
     // returns (abs error, result range, interm. errors, interm. ranges)
     val res: Map[Identifier, (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval])] =
-      functionsToConsider(prg).map(fnc => {
+      functionsToConsider(ctx, prg).map(fnc => {
 
-      cfg.reporter.info("analyzing fnc: " + fnc.id)
+      ctx.reporter.info("analyzing fnc: " + fnc.id)
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
       val precisionMap: Map[Identifier, Precision] = if (mixedPrecision) {
@@ -113,7 +107,7 @@ class DataflowPhase(val cfg: Config, val name: String, val shortName: String) ex
           val additionalConstr = ctx.specAdditionalConstraints(fnc.id)
           additionalConstr match {
             case BooleanLiteral(_) =>
-            case c => cfg.reporter.info("taking into account additional constraint: " + c)
+            case c => ctx.reporter.info("taking into account additional constraint: " + c)
           }
           val (rng, intrmdRange) = evalRange[SMTRange](fncBody,
             inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, additionalConstr)) }),
@@ -152,13 +146,12 @@ class DataflowPhase(val cfg: Config, val name: String, val shortName: String) ex
 
     }).toMap
 
-    finishRun(
-      ctx.copy(
-        resultAbsoluteErrors = res.mapValues(_._1),
-        resultRealRanges = res.mapValues(_._2),
-        intermediateAbsErrors = res.mapValues(_._3),
-        intermediateRanges = res.mapValues(_._4)),
-      prg)
+    (ctx.copy(
+      resultAbsoluteErrors = res.mapValues(_._1),
+      resultRealRanges = res.mapValues(_._2),
+      intermediateAbsErrors = res.mapValues(_._3),
+      intermediateRanges = res.mapValues(_._4)),
+    prg)
   }
 
 

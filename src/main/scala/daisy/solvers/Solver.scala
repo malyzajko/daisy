@@ -24,27 +24,22 @@ import lang.Constructors._
 
 import scala.collection.mutable.StringBuilder
 
-// <<<<<<< HEAD
-// import analysis.RangeErrorPhase
-// =======
-// >>>>>>> master
-
 object Solver {
 
-  // TODO hacky, pass a cfg to checkSat and getModel instead
-  lazy val cfg: Config = Main.cfg
+  // TODO hacky, pass a ctx to checkSat and getModel instead
+  lazy val ctx: Context = Main.ctx
 
   def checkSat(query: Expr): Option[Boolean] = {
-    cfg.option[String]("solver") match {
-      case "z3" => Z3Solver.checkSat(query, cfg)
-      case "dReal" => DRealSolver.checkSat(query, cfg)
+    ctx.option[String]("solver") match {
+      case "z3" => Z3Solver.checkSat(query, ctx)
+      case "dReal" => DRealSolver.checkSat(query, ctx)
     }
   }
 
   def getModel(query: Expr): Option[Model] = {
-    cfg.option[String]("solver") match {
-      case "z3" => Z3Solver.checkAndGetModel(query, cfg)
-      case "dReal" => DRealSolver.checkAndGetModel(query,cfg)
+    ctx.option[String]("solver") match {
+      case "z3" => Z3Solver.checkAndGetModel(query, ctx)
+      case "dReal" => DRealSolver.checkAndGetModel(query,ctx)
     }
   }
 
@@ -70,12 +65,12 @@ object Power extends scala.AnyRef{
 }
 
 // general interface for a solver
-abstract class SMTLibSolver(val cfg: Config) {
+abstract class SMTLibSolver(val ctx: Context) {
 
   implicit val debugSection = DebugSectionSolver
   // debugging prints ALL SMT calls, but we don't necessarily want that,
   // so we have a separate flag
-  val printToughSMTCalls = cfg.hasFlag("print-tough-smt-calls")
+  val printToughSMTCalls = ctx.hasFlag("print-tough-smt-calls")
 
   /* Solver name */
   def targetName: String
@@ -91,8 +86,8 @@ abstract class SMTLibSolver(val cfg: Config) {
 
   /* Printing VCs */
   protected lazy val debugOut: Option[java.io.FileWriter] = {
-    //    if (cfg.reporter.isDebugEnabled) {
-    //      val file = cfg.files.headOption.getOrElse("NA")
+    //    if (ctx.reporter.isDebugEnabled) {
+    //      val file = ctx.files.headOption.getOrElse("NA")
     //      val n = DebugFileNumbers.next(targetName + file)
     //
     //      val fileName = s"smt-sessions/$targetName-$file-$n.smt2"
@@ -100,7 +95,7 @@ abstract class SMTLibSolver(val cfg: Config) {
     //      val javaFile = new java.io.File(fileName)
     //      javaFile.getParentFile.mkdirs()
     //
-    //      cfg.reporter.debug(s"Outputting smt session into $fileName")
+    //      ctx.reporter.debug(s"Outputting smt session into $fileName")
     //
     //      val fw = new java.io.FileWriter(javaFile, false)
     //
@@ -124,16 +119,16 @@ abstract class SMTLibSolver(val cfg: Config) {
     commandBuffer.write("\n")
     commandBuffer.flush()
 
-    //    cfg.reporter.info("CMD: "+cmd)
+    //    ctx.reporter.info("CMD: "+cmd)
     interpreter.eval(cmd) match {
       case err @ ErrorResponse(msg) if !rawOut =>
-        cfg.reporter.warning(s"Unexpected error from $targetName solver: $msg")
+        ctx.reporter.warning(s"Unexpected error from $targetName solver: $msg")
         // Store that there was an error. Now all following check()
         // invocations will return None
         addError()
         err
       case res =>
-        //        cfg.reporter.info(res)
+        //        ctx.reporter.info(res)
         res
     }
   }
@@ -150,7 +145,7 @@ abstract class SMTLibSolver(val cfg: Config) {
       }
 
       val term = toSMT(expr)(Map())
-      // cfg.reporter.warning(s"solver query SMT:" + SMTAssert(term))
+      // ctx.reporter.warning(s"solver query SMT:" + SMTAssert(term))
       emit(SMTAssert(term))
     } catch {
       case _: SMTLIBUnsupportedError =>
@@ -171,17 +166,17 @@ abstract class SMTLibSolver(val cfg: Config) {
       val start = System.currentTimeMillis
       val res = emit(CheckSat())
       val diff = System.currentTimeMillis - start
-      // cfg.reporter.info(s"SMT call took $diff ms")
+      // ctx.reporter.info(s"SMT call took $diff ms")
 
-      if (cfg.reporter.isDebugEnabled || printToughSMTCalls) {
+      if (ctx.reporter.isDebugEnabled || printToughSMTCalls) {
         if (diff > 20) {  // 20ms is a random large number
           if (diff > 1000) {
-            cfg.reporter.warning(s"solver took $diff ms!")
+            ctx.reporter.warning(s"solver took $diff ms!")
 
 
-          cfg.reporter.info("printing tough smt call")
+          ctx.reporter.info("printing tough smt call")
           // slashes in the file name cause file not found errors
-          val file = cfg.option[List[String]]("files").headOption.getOrElse("NA").replace("/", "-")
+          val file = ctx.option[List[String]]("files").headOption.getOrElse("NA").replace("/", "-")
           val n = DebugFileNumbers.next(targetName + file)
           val fileName = s"smt-sessions/$targetName-$file-$n.smt2"
 
@@ -197,10 +192,10 @@ abstract class SMTLibSolver(val cfg: Config) {
         case CheckSatStatus(SatStatus)     => Some(true)
         case CheckSatStatus(UnsatStatus)   => Some(false)
         case CheckSatStatus(UnknownStatus) =>
-          cfg.reporter.debug(s"solver says $res")
+          ctx.reporter.debug(s"solver says $res")
           None
         case e                             =>
-          cfg.reporter.debug(s"solver CRIES $res")
+          ctx.reporter.debug(s"solver CRIES $res")
           None
       }
 
@@ -217,10 +212,10 @@ abstract class SMTLibSolver(val cfg: Config) {
           syms.head,
           syms.tail.map(s => QualifiedIdentifier(SMTIdentifier(s)))
         )
-        //        cfg.reporter.warning(cmd)
+        //        ctx.reporter.warning(cmd)
         emit(cmd) match {
           case GetValueResponseSuccess(valuationPairs) =>
-            cfg.reporter.info("Val Pairs: " + valuationPairs)
+            ctx.reporter.info("Val Pairs: " + valuationPairs)
             new Model(valuationPairs.collect {
               case (SimpleSymbol(sym), value) if variables.containsB(sym) =>
                 val id = variables.toA(sym)
@@ -242,7 +237,7 @@ abstract class SMTLibSolver(val cfg: Config) {
   /* def reset() = {
     emit(Reset(), rawOut = true) match {
       case ErrorResponse(msg) =>
-        cfg.reporter.warning(s"Failed to reset $name: $msg")
+        ctx.reporter.warning(s"Failed to reset $name: $msg")
         throw new CantResetException(this)
       case _ =>
     }
@@ -254,7 +249,7 @@ abstract class SMTLibSolver(val cfg: Config) {
     debugOut foreach { _.close }
 
     commandBuffer.close()
-    // cfg.reporter.info(s"# calls: $n, avrg time per SMT call: $runningAvrg,"+
+    // ctx.reporter.info(s"# calls: $n, avrg time per SMT call: $runningAvrg,"+
     //  " max time per call: $maxTime")
 
   }
@@ -306,7 +301,7 @@ abstract class SMTLibSolver(val cfg: Config) {
     variables.getOrElseAddB(id) {
       val s = id2sym(id)
       val cmd = DeclareFun(s, List(), toSMTSort(id.getType))
-      //      cfg.reporter.warning(cmd)
+      //      ctx.reporter.warning(cmd)
       emit(cmd)
       s
     }
@@ -339,14 +334,14 @@ abstract class SMTLibSolver(val cfg: Config) {
       toSMT(e.getType)
       // either bindings has the mapping, or else we look in variables.
       val name = id.uniqueNameDelimited("!")
-      //      cfg.reporter.debug(s"delta $name")
+      //      ctx.reporter.debug(s"delta $name")
       bindings.getOrElse(id, SSymbol(name))
 
     case Epsilon(id) =>
       toSMT(e.getType)
       // either bindings has the mapping, or else we look in variables.
       val name = id.uniqueNameDelimited("!")
-      //      cfg.reporter.debug(s"delta $name")
+      //      ctx.reporter.debug(s"delta $name")
       bindings.getOrElse(id, SSymbol(name))
 
     case Variable(id) =>
@@ -458,7 +453,7 @@ abstract class SMTLibSolver(val cfg: Config) {
       FunctionApplication(makeFunctionId("log"), Seq(toSMT(a)))
 
     case o =>
-      cfg.reporter.warning(s"$o is unsupported by solver $targetName")
+      ctx.reporter.warning(s"$o is unsupported by solver $targetName")
       throw new SolverUnsupportedError(o, this, None)
 
   }
@@ -597,7 +592,7 @@ abstract class SMTLibSolver(val cfg: Config) {
             Equals(ra, fromSMT(b, ra.getType))
 
           case _ =>
-            cfg.reporter.fatalError("Function " + app + " not handled in fromSMT: " + s)
+            ctx.reporter.fatalError("Function " + app + " not handled in fromSMT: " + s)
         }
 
       case (Core.True(), Some(BooleanType))  => BooleanLiteral(true)
@@ -607,7 +602,7 @@ abstract class SMTLibSolver(val cfg: Config) {
       //  fromSMT(lets(s), otpe)
 
       case (SimpleSymbol(s), otpe) if s.equals(SSymbol("?"))=>
-        cfg.reporter.debug(s"Detected ? here")
+        ctx.reporter.debug(s"Detected ? here")
         RealLiteral(Rational.zero)
 
       case (SimpleSymbol(s), otpe) =>
@@ -616,7 +611,7 @@ abstract class SMTLibSolver(val cfg: Config) {
         }
 
       case _ =>
-        cfg.reporter.fatalError(s"Unhandled case in fromSMT: $t : ${otpe.map(_.toString).getOrElse("?")} (${t.getClass})")
+        ctx.reporter.fatalError(s"Unhandled case in fromSMT: $t : ${otpe.map(_.toString).getOrElse("?")} (${t.getClass})")
 
     }
   }

@@ -7,14 +7,14 @@ package frontend
 import scala.tools.nsc.{Global,Settings=>NSCSettings}
 import scala.reflect.internal.Positions
 
-class ScalaCompiler(settings: NSCSettings, cfg: Config) extends Global(
-  settings, new SimpleReporter(settings, cfg.reporter)) with Positions {
+class ScalaCompiler(settings: NSCSettings, ctx: Context) extends Global(
+  settings, new SimpleReporter(settings, ctx.reporter)) with Positions {
 
   object daisyExtraction extends {
     val global: ScalaCompiler.this.type = ScalaCompiler.this
     val runsAfter = List[String]("refchecks")
     val runsRightAfter = None
-    val cfg = ScalaCompiler.this.cfg
+    val ctx = ScalaCompiler.this.ctx
   } with DaisyExtraction
 
   override protected def computeInternalPhases(): Unit = {
@@ -35,7 +35,7 @@ class ScalaCompiler(settings: NSCSettings, cfg: Config) extends Global(
 
   class Run extends super.Run {
     override def progress(current: Int, total: Int): Unit = {
-      cfg.reporter.onCompilerProgress(current, total)
+      ctx.reporter.onCompilerProgress(current, total)
     }
   }
 }

@@ -31,8 +31,9 @@ import scala.util.control.Breaks._
  * Prerequisites:
  * - SpecsProcessingPhase
  */
-object DataflowSubdivisionPhase extends PhaseComponent {
+object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with RoundoffEvaluators {
   override val name = "Forward Dataflow with Subdivision"
+  override val shortName = "subdiv"
   override val description = "Forward dataflow with subdivision"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     NumOption(
@@ -49,31 +50,26 @@ object DataflowSubdivisionPhase extends PhaseComponent {
 //      "simple",
 //      "Method to subdivide intervals"),
   )
-  override def apply(cfg: Config) = new DataflowSubdivisionPhase(cfg, name, "relAbs")
-}
 
-class DataflowSubdivisionPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
-    with Subdivision with RoundoffEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
-
-    val rangeMethod = cfg.option[String]("rangeMethod")
-    val errorMethod = cfg.option[String]("errorMethod")
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
+    val rangeMethod = ctx.option[String]("rangeMethod")
+    val errorMethod = ctx.option[String]("errorMethod")
     require(errorMethod == "affine", s"$name only supports error method 'affine'")
 
-    val uniformPrecision = cfg.option[Precision]("precision")
+    val uniformPrecision = ctx.option[Precision]("precision")
 
-    val trackInitialErrs = !cfg.hasFlag("noInitialErrors")
+    val trackInitialErrs = !ctx.hasFlag("noInitialErrors")
+    val trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
 
-    val divLimit = cfg.option[Long]("divLimit").toInt
-//  val subdiv: String = cfg.option("subdiv")
+    val divLimit = ctx.option[Long]("divLimit").toInt
+    //  val subdiv: String = ctx.option("subdiv")
 
     // for each function, returns (abs error, rel error, result interval)
-    val res: Map[Identifier, (Rational, Option[Rational], Interval)] = functionsToConsider(prg).map(fnc => {
+    val res: Map[Identifier, (Rational, Option[Rational], Interval)] = functionsToConsider(ctx, prg).map(fnc => {
 
-      cfg.reporter.info("analyzing fnc: " + fnc.id)
+      ctx.reporter.info("analyzing fnc: " + fnc.id)
       val startTime = System.currentTimeMillis
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
@@ -115,7 +111,9 @@ class DataflowSubdivisionPhase(val cfg: Config, val name: String, val shortName:
 
         }
 
-        val (absError, realRange) = evalError(bodyReal, subInt, inputErrorMap)
+        val (absError, realRange) = evalError(bodyReal, subInt, inputErrorMap,
+          ctx.option[String]("rangeMethod"), ctx.option[String]("errorMethod"),
+          ctx.option[Precision]("precision"))
 
         // var failIntervals: List[(Map[Identifier, Interval], Rational)] = List.empty
 
@@ -148,42 +146,38 @@ class DataflowSubdivisionPhase(val cfg: Config, val name: String, val shortName:
       // val relError = errors.max(optionAbsOrdering).getOrElse("NaN")
 
       // if (failIntervals.nonEmpty)
-      //   cfg.reporter.info("For several sub-intervals it was not possible to compute relative error")
+      //   ctx.reporter.info("For several sub-intervals it was not possible to compute relative error")
       // for(x <- failIntervals){
       //   val (m, er) = x
-      //   cfg.reporter.info(s"absErr: $er on $m")
+      //   ctx.reporter.info(s"absErr: $er on $m")
       // }
-      // cfg.reporter.info(s"relError: $relError, time: " +
+      // ctx.reporter.info(s"relError: $relError, time: " +
       //   (System.currentTimeMillis - startTime))
     }).toMap
 
-    finishRun(
-      ctx.copy(
-        resultAbsoluteErrors = res.mapValues(_._1),
-        resultRelativeErrors = res.mapValues(_._2),
-        resultRealRanges = res.mapValues(_._3)),
-      prg)
+    (ctx.copy(
+      resultAbsoluteErrors = res.mapValues(_._1),
+      resultRelativeErrors = res.mapValues(_._2),
+      resultRealRanges = res.mapValues(_._3)),
+    prg)
   }
 
   def evalError(expr: Expr, inputValMap: Map[Identifier, Interval],
-    inputErrorMap: Map[Identifier, Rational]): (Rational, Interval) = {
+    inputErrorMap: Map[Identifier, Rational], rangeMethod: String, errorMethod: String,
+    precision: Precision): (Rational, Interval) = {
 
-    (cfg.option[String]("rangeMethod"), cfg.option[String]("errorMethod")) match {
+    (rangeMethod, errorMethod) match {
       case ("interval", "affine") =>
-        uniformRoundoff_IA_AA(expr, inputValMap, inputErrorMap, cfg.option[Precision]("precision"),
+        uniformRoundoff_IA_AA(expr, inputValMap, inputErrorMap, precision,
           trackRoundoffErrors = true)
 
       case ("affine", "affine") =>
-        uniformRoundoff_AA_AA(expr, inputValMap, inputErrorMap, cfg.option[Precision]("precision"),
+        uniformRoundoff_AA_AA(expr, inputValMap, inputErrorMap, precision,
           trackRoundoffErrors = true)
 
       case ("smt", "affine") =>
-        uniformRoundoff_SMT_AA(expr, inputValMap, inputErrorMap, cfg.option[Precision]("precision"),
+        uniformRoundoff_SMT_AA(expr, inputValMap, inputErrorMap, precision,
           trackRoundoffErrors = true)
-
-      case (rangeMethod, errorMethod) =>
-        cfg.reporter.fatalError(s"Your combination of $rangeMethod and $errorMethod" +
-          "for computing ranges and errors is not supported.")
     }
   }
 

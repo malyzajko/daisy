@@ -23,8 +23,11 @@ import lang.TreeOps._
   Prerequisites:
     - SpecsProcessingPhase
  */
-object RewritingOptimizationPhase extends PhaseComponent {
+object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] with RewritingOps with
+  RoundoffEvaluators with DynamicEvaluators {
+
   override val name = "Rewriting-Optimization"
+  override val shortName = "rewriting"
   override val description = "Optimization by rewriting"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     NumOption(
@@ -53,47 +56,51 @@ object RewritingOptimizationPhase extends PhaseComponent {
       4781,
       "Seed to use for random number generator. 0 for System.currentTimeMillis()")
   )
-  override def apply(cfg: Config) = new RewritingOptimizationPhase(cfg, name, "rewriting")
-}
 
-class RewritingOptimizationPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
-    with GeneticSearch[Expr] with RewritingOps with RoundoffEvaluators with DynamicEvaluators {
   implicit val debugSection = DebugSectionOptimization
 
-  val computeBaseline: Boolean = cfg.hasFlag("rewrite-baseline")
+  var reporter: Reporter = null
+
   val baselineDynamicSamples = 100000
   // ridiculously high value to signify that an expression is VERY bad,
   // e.g. due to division by zero
   val fitnessOnFail = Rational(1000)
 
-  val uniformPrecision: Precision = cfg.option[Precision]("precision")
-
   val activeRules = commRules ++ assocRules ++ distRules ++ idReduceRules ++
     fracTransRules ++ fracDistRules
 
-  // Affine arithmetic for ranges is needed to make this work for jetEngine
-  val fitnessFunction: (Expr, Map[Identifier, Interval], Map[Identifier, Rational]) => Rational =
-    uniformRoundoff_IA_AA(_, _, _, uniformPrecision, true, true)._1
-  val fitnessFunctionName = "interval-affine"
-
-  val seed = if (cfg.option[Long]("rewrite-custom-seed") == 0) {
-    System.currentTimeMillis()
-  } else {
-    cfg.option[Long]("rewrite-custom-seed")
-  }
+  var seed = System.currentTimeMillis()
   var rand = new Random(seed)
 
-  val infoString = s"fitness function: $fitnessFunctionName, # generations: $maxGenerations, " +
-    s"population size: $populationSize, seed: $seed"
-  cfg.reporter.info(infoString)
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
+    reporter = ctx.reporter
+    maxGenerations = ctx.option[Long]("rewrite-generations").toInt
+    populationSize = ctx.option[Long]("rewrite-population-size").toInt
 
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
+    val uniformPrecision: Precision = ctx.option[Precision]("precision")
 
-    val newDefs = for (fnc <- functionsToConsider(prg, requirePrecond = false)) yield
+    // Affine arithmetic for ranges is needed to make this work for jetEngine
+    val fitnessFunction: (Expr, Map[Identifier, Interval], Map[Identifier, Rational]) => Rational =
+      uniformRoundoff_IA_AA(_, _, _, uniformPrecision, true, true)._1
+    val fitnessFunctionName = "interval-affine"
+
+    val seed = if (ctx.option[Long]("rewrite-custom-seed") == 0) {
+      System.currentTimeMillis()
+    } else {
+      ctx.option[Long]("rewrite-custom-seed")
+    }
+    rand = new Random(seed)
+
+    val infoString = s"fitness function: $fitnessFunctionName, # generations: $maxGenerations, " +
+      s"population size: $populationSize, seed: $seed"
+    ctx.reporter.info(infoString)
+
+
+
+    val newDefs = for (fnc <- functionsToConsider(ctx, prg, requirePrecond = false)) yield
     if (fnc.precondition.isDefined) {
 
-      cfg.reporter.info(s"\nGoing to rewrite ${fnc.id}")
+      ctx.reporter.info(s"\nGoing to rewrite ${fnc.id}")
 
       val allIDs = fnc.params.map(_.id)
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
@@ -104,16 +111,16 @@ class RewritingOptimizationPhase(val cfg: Config, val name: String, val shortNam
 
       val newBody = rewriteExpression(fnc.body.get, fitnessFunction, inputValMap, inputErrors)
 
-      cfg.reporter.info("error after: " + fitnessFunction(newBody, inputValMap, inputErrors))
-      cfg.reporter.debug("expr after: " + newBody)
+      ctx.reporter.info("error after: " + fitnessFunction(newBody, inputValMap, inputErrors))
+      ctx.reporter.debug("expr after: " + newBody)
 
-      if(computeBaseline) {
+      if(ctx.hasFlag("rewrite-baseline")) {
         val dynamicErrorBefore = errorDynamicWithInputRoundoff(fnc.body.get, inputValMap, baselineDynamicSamples)
         val dynamicErrorAfter = errorDynamicWithInputRoundoff(newBody, inputValMap, baselineDynamicSamples)
-        cfg.reporter.info(s"dynamic error before: $dynamicErrorBefore, after: $dynamicErrorAfter")
+        ctx.reporter.info(s"dynamic error before: $dynamicErrorBefore, after: $dynamicErrorAfter")
 
         val improvement = (dynamicErrorBefore - dynamicErrorAfter) / dynamicErrorBefore
-        cfg.reporter.info(s"improvement: $improvement")
+        ctx.reporter.info(s"improvement: $improvement")
       }
 
       fnc.copy(body = Some(newBody))
@@ -122,7 +129,7 @@ class RewritingOptimizationPhase(val cfg: Config, val name: String, val shortNam
       fnc
     }
 
-    finishRun(ctx, Program(prg.id, newDefs))
+    (ctx, Program(prg.id, newDefs))
   }
 
   // refactor as we need to call this several times
@@ -132,8 +139,8 @@ class RewritingOptimizationPhase(val cfg: Config, val name: String, val shortNam
     inputErrors: Map[Identifier, Rational]): Expr = {
 
     val fitnessBefore = roundoffFunction(initExpr, inputValMap, inputErrors)
-    cfg.reporter.info(s"error before: $fitnessBefore")
-    cfg.reporter.debug("expr before: " + initExpr)
+    reporter.info(s"error before: $fitnessBefore")
+    reporter.debug("expr before: " + initExpr)
 
     var bestErrorExpr = initExpr
     var bestError = fitnessBefore

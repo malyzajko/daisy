@@ -1,18 +1,18 @@
 // Original work Copyright 2009-2016 EPFL, Lausanne
 // Modified work Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
-package daisy.utils
+package daisy
+package utils
 
-import daisy.{Config, Context}
-import daisy.lang.Trees._
-import daisy.lang.Types._
-import daisy.tools.FinitePrecision.{DoubleDouble, Float32, Float64}
+import lang.Trees._
+import lang.Types._
+import tools.FinitePrecision.{DoubleDouble, Float32, Float64}
 
-class ScalaPrinter private[utils] (buffer: Appendable, cfg: Config) extends CodePrinter(buffer) {
+class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
 
   override val mathPrefix: String = "Math."
 
-  override def pp(tree: Tree, parent: Option[Tree])(implicit lvl: Int, ctx: Context): Unit = {
+  override def pp(tree: Tree, parent: Option[Tree])(implicit lvl: Int): Unit = {
     implicit val p = Some(tree)
 
     tree match {
@@ -25,7 +25,7 @@ class ScalaPrinter private[utils] (buffer: Appendable, cfg: Config) extends Code
         sb.append(" = ")
         pp(d, p)
         nl(lvl)
-        pp(e, p)(lvl, ctx)
+        pp(e, p)(lvl)
 
       case Downcast(expr, FinitePrecisionType(Float32)) => ppUnary(expr, "", ".toFloat")
       case Downcast(expr, FinitePrecisionType(Float64)) => ppUnary(expr, "", ".toDouble")
@@ -38,9 +38,9 @@ class ScalaPrinter private[utils] (buffer: Appendable, cfg: Config) extends Code
         sb.append(" {\n")
         nl(lvl)
         defs.foreach {
-          m => pp(m, p)(lvl + 1, ctx)
+          m => pp(m, p)(lvl + 1)
         }
-        if (cfg.hasFlag("genMain")) {
+        if (ctx.hasFlag("genMain")) {
           sb.append(
           raw"""
             |  def main(args: Array[String]): Unit = {
@@ -64,7 +64,7 @@ class ScalaPrinter private[utils] (buffer: Appendable, cfg: Config) extends Code
           ind
           sb.append("/*")
           sb.append("@pre : ")
-          pp(prec, p)(lvl, ctx)
+          pp(prec, p)(lvl)
           sb.append("*/")
           sb.append("\n")
         }}
@@ -73,7 +73,7 @@ class ScalaPrinter private[utils] (buffer: Appendable, cfg: Config) extends Code
           ind
           sb.append("/*")
           sb.append("@post: ")
-          pp(post, p)(lvl, ctx)
+          pp(post, p)(lvl)
           sb.append("*/")
           sb.append("\n")
         }}
@@ -102,7 +102,7 @@ class ScalaPrinter private[utils] (buffer: Appendable, cfg: Config) extends Code
         nl(lvl + 1)
         fd.body match {
           case Some(body) =>
-            pp(body, p)(lvl + 1, ctx)
+            pp(body, p)(lvl + 1)
 
           case None =>
             sb.append("[unknown function implementation]")

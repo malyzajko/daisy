@@ -19,28 +19,22 @@ import scala.collection.parallel.ParSeq
  * Computes absolute errors same way as in RangeErrorPhase,
  * but evaluates taylor simplifications instead
  */
-object TaylorErrorPhase extends PhaseComponent {
+object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Taylor with tools.RangeEvaluators {
   override val name: String = "Taylor Absolute Error"
+  override val shortName: String = "taylor"
   override val description: String = "Computes abssolut error using taylor simplifications."
-  override val definedOptions: Set[CmdLineOption[Any]] = Set()
-  override def apply(cfg: Config) = new TaylorErrorPhase(cfg, name, "taylor")
-}
 
-class TaylorErrorPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
-   with tools.Subdivision with tools.Taylor with tools.RangeEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
-
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     // default range method: intervals
-    val rangeMethod: String = cfg.option[String]("rangeMethod")
-    var subdiv = cfg.hasFlag("subdiv")
+    val rangeMethod: String = ctx.option[String]("rangeMethod")
+    var subdiv = ctx.hasFlag("subdiv")
 
     val res: Map[Identifier, (Rational, Interval)] =
-      functionsToConsider(prg).map(fnc => {
+      functionsToConsider(ctx, prg).map(fnc => {
 
-      cfg.reporter.info("analyzing fnc: " + fnc.id)
+      ctx.reporter.info("analyzing fnc: " + fnc.id)
       val startTime = System.currentTimeMillis
 
       if (subdiv) {
@@ -48,7 +42,7 @@ class TaylorErrorPhase(val cfg: Config, val name: String, val shortName: String)
            getEqualSubintervals(ctx.specInputRanges(fnc.id), 3)
 
         val errors = subIntervals.par.map(subInt =>
-          evalTaylor(fnc.body.get, subInt, rangeMethod)._1
+          evalTaylor(ctx, fnc.body.get, subInt, rangeMethod)._1
         )
         val totalAbsError = errors.tail.fold(errors.head)({
           case (x, y) => max(x, y)
@@ -56,33 +50,32 @@ class TaylorErrorPhase(val cfg: Config, val name: String, val shortName: String)
         // TODO: also do this for ranges
         (fnc.id -> (totalAbsError, Interval(Rational.zero)))
       } else {
-        val (error, interval) = evalTaylor(fnc.body.get, ctx.specInputRanges(fnc.id), rangeMethod)
-        cfg.reporter.debug("absError: " + error.toString + ", time: " +
+        val (error, interval) = evalTaylor(ctx, fnc.body.get, ctx.specInputRanges(fnc.id), rangeMethod)
+        ctx.reporter.debug("absError: " + error.toString + ", time: " +
           (System.currentTimeMillis - startTime))
 
         (fnc.id -> (error, interval))
       }
     }).toMap
 
-    finishRun(
-      ctx.copy(resultAbsoluteErrors = res.mapValues(_._1),
+    (ctx.copy(resultAbsoluteErrors = res.mapValues(_._1),
       resultRealRanges = res.mapValues(_._2)),
       prg)
   }
 
 
-  def evalTaylor(bodyReal: Expr, inputRanges: Map[Identifier, Interval],
+  def evalTaylor(ctx: Context, bodyReal: Expr, inputRanges: Map[Identifier, Interval],
     rangeMethod: String): (Rational, Interval) = {
     val containsLet = lang.TreeOps.exists { case Let(_,_,_) => true }(bodyReal)
     if (containsLet) {
-      cfg.reporter.error("The Taylor approach currently does not support Let definitions.")
+      ctx.reporter.error("The Taylor approach currently does not support Let definitions.")
     }
 
     val deltaVarMap = mapDeltasToVars(bodyReal)
     val epsVarMap = mapEpsilonsToVars(bodyReal)
 
     // derive f~(x)
-    val (bodyDelta, transDeltas) = deltaAbstract(bodyReal, deltaVarMap, epsVarMap)
+    val (bodyDelta, transDeltas) = deltaAbstract(bodyReal, deltaVarMap, epsVarMap, ctx.hasFlag("denormals"))
     //println(transDeltas)
 
     // get set of partial derivatives wrt deltas
@@ -100,6 +93,9 @@ class TaylorErrorPhase(val cfg: Config, val name: String, val shortName: String)
       deltaIntervalMap = deltaIntervalMap +
         (delta.id -> Interval(-Float64.machineEpsilon*2, Float64.machineEpsilon*2))
     }
+    val eps = epsilonsOf(bodyDelta)
+    deltaIntervalMap = deltaIntervalMap ++ eps.map(e => (e.id -> epsilonIntervalFloat64))
+
     val inputValMap: Map[Identifier, Interval] = inputRanges ++ deltaIntervalMap
     //println(inputValMap)
 
@@ -152,12 +148,12 @@ class TaylorErrorPhase(val cfg: Config, val name: String, val shortName: String)
           SMTRange.apply)._1.toInterval)
 
       case _ =>
-        cfg.reporter.fatalError(s"$rangeMethod is not supported.")
+        ctx.reporter.fatalError(s"$rangeMethod is not supported.")
     }
 
     // compute the remainder term for taylor series
     val taylorRemainder = getTaylorRemainder(bodyDelta, Seq(inputValMap))
-    cfg.reporter.debug(s"The taylor remainder value is $taylorRemainder")
+    ctx.reporter.debug(s"The taylor remainder value is $taylorRemainder")
 
     // add the remainder to the error
     // TODO: shouldn't this fail, if the remainder cannot be computed?

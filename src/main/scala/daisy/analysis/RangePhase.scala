@@ -27,22 +27,17 @@ import tools.{Interval, AffineForm, SMTRange}
   Prerequisite:
     - SpecsProcessingPhase
  */
-object RangePhase extends PhaseComponent {
+object RangePhase extends DaisyPhase with tools.RangeEvaluators {
   override val name = "Range"
+  override val shortName = "range"
   override val description = "Computes the ranges of intermediate expressions."
-  override def apply(cfg: Config) = new RangePhase(cfg, name, "range")
-}
 
-class RangePhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase
-    with tools.RangeEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
+    val rangeMethod = ctx.option[String]("rangeMethod")
 
-    val rangeMethod = cfg.option[String]("rangeMethod")
-
-    val res: Map[Identifier, (Interval, Map[Expr, Interval])] = functionsToConsider(prg).map(fnc => {
+    val res: Map[Identifier, (Interval, Map[Expr, Interval])] = functionsToConsider(ctx, prg).map(fnc => {
 
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
@@ -74,10 +69,8 @@ class RangePhase(val cfg: Config, val name: String, val shortName: String) exten
 
     }).toMap
 
-    finishRun(
-      ctx.copy(
-        resultRealRanges = res.mapValues(_._1),
-        intermediateRanges = res.mapValues(_._2)),
+    (ctx.copy(resultRealRanges = res.mapValues(_._1),
+      intermediateRanges = res.mapValues(_._2)),
       prg)
   }
 

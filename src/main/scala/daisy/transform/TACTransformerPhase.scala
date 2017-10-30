@@ -22,17 +22,12 @@ import lang.TreeOps.replace
   Prerequisites:
     None
  */
-object TACTransformerPhase extends PhaseComponent {
+object TACTransformerPhase extends DaisyPhase {
   override val name = "Three-address form transformer"
+  override val shortName = "tac"
   override val description = "Transforms the function bodies into SSA form."
-  override def apply(cfg: Config) = new TACTransformerPhase(cfg, name, "ssa")
-}
 
-class TACTransformerPhase(val cfg: Config, val name: String, val shortName: String) extends DaisyPhase {
-
-  override def run(ctx: Context, prg: Program): (Context, Program) = {
-    startRun()
-
+  override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     // need to replace function bodies, create a copy of the whole program
     val newDefs = prg.defs.map(fnc =>
       if (fnc.body.isDefined) {
@@ -40,7 +35,7 @@ class TACTransformerPhase(val cfg: Config, val name: String, val shortName: Stri
       } else {
         fnc
       })
-    finishRun(ctx, Program(prg.id, newDefs))
+    (ctx, Program(prg.id, newDefs))
   }
 
   def fresh(): Identifier = FreshIdentifier("_tmp", RealType, true)

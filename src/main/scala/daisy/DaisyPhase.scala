@@ -9,37 +9,33 @@ import lang.Trees.{FunDef, Program}
 /** One logical analysis/synthesis step, e.g. computing ranges, replacing trig functions.
  * This should be as immutable as possible so that we can (possibly) run it in parallel.
  */
-abstract class DaisyPhase extends Pipeline[Program, Program] {
-  val cfg: Config
+trait DaisyPhase extends Pipeline[Program, Program] {
   val name: String
   val shortName: String
+  // TODO: do we need this?
+  val description: String
+  val definedOptions: Set[CmdLineOption[Any]] = Set()
 
-  /**
-    * Starts timer and logs the start of this phase
-    */
-  def startRun(): Unit = {
-    cfg.timers.get(shortName).start
-    cfg.reporter.info(s"\nStarting ${name} phase")
-  }
+  def runPhase(ctx: Context, prog: Program): (Context, Program)
 
-  override def run(ctx: Context, v: Program): (Context, Program)
+  override def run(ctx: Context, prg: Program): (Context, Program) = {
+    ctx.timers.get(shortName).start
+    ctx.reporter.info(s"\nStarting ${name} phase")
 
-  /**
-    * Stops timer and logs end of this phase. Arguments are passed through.
-    */
-  def finishRun(ctx: Context, prg: Program): (Context, Program) = {
-    cfg.timers.get(shortName).stop
+    val (_ctx, _prg) = runPhase(ctx, prg)
+
+    _ctx.timers.get(shortName).stop
     // cfg.reporter.info(s"Finished ${name} phase\n")
-    (ctx,prg)
+    (_ctx, _prg)
   }
 
-  def functionsToConsider(prg: Program, requirePrecond: Boolean = true): Seq[FunDef] = {
+  def functionsToConsider(ctx:Context, prg: Program, requirePrecond: Boolean = true): Seq[FunDef] = {
     var funs = prg.defs
     funs = funs.filter(_.body.isDefined)
     if (requirePrecond) {
       funs = funs.filter(_.precondition.isDefined)
     }
-    cfg.option[List[String]]("functions") match {
+    ctx.option[List[String]]("functions") match {
       case Nil =>
       case fncs => funs = funs.filter(f => fncs.contains(f.id.toString))
     }

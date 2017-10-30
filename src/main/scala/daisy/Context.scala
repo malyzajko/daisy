@@ -3,12 +3,21 @@
 
 package daisy
 
+import scala.reflect.ClassTag
+
 import lang.Trees.Expr
 import lang.Identifiers._
 import tools.{Interval, PartialInterval, Rational, FinitePrecision}
-import FinitePrecision.Precision
+import FinitePrecision.{Precision, FixedPrecision}
 
 case class Context(
+  file: String,
+  options: Map[String, Any],
+
+  timers: TimerStorage = new TimerStorage,
+
+  libFiles: List[String] = List("library/Real.scala"),
+
   // Information we want to persist through phases,
   // but don't want to pollute the nice and clean trees.
   // If these get too many, move to their own "Summary".
@@ -35,4 +44,21 @@ case class Context(
   intermediateAbsErrors: Map[Identifier, Map[Expr, Rational]] = Map(),
   // real-valued ranges
   intermediateRanges: Map[Identifier, Map[Expr, Interval]] = Map()
-)
+) {
+
+  val reporter = new DefaultReporter(
+    option[List[DebugSection]]("debug").toSet,
+    silent = hasFlag("silent"))
+
+  val fixedPoint: Boolean = option[Precision]("precision") match {
+    case FixedPrecision(_) => true
+    case _ => false
+  }
+
+  def option[T: ClassTag](name: String): T = options.get(name) map {
+    case x: T => x
+    case x: AnyRef => reporter.fatalError(s"Option $name ($x) has wrong type")
+  } getOrElse reporter.fatalError(s"Unknown option $name")
+
+  def hasFlag(name: String): Boolean = option[Boolean](name)
+}

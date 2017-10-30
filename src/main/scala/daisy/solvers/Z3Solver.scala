@@ -20,8 +20,8 @@ object Z3Solver {
   val decimalOption = AttributeOption(Attribute
   (SKeyword("pp.decimal"), value = Some(SSymbol("true"))))
 
-  def checkSat(query: Expr, cfg: Config): Option[Boolean] = {
-    val solver = new Z3Solver(cfg)
+  def checkSat(query: Expr, ctx: Context): Option[Boolean] = {
+    val solver = new Z3Solver(ctx)
     solver.emit(SetOption(timeoutOption))
     solver.assertConstraint(query)
     val res = solver.checkSat
@@ -29,8 +29,8 @@ object Z3Solver {
     res
   }
 
-def checkAndGetModel(query: Expr, cfg: Config): Option[Model] = {
-  val solver = new Z3Solver(cfg)
+def checkAndGetModel(query: Expr, ctx: Context): Option[Model] = {
+  val solver = new Z3Solver(ctx)
   solver.emit(SetOption(timeoutOption))
   solver.emit(SetOption(decimalOption))
   solver.assertConstraint(query)
@@ -49,7 +49,7 @@ def checkAndGetModel(query: Expr, cfg: Config): Option[Model] = {
 }
 
 
-class Z3Solver(cfg: Config) extends SMTLibSolver(cfg) {
+class Z3Solver(ctx: Context) extends SMTLibSolver(ctx) {
 
   override def targetName: String = "z3"
 
@@ -58,7 +58,7 @@ class Z3Solver(cfg: Config) extends SMTLibSolver(cfg) {
 
   def getNewInterpreter: Z3Interpreter = {
     val opts = interpreterOpts
-    cfg.reporter.debug("Invoking solver " + targetName + " with " + opts.mkString(" "))
+    ctx.reporter.debug("Invoking solver " + targetName + " with " + opts.mkString(" "))
 
     new Z3Interpreter("z3", opts.toArray)
   }

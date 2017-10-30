@@ -15,7 +15,7 @@ import tools.Rational
 object Trees {
 
   abstract class Tree extends Positioned with Serializable {
-    override def toString: String = PrettyPrinter(this, Context())
+    override def toString: String = PrettyPrinter(this)
   }
 
   sealed abstract class Definition extends Tree {

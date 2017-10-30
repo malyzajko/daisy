@@ -17,9 +17,7 @@ import scala.collection.immutable._
 
 trait DynamicEvaluators {
 
-  val cfg: Config
-
-  val inputRangeFactor: Rational = Rational.fromString(cfg.option[Option[String]]("inputRangeFactor").getOrElse("1"))
+  var inputRangeFactor: Rational = 1
 
   var dynamicSamplesDefault: Int = 100000
 

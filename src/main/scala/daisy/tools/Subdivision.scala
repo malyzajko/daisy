@@ -17,9 +17,7 @@ import scala.collection.immutable.Map
  */
 trait Subdivision extends DeltaAbstractionUtils {
 
-  val cfg: Config
-
-  val totalOpt: Int = cfg.option[Long]("rel-totalOpt").toInt
+  var totalOpt: Int = 32
 
   // TODO: the divParameter can go I think
   def getEqualSubintervals(inputValMap: Map[Identifier, Interval], divLimit: Int,
@@ -42,19 +40,19 @@ trait Subdivision extends DeltaAbstractionUtils {
       var left = removeDeltasFromMap(inputValMap).keys.size - 1
       var counter = 0
 
-      // cfg.reporter.debug(s"amount of vars is " + (left + 1))
+      // ctx.reporter.debug(s"amount of vars is " + (left + 1))
 
       // TODO: check what this does
       // set of vectors. each vector contains the maps for one var
       for (inputVal <- inputSeq) {
         counter = Math.pow(split, subdivided + 1).toInt + left
-        // cfg.reporter.warning(s"counter $counter ;var $inputVal")
+        // ctx.reporter.warning(s"counter $counter ;var $inputVal")
         if (inputVal._1.isDeltaId || inputVal._1.isEpsilonId || counter > totalOpt) {
           srcCartesian += (inputVal._1 -> Seq(inputVal._2))
           if (!(inputVal._1.isDeltaId || inputVal._1.isEpsilonId)) left = left - 1
         }
         else {
-          // cfg.reporter.info(s"took the subdiv branch $inputVal")
+          // ctx.reporter.info(s"took the subdiv branch $inputVal")
           val (id, interval) = inputVal
           val oneVar = if (interval.xlo.equals(interval.xhi)) {
             List(interval)
@@ -67,7 +65,7 @@ trait Subdivision extends DeltaAbstractionUtils {
         }
       }
       val result = cartesianProduct(srcCartesian)
-      cfg.reporter.warning(s"size cartesian " + result.size)
+      //reporter.warning(s"size cartesian " + result.size)
       result
     }
   }
@@ -110,19 +108,19 @@ trait Subdivision extends DeltaAbstractionUtils {
     val condition = and(constrs.toSeq :_*)
     val solverQuery = And(condition, Equals(zero, bodyReal))
     val model = Solver.getModel(solverQuery)
-    cfg.reporter.debug(model)
+    ctx.reporter.debug(model)
     model match {
       case Some(tmp) =>
-        cfg.reporter.debug(s"true zeros detected at $model")
+        ctx.reporter.debug(s"true zeros detected at $model")
         val exprs: Map[Identifier, Expr] = variablesOf(bodyReal).map(id => {(id -> model.get(id))}).toMap
-        cfg.reporter.debug(s"Model expressions are $exprs")
+        ctx.reporter.debug(s"Model expressions are $exprs")
         val values: Map[Identifier, Interval] = exprs.map(expr =>
         {expr._1 ->
           Evaluators.evalInterval(expr._2, Map.empty).extendBy(Rational.fromReal(0.1))})
-        cfg.reporter.warning(s"Model values are $values")
+        ctx.reporter.warning(s"Model values are $values")
         val newInts = excludeInterval(values, inputValMap)
         Some(newInts)
-      case None => cfg.reporter.debug(s"No true zeros in function")
+      case None => ctx.reporter.debug(s"No true zeros in function")
         None
     }
 
