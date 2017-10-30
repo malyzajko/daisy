@@ -76,7 +76,11 @@ class RewritingOptimizationPhase(val cfg: Config, val name: String, val shortNam
     uniformRoundoff_IA_AA(_, _, _, uniformPrecision, true, true)._1
   val fitnessFunctionName = "interval-affine"
 
-  val seed = cfg.option[Long]("rewrite-seed")
+  val seed = if (cfg.option[Long]("rewrite-custom-seed") == 0) {
+    System.currentTimeMillis()
+  } else {
+    cfg.option[Long]("rewrite-custom-seed")
+  }
   var rand = new Random(seed)
 
   val infoString = s"fitness function: $fitnessFunctionName, # generations: $maxGenerations, " +

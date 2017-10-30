@@ -323,9 +323,9 @@ trait PrecisionsParser extends RegexParsers with JavaTokenParsers {
   def identifier: Parser[String] = """[a-zA-Z_][a-zA-Z0-9_]*""".r ^^ {x: String => x }
 
   def float256: Parser[Precision] = "QuadDouble" ^^ { case _ => QuadDouble }
-  def float128: Parser[Precision] = "DoubleDouble" ^^ { case _ => DoubleDouble }
-  def float64: Parser[Precision] = "Double" ^^ { case _ => Float64 }
-  def float32: Parser[Precision] = "Float" ^^ { case _ => Float32 }
+  def float128: Parser[Precision] = ("DoubleDouble" ||| "Quad") ^^ { case _ => DoubleDouble }
+  def float64: Parser[Precision] = ("Float64" ||| "Double") ^^ { case _ => Float64 }
+  def float32: Parser[Precision] = ("Float32" ||| "Float") ^^ { case _ => Float32 }
   def float16: Parser[Precision] = "Float16" ^^ { case _ => Float16 }
 
   def typeVar: Parser[TypeAssign] = identifier ~ ":" ~ (float256 | float128 | float64 | float32) ^^ {

@@ -71,7 +71,11 @@ class DynamicPhase(val cfg: Config, val name: String, val shortName: String) ext
     val useRationals = false //!cfg.hasFlag("mpfr")
     val logToFile = cfg.hasFlag("dynamic-log")
     val useRoundoff = !cfg.hasFlag("noRoundoff")
-    val seed = cfg.option[Long]("dynamic-seed")
+    val seed = if (cfg.option[Long]("dynamic-custom-seed") == 0) {
+      System.currentTimeMillis()
+    } else {
+      cfg.option[Long]("dynamic-custom-seed")
+    }
 
     if (useRationals) { cfg.reporter.info("using Rational")
     } else { cfg.reporter.info("using MPFR") }

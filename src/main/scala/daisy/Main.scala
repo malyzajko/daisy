@@ -87,7 +87,6 @@ object Main {
           variable_name_i: prec_i }
 
         The file can also only give a partial precision map."""),
-        // TODO @robert does this support Float16 now?
     FlagOption(
       "denormals",
       "Include parameter for denormals in the FP abstraction (for optimization-based approach only).")
@@ -153,7 +152,7 @@ object Main {
     if (cfg.hasFlag("dynamic")) {
       pipeline >>= analysis.DynamicPhase(cfg)
     } else {
-      if (cfg.hasFlag("three-address") || (cfg.hasFlag("fixedPoint") && cfg.hasFlag("codegen"))) {
+      if (cfg.hasFlag("three-address") || (cfg.fixedPoint && cfg.hasFlag("codegen"))) {
         pipeline >>= transform.TACTransformerPhase(cfg)
       }
 

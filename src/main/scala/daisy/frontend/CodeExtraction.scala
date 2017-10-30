@@ -188,7 +188,7 @@ trait CodeExtraction extends ASTExtractors {
 
     private def isLibrary(u: CompilationUnit) = {
       // TODO: big hack
-      u.source.file.absolute.path.endsWith(self.cfg.option[List[String]]("libFiles").head)
+      u.source.file.absolute.path.endsWith(self.cfg.libFiles.head)
     }
 
     private def getSelectChain(e: Tree): List[String] = {

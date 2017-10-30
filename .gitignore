@@ -3,5 +3,4 @@ output/*.scala
 target/
 project/project/
 project/target/
-daisy
 *.log

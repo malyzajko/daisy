@@ -51,7 +51,7 @@ class ExtractionPhase(val cfg: Config, val name: String, val shortName: String) 
     settings.skip.value        = List("patmat")
 
     // this may fail, since the libFiles are relative to the main directory
-    val compilerOpts = cfg.option[List[String]]("libFiles").toList ++ List(cfg.option[String]("file"))
+    val compilerOpts = cfg.libFiles ++ List(cfg.file)
 
     val command = new CompilerCommand(compilerOpts, settings) {
       override val cmdName = "daisy"

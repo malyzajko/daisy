@@ -36,7 +36,7 @@ class CodeGenerationPhase(val cfg: Config, val name: String, val shortName: Stri
   def run(ctx: Context, prg: Program): (Context, Program) = {
     startRun()
 
-    var mixedPrecision = cfg.hasFlag("mixedPrecision")
+    var mixedPrecision = cfg.option[Option[String]]("mixed-precision").isDefined
     var uniformPrecision = cfg.option[Precision]("precision")
     val lang = cfg.option[String]("lang")
 

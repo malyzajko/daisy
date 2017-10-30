@@ -45,7 +45,7 @@ class DataflowPhase(val cfg: Config, val name: String, val shortName: String) ex
     val trackInitialErrs = !cfg.hasFlag("noInitialErrors")
     val trackRoundoffErrs = !cfg.hasFlag("noRoundoff")
 
-    val mixedPrecision = cfg.hasFlag("mixedPrecision")
+    val mixedPrecision = cfg.option[Option[String]]("mixed-precision").isDefined
     val uniformPrecision = cfg.option[Precision]("precision")
 
     cfg.reporter.info(s"using $rangeMethod for ranges, $errorMethod for errors")

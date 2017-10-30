@@ -146,6 +146,8 @@ object FinitePrecision {
 
   case object DoubleDouble extends FloatPrecision(128) {
 
+    override val toString = "Quad"
+
     override val machineEpsilon: Rational = Rational.powerTwo(-113)
 
     lazy override val (mantissa_bits, exponent_bits): (Int, Int) = ???
@@ -173,6 +175,8 @@ object FinitePrecision {
     Supports a signed format with truncation as the rounding mode.
    */
   case class FixedPrecision(bitlength: Int) extends Precision {
+
+    override val toString = "Fixed" + bitlength
 
     override def _absRoundoff(i: Interval): Rational = Rational.powerTwo(-fractionalBits(i))
     override def _absTranscendentalRoundoff(i: Interval): Rational = ???
