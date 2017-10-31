@@ -154,6 +154,7 @@ object FinitePrecision {
 
     override val range: Interval = Interval.+/-(Double.MaxValue)
 
+    override def canRepresent(r: Rational): Boolean = false
     // 2.0041683600089728e-292 = 2^(-1022 + 53) = 2^(-969)
     // override val minNormal: Rational = Rational.powerTwo(-969)
   }
@@ -166,6 +167,7 @@ object FinitePrecision {
 
     override val range: Interval = Interval.+/-(Double.MaxValue)
 
+    override def canRepresent(r: Rational): Boolean = false
     // 1.6259745436952323e-260 = 2^(-1022 + 3*53) = 2^(-863)
     // override val minNormal: Rational = Rational.powerTwo(-863)
   }
