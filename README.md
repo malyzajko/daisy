@@ -87,7 +87,7 @@ Fabian Ritter, Anastasiia Izycheva, Raphael Monat, Fariha Nasir, and Robert Bast
 
 To come.
 
-## Intellij Idea Setup
+## IntelliJ IDEA Setup
 To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins. 
 Choose Scala in the list and select "Install JetBrains Plugin ...". 
 Then let Idea know where is your Scala (or make sure Scala SDK is already there): Project Structure -> Global Libraries -> New Global Library -> Scala SDK -> select the source folder for the SDK on your machine.
@@ -95,7 +95,7 @@ Also make sure the Java SDK is set up for Idea (Project Structure -> SDKs -> che
 
 Choose File -> New -> Project from Existing Source -> path-to-the-build.sbt-file
 or
-File -> New -> Project from Version Control -> Git -> and put git-rts@gitlab.mpi-sws.org:AVA/daisy.git into the URL field and 
+File -> New -> Project from Version Control -> Git -> and put git@github.com:malyzajko/daisy.git into the URL field and 
 select the destination folder for source files to be copied.
 
 After the setup run Daisy in the Terminal of Intellij Idea using sbt as described above.
