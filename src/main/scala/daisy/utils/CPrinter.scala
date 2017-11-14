@@ -5,7 +5,7 @@ package utils
 
 import lang.TreeOps
 import lang.Trees._
-import lang.Types.{FinitePrecisionType, Int16Type, Int32Type, Int64Type}
+import lang.Types._
 import tools.FinitePrecision._
 
 // GenerateDaisyInput: If we are interested in generating a real valued program, that will later be again used as input to Daisy
@@ -61,16 +61,16 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
 
       case Program(id, defs) =>
         assert(lvl == 0)
-        if (ctx.option[List[String]]("comp-opts").nonEmpty &&
-            defs.exists(_.body.exists(TreeOps.exists { case FMA(_, _, _) => true }))){
-          sb.append(
-            """#pragma STDC FP_CONTRACT OFF
-              |#if !__FMA__ && !__FMA4__
-              |  #pragma message("Fast FMA not supported by architecture. Supported architectures: >=haswell (FMA3), >=bdver1 (FMA4)'")
-              |#endif
-              |
-              |""".stripMargin)
-        }
+        // if (ctx.option[List[String]]("comp-opts").nonEmpty &&
+        //     defs.exists(_.body.exists(TreeOps.exists { case FMA(_, _, _) => true }))){
+        //   sb.append(
+        //     """#pragma STDC FP_CONTRACT OFF
+        //       |#if !__FMA__ && !__FMA4__
+        //       |  #pragma message("Fast FMA not supported by architecture. Supported architectures: >=haswell (FMA3), >=bdver1 (FMA4)'")
+        //       |#endif
+        //       |
+        //       |""".stripMargin)
+        // }
         sb.append("#include <math.h>\n")
         if (defs.flatMap(_.body).exists(
           TreeOps.exists{ case e => e.getType match {

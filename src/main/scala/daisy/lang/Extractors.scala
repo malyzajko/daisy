@@ -40,7 +40,6 @@ object Extractors {
         Some((Seq(t), (es: Seq[Expr]) => Exp(es.head)))
       case Log(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Log(es.head)))
-
       case _ =>
         None
     }
@@ -81,6 +80,11 @@ object Extractors {
         Some((Seq(t), (es: Seq[Expr]) => Exp(es.head)))
       case Log(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Log(es.head)))
+      case RightShift(t, by) =>
+        Some((Seq(t), (es: Seq[Expr]) => RightShift(es.head, by)))
+      case LeftShift(t, by) =>
+        Some((Seq(t), (es: Seq[Expr]) => LeftShift(es.head, by)))
+
       case Lambda(args, body) =>
         Some((Seq(body), (es: Seq[Expr]) => Lambda(args, es.head)))
       case Equals(t1, t2) =>
