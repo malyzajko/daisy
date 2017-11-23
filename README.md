@@ -1,8 +1,11 @@
-# Project Daisy
 
-Daisy now also has an online interface: http://daisy.mpi-sws.org/.
+<img src="https://people.mpi-sws.org/~eva/daisy_logo.jpg" width="150"> 
 
-It's a brand new feature, so please be patient while we work out all the kinks.
+# Project Daisy 
+
+ Daisy now also has an online interface: http://daisy.mpi-sws.org/. 
+ 
+ It's a brand new feature, so please be patient while we work out all the kinks.
 
 ## First steps
 
