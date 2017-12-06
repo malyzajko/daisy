@@ -4,8 +4,6 @@
 package daisy
 package lang
 
-import scala.collection.immutable.Seq
-
 import Types._
 
 object TypeOps {

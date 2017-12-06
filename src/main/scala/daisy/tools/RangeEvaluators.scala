@@ -28,7 +28,7 @@ trait RangeEvaluators {
     initValMap: Map[Identifier, T],
     rangeFromReal: Rational => T): (T, Map[Expr, T]) = {
 
-    var intermediateRanges: CachingMap[Expr, T] = new CachingMap[Expr, T]
+    val intermediateRanges: CachingMap[Expr, T] = new CachingMap[Expr, T]
 
     for ((id, range) <- initValMap){
       intermediateRanges.put(Variable(id), range)
@@ -36,35 +36,37 @@ trait RangeEvaluators {
 
     def eval(e: Expr): T = intermediateRanges.getOrAdd(e, {
 
-      case x @ RealLiteral(r) => rangeFromReal(r)
+      case RealLiteral(r) => rangeFromReal(r)
 
-      case x @ Plus(lhs, rhs) => eval(lhs) + eval(rhs)
+      case Plus(lhs, rhs) => eval(lhs) + eval(rhs)
 
-      case x @ Minus(lhs, rhs) => eval(lhs) - eval(rhs)
+      case Minus(lhs, rhs) => eval(lhs) - eval(rhs)
 
-      case x @ Times(lhs, rhs) => eval(lhs) * eval(rhs)
+      case Times(lhs, rhs) => eval(lhs) * eval(rhs)
 
-      case x @ FMA(fac1, fac2, sum) => eval(fac1) * eval(fac2) + eval(sum)
+      case FMA(fac1, fac2, sum) => eval(fac1) * eval(fac2) + eval(sum)
 
-      case x @ Division(lhs, rhs) => eval(lhs) / eval(rhs)
+      case Division(lhs, rhs) => eval(lhs) / eval(rhs)
 
-      case x @ Pow(t, n) => eval(t) ^ eval(n)
+//      case Pow(t, n) => eval(t) ^ eval(n)
 
-      case x @ UMinus(t) => - eval(t)
+      case IntPow(b, n) => eval(b) ^ n
 
-      case x @ Sqrt(t) => eval(t).squareRoot
+      case UMinus(t) => - eval(t)
 
-      case x @ Sin(t) => eval(t).sine
+      case Sqrt(t) => eval(t).squareRoot
 
-      case x @ Cos(t) => eval(t).cosine
+      case Sin(t) => eval(t).sine
 
-      case x @ Tan(t) => eval(t).tangent
+      case Cos(t) => eval(t).cosine
 
-      case x @ Exp(t) => eval(t).exp
+      case Tan(t) => eval(t).tangent
 
-      case x @ Log(t) => eval(t).log
+      case Exp(t) => eval(t).exp
 
-      case x @ Let(id, value, body) =>
+      case Log(t) => eval(t).log
+
+      case Let(id, value, body) =>
         intermediateRanges.put(Variable(id), eval(value))
         eval(body)
 

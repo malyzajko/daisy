@@ -5,10 +5,8 @@ package daisy
 package frontend
 
 import lang.Trees.Program
-import utils._
 
 import scala.tools.nsc.{Settings,CompilerCommand}
-import java.io.File
 
 object ExtractionPhase extends DaisyPhase {
   override val name = "Scalac Extraction"

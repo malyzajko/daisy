@@ -21,7 +21,7 @@ class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer)
         sb.append("val ")
         pp(b, p)
         sb.append(": ")
-        pp(e.getType,p)
+        pp(b.getType,p)
         sb.append(" = ")
         pp(d, p)
         nl(lvl)
@@ -62,19 +62,19 @@ class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer)
       case fd: FunDef =>
         fd.precondition.foreach{ prec => {
           ind
-          sb.append("/*")
-          sb.append("@pre : ")
+          sb.append("/* ")
+          sb.append("@pre: ")
           pp(prec, p)(lvl)
-          sb.append("*/")
+          sb.append(" */")
           sb.append("\n")
         }}
 
         fd.postcondition.foreach{ post => {
           ind
-          sb.append("/*")
+          sb.append("/* ")
           sb.append("@post: ")
           pp(post, p)(lvl)
-          sb.append("*/")
+          sb.append(" */")
           sb.append("\n")
         }}
 
@@ -87,7 +87,7 @@ class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer)
         var c = 0
 
         fd.params.foreach(arg => {
-          sb.append(s"${arg.id} : ")
+          sb.append(s"${arg.id}: ")
           pp(arg.getType, p)
 
           if(c < sz - 1) {
@@ -96,7 +96,7 @@ class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer)
           c = c + 1
         })
 
-        sb.append(") : ")
+        sb.append("): ")
         pp(fd.returnType, p)
         sb.append(" = {")
         nl(lvl + 1)
@@ -108,7 +108,10 @@ class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer)
             sb.append("[unknown function implementation]")
         }
         nl(lvl)
-        sb.append(s"} // ${ctx.resultRealRanges(fd.id)} +/- ${ctx.resultAbsoluteErrors(fd.id)}")
+        sb.append("}")
+        if (ctx.resultRealRanges.get(fd.id).isDefined) {
+          sb.append(s" // ${ctx.resultRealRanges(fd.id)} +/- ${ctx.resultAbsoluteErrors(fd.id)}")
+        }
         nl(lvl - 1)
         nl(lvl - 1)
 

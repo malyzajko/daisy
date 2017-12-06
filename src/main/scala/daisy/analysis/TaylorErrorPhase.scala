@@ -4,16 +4,14 @@ package daisy
 package analysis
 
 import lang.Trees._
-import lang.Identifiers.{FreshIdentifier, Identifier}
+import lang.Identifiers.Identifier
 import lang.TreeOps._
-import lang.Types.RealType
 import tools.FinitePrecision._
-import tools.{Rational, Evaluators, Interval, AffineForm, SMTRange}
+import tools.{Rational, Interval, AffineForm, SMTRange}
 import Rational._
 import Interval._
 
 import scala.collection.immutable.Map
-import scala.collection.parallel.ParSeq
 
 /**
  * Computes absolute errors same way as in RangeErrorPhase,
@@ -29,10 +27,9 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     // default range method: intervals
     val rangeMethod: String = ctx.option[String]("rangeMethod")
-    var subdiv = ctx.hasFlag("subdiv")
+    val subdiv = ctx.hasFlag("subdiv")
 
-    val res: Map[Identifier, (Rational, Interval)] =
-      functionsToConsider(ctx, prg).map(fnc => {
+    val res: Map[Identifier, (Rational, Interval)] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       ctx.reporter.info("analyzing fnc: " + fnc.id)
       val startTime = System.currentTimeMillis
@@ -48,15 +45,15 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
           case (x, y) => max(x, y)
         })
         // TODO: also do this for ranges
-        (fnc.id -> (totalAbsError, Interval(Rational.zero)))
+        (totalAbsError, Interval(Rational.zero))
       } else {
         val (error, interval) = evalTaylor(ctx, fnc.body.get, ctx.specInputRanges(fnc.id), rangeMethod)
         ctx.reporter.debug("absError: " + error.toString + ", time: " +
           (System.currentTimeMillis - startTime))
 
-        (fnc.id -> (error, interval))
+        (error, interval)
       }
-    }).toMap
+    }
 
     (ctx.copy(resultAbsoluteErrors = res.mapValues(_._1),
       resultRealRanges = res.mapValues(_._2)),

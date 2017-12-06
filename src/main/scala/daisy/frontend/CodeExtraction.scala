@@ -29,7 +29,6 @@ trait CodeExtraction extends ASTExtractors {
   import global._
   import global.definitions._
   import StructuralExtractors._
-  import scala.collection.immutable.Set
 
   val ctx: Context
 
@@ -190,18 +189,6 @@ trait CodeExtraction extends ASTExtractors {
       // TODO: big hack
       u.source.file.absolute.path.endsWith(self.ctx.libFiles.head)
     }
-
-    private def getSelectChain(e: Tree): List[String] = {
-      def rec(e: Tree): List[Name] = e match {
-        case Select(q, name) => name :: rec(q)
-        case Ident(name) => List(name)
-        case EmptyTree => List()
-        case _ =>
-          ctx.reporter.internalError("getSelectChain: unexpected Tree:\n" + e.toString)
-      }
-      rec(e).reverseMap(_.toString)
-    }
-
 
     // private def extractPackageRef(refPath: RefTree): PackageRef = {
     //   (getSelectChain(refPath.qualifier) :+ refPath.name.toString).filter(_ != "<empty>")
@@ -429,10 +416,7 @@ trait CodeExtraction extends ASTExtractors {
 
         case ExBooleanLiteral(v) => BooleanLiteral(v)
 
-        // case ExFloat64Literal(d) =>
-        //   val tmp = RealLiteral(tools.Rational.fromString(d.toString))
-        //   tmp.stringValue = d.toString
-        //   tmp
+        case ExFloat64Literal(d) => RealLiteral(tools.Rational.fromString(d.toString), d.toString)
 
         case ExImplicitDouble2Real(d) => RealLiteral(tools.Rational.fromString(d.toString), d.toString)
 
@@ -467,15 +451,23 @@ trait CodeExtraction extends ASTExtractors {
         /* ----- Binary ops ----- */
 
         case ExPlusMinus(l, r)    => AbsError(extractTree(l), extractTree(r))
-        case ExPow(l, r)      => Pow(extractTree(l), extractTree(r))
+        case ExPow(l, r)      =>
+          val power = extractTree(r) match {
+            case Int32Literal(v) if (v >= 2) => v
+            case x => ctx.reporter.fatalError("Power is only supported for positive integer powers > 2")
+          }
+          val tree = extractTree(l)
+          var res = tree
+          for (i <- 1 until power) {
+            res = Times(res, tree)
+          }
+          res
 
         // Function call
         case ExCall(tr, sym, args) if (defsToDefs contains sym) =>
           val rargs = args.map(extractTree)
           val tmpFunDef = defsToDefs(sym)
           FunctionInvocation(tmpFunDef.id, tmpFunDef.params, rargs, tmpFunDef.returnType)
-
-
 
         case ExCall(tr, sym, args) if (args.length == 1) =>
           val lhs = extractTree(tr)
@@ -500,12 +492,32 @@ trait CodeExtraction extends ASTExtractors {
             case (IsTyped(a1, RealType), "<=", IsTyped(a2, RealType)) =>
               LessEquals(a1, a2)
 
+            case (IsTyped(a1, RealType), "!=", IsTyped(a2, RealType)) =>
+              LessEquals(a1, a2)
+
+            case (IsTyped(a1, RealType), "==", IsTyped(a2, RealType)) =>
+              LessEquals(a1, a2)
+
             // Boolean methods
             case (IsTyped(a1, BooleanType), "&&", IsTyped(a2, BooleanType)) =>
               and(a1, a2)
 
             case (IsTyped(a1, BooleanType), "||", IsTyped(a2, BooleanType)) =>
               or(a1, a2)
+
+            case (IsTyped(a1, RealType), "!=", Int32Literal(i)) =>
+              Not(Equals(a1, RealLiteral(tools.Rational(i))))
+
+            case (Int32Literal(i), "!=", IsTyped(a1, RealType)) =>
+              Not(Equals(a1, RealLiteral(tools.Rational(i))))
+
+            case (IsTyped(a1, RealType), "==", Int32Literal(i)) =>
+              Equals(a1, RealLiteral(tools.Rational(i)))
+
+            case (Int32Literal(i), "==", IsTyped(a1, RealType)) =>
+              Equals(a1, RealLiteral(tools.Rational(i)))
+
+
           }
 
         /* ----- Ternary ops ----- */

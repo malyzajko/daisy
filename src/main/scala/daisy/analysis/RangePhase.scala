@@ -37,7 +37,7 @@ object RangePhase extends DaisyPhase with tools.RangeEvaluators {
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val rangeMethod = ctx.option[String]("rangeMethod")
 
-    val res: Map[Identifier, (Interval, Map[Expr, Interval])] = functionsToConsider(ctx, prg).map(fnc => {
+    val res: Map[Identifier, (Interval, Map[Expr, Interval])] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
@@ -46,20 +46,20 @@ object RangePhase extends DaisyPhase with tools.RangeEvaluators {
           val (resRange, intermediateRanges) =
             evalRange[Interval](fnc.body.get, inputValMap, Interval.apply)
 
-          (fnc.id -> (resRange, intermediateRanges))
+          (resRange, intermediateRanges)
 
         case "affine" =>
           val (resRange, intermediateRanges) = evalRange[AffineForm](fnc.body.get,
             inputValMap.map(x => (x._1 -> AffineForm(x._2))), AffineForm.apply)
 
-          (fnc.id -> (resRange.toInterval, intermediateRanges.mapValues(_.toInterval)))
+          (resRange.toInterval, intermediateRanges.mapValues(_.toInterval))
 
         case "smt" =>
           val (resRange, intermediateRanges) = evalRange[SMTRange](fnc.body.get,
             inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }),
             SMTRange.apply)
 
-          (fnc.id -> (resRange.toInterval, intermediateRanges.mapValues(_.toInterval)))
+          (resRange.toInterval, intermediateRanges.mapValues(_.toInterval))
 
 
         // case "subdiv" =>
@@ -67,7 +67,7 @@ object RangePhase extends DaisyPhase with tools.RangeEvaluators {
 
       }
 
-    }).toMap
+    }
 
     (ctx.copy(resultRealRanges = res.mapValues(_._1),
       intermediateRanges = res.mapValues(_._2)),

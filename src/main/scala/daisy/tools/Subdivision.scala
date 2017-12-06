@@ -4,10 +4,6 @@ package daisy
 package tools
 
 import lang.Identifiers.Identifier
-import lang.Constructors.and
-import lang.TreeOps._
-import lang.Trees._
-import solvers.Solver
 
 import scala.collection.immutable.Map
 

@@ -9,7 +9,7 @@ import TypeOps._
 import Types._
 import utils.{Positioned, PrettyPrinter}
 import Identifiers._
-import tools.FinitePrecision.{Float64, Precision}
+import tools.FinitePrecision.Precision
 import tools.Rational
 
 object Trees {
@@ -59,7 +59,14 @@ object Trees {
   case class Program(id: Identifier, defs: Seq[FunDef]) extends Definition
 
   /** Represents an expression in Leon. */
-  sealed abstract class Expr extends Tree with Typed
+  sealed abstract class Expr extends Tree with Typed {
+    def Plus(that: Expr): Expr = Trees.Plus(this, that)
+    def Minus(that: Expr): Expr = Trees.Minus(this, that)
+    def Times(that: Expr): Expr = Trees.Times(this, that)
+    def Division(that: Expr): Expr = Trees.Division(this, that)
+//    def Pow(that: Expr): Expr = Trees.Pow(this, that)
+    def IntPow(n: Int): Expr = Trees.IntPow(this, n)
+  }
 
   /** Trait which gets mixed-in to expressions without subexpressions */
   trait Terminal {
@@ -264,6 +271,10 @@ object Trees {
       r._stringValue = stringValue
       r
     }
+    val zero = RealLiteral(Rational.zero)
+    val one = RealLiteral(Rational.one)
+    val two = RealLiteral(Rational.two)
+    val neg_one = RealLiteral(-Rational.one)
   }
 
   case class FinitePrecisionLiteral(value: Rational, prec: Precision, stringValue: String) extends Literal[Rational] {
@@ -392,17 +403,21 @@ object Trees {
     val getType = lhs.getType
   }
 
-  case class Pow(lhs: Expr, rhs: Expr) extends Expr {
-    assert(lhs.getType == rhs.getType)
-    val getType = {
-      if (lhs.getType == RealType) {
-        RealType
-      } else if (lhs.getType == IntegerType) {
-        IntegerType
-      } else {
-        Untyped
-      }
-    }
+//  case class Pow(lhs: Expr, rhs: Expr) extends Expr {
+//    assert(lhs.getType == rhs.getType)
+//    val getType = {
+//      if (lhs.getType == RealType) {
+//        RealType
+//      } else if (lhs.getType == IntegerType) {
+//        IntegerType
+//      } else {
+//        Untyped
+//      }
+//    }
+//  }
+
+  case class IntPow(base: Expr, exp: Int) extends Expr {
+    override val getType: TypeTree = base.getType
   }
 
   case class Sqrt(t: Expr) extends Expr {
@@ -411,28 +426,23 @@ object Trees {
   }
 
   case class Sin(t: Expr) extends Expr {
-    require(t.getType == RealType)
-    val getType = RealType
+    val getType = t.getType
   }
 
   case class Cos(t: Expr) extends Expr {
-    require(t.getType == RealType)
-    val getType = RealType
+    val getType = t.getType
   }
 
   case class Tan(t: Expr) extends Expr {
-    require(t.getType == RealType)
-    val getType = RealType
+    val getType = t.getType
   }
 
   case class Exp(t: Expr) extends Expr {
-    require(t.getType == RealType)
-    val getType = RealType
+    val getType = t.getType
   }
 
   case class Log(t: Expr) extends Expr {
-    require(t.getType == RealType)
-    val getType = RealType
+    val getType = t.getType
   }
 
   /*  Comparisons */

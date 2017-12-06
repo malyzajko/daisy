@@ -23,7 +23,8 @@ object Evaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
-      case Pow(x, n) => eval(x) ^ eval(n)
+//      case Pow(x, n) => eval(x) ^ eval(n)
+      case IntPow(x, n) => eval(x) ^ n
       case UMinus(x) => - eval(x)
       case Let(id, v, b) =>
         val aform = eval(v)
@@ -47,7 +48,8 @@ object Evaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
-      case Pow(x, n) => eval(x) ^ eval(n)
+//      case Pow(x, n) => eval(x) ^ eval(n)
+      case IntPow(x, n) => eval(x) ^ n
       case UMinus(x) => - eval(x)
       case Let(id, v, b) =>
         val temp = eval(v)
@@ -72,7 +74,8 @@ object Evaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
-      case Pow(x, n) => eval(x) ^ eval(n)
+//      case Pow(x, n) => eval(x) ^ eval(n)
+      case IntPow(x, n) => eval(x) ^ n
       case UMinus(x) => - eval(x)
       case Let(id, v, b) =>
         val temp = eval(v)

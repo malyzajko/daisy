@@ -4,8 +4,6 @@
 package daisy
 package solvers
 
-import scala.collection.immutable.Seq
-
 import lang.Trees.Expr
 import lang.Identifiers._
 

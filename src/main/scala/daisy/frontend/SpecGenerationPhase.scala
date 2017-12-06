@@ -1,13 +1,12 @@
 // Copyright 2017 MPI-SWS, Saarbruecken, Germany
 
 package daisy
-package analysis
+package frontend
 
 import scala.collection.immutable.Seq
 
-
 import lang.Trees._
-import tools.{Rational, Interval}
+import tools.Rational
 import Rational._
 import solvers.Z3Solver
 import lang.TreeOps._

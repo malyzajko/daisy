@@ -8,7 +8,6 @@ import java.io.BufferedWriter
 
 import lang.Trees._
 import tools.{Rational, Interval, MPFRFloat, DynamicEvaluators}
-import MPFRFloat.{abs => mpfr_abs, max => mpfr_max, min => mpfr_min}
 import Rational._
 import lang.Identifiers._
 import Sampler._
@@ -99,7 +98,7 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
     }
 
 
-    for (fnc <- prg.defs) if (!fnc.precondition.isEmpty && !fnc.body.isEmpty) {
+    for (fnc <- functionsToConsider(ctx, prg)) {
 
       val id = fnc.id
       val body = fnc.body.get

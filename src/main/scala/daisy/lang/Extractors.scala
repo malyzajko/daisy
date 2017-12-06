@@ -26,8 +26,10 @@ object Extractors {
         Some(Seq(t1,t2,t3), (es: Seq[Expr]) => FMA(es(0), es(1), es(2)))
       case Division(t1, t2) =>
         Some(Seq(t1, t2), (es: Seq[Expr]) => Division(es(0), es(1)))
-      case Pow(t1, t2) =>
-        Some(Seq(t1, t2), (es: Seq[Expr]) => Pow(es(0), es(1)))
+//      case Pow(t1, t2) =>
+//        Some(Seq(t1, t2), (es: Seq[Expr]) => Pow(es(0), es(1)))
+      case IntPow(t1, n) =>
+        Some(Seq(t1), (es: Seq[Expr]) => IntPow(es(0), n))
       case Sqrt(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Sqrt(es.head)))
       case Sin(t) =>
@@ -40,6 +42,7 @@ object Extractors {
         Some((Seq(t), (es: Seq[Expr]) => Exp(es.head)))
       case Log(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Log(es.head)))
+
       case _ =>
         None
     }
@@ -66,8 +69,10 @@ object Extractors {
         Some(Seq(t1,t2,t3), (es: Seq[Expr]) => FMA(es(0), es(1), es(2)))
       case Division(t1, t2) =>
         Some(Seq(t1, t2), (es: Seq[Expr]) => Division(es(0), es(1)))
-      case Pow(t1, t2) =>
-        Some(Seq(t1, t2), (es: Seq[Expr]) => Pow(es(0), es(1)))
+//      case Pow(t1, t2) =>
+//        Some(Seq(t1, t2), (es: Seq[Expr]) => Pow(es(0), es(1)))
+      case IntPow(t1, n) =>
+        Some(Seq(t1), (es: Seq[Expr]) => IntPow(es(0), n))
       case Sqrt(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Sqrt(es.head)))
       case Sin(t) =>
@@ -84,6 +89,8 @@ object Extractors {
         Some((Seq(t), (es: Seq[Expr]) => RightShift(es.head, by)))
       case LeftShift(t, by) =>
         Some((Seq(t), (es: Seq[Expr]) => LeftShift(es.head, by)))
+      case Downcast(e, newType) =>
+        Some(Seq(e), (es: Seq[Expr]) => Downcast(es.head, newType))
 
       case Lambda(args, body) =>
         Some((Seq(body), (es: Seq[Expr]) => Lambda(args, es.head)))
@@ -116,6 +123,7 @@ object Extractors {
 
       case And(args) => Some((args, and))
       case Or(args) => Some((args, or))
+      case IfExpr(cond, thenn, elze) => Some(Seq(cond, thenn, elze), (es: Seq[Expr]) => IfExpr(es(0), es(1), es(2)))
 
       /* Terminals */
       case t: Terminal => Some(Seq[Expr](), (_: Seq[Expr]) => t)
@@ -123,9 +131,6 @@ object Extractors {
       /* Expr's not handled here should implement this trait */
       // case e: Extractable =>
       //  e.extract
-
-      case _ =>
-        None
     }
   }
 

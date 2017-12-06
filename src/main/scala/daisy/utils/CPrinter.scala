@@ -5,7 +5,7 @@ package utils
 
 import lang.TreeOps
 import lang.Trees._
-import lang.Types._
+import lang.Types.{FinitePrecisionType, Int16Type, Int32Type, Int64Type}
 import tools.FinitePrecision._
 
 // GenerateDaisyInput: If we are interested in generating a real valued program, that will later be again used as input to Daisy
@@ -61,22 +61,13 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
 
       case Program(id, defs) =>
         assert(lvl == 0)
-        // if (ctx.option[List[String]]("comp-opts").nonEmpty &&
-        //     defs.exists(_.body.exists(TreeOps.exists { case FMA(_, _, _) => true }))){
-        //   sb.append(
-        //     """#pragma STDC FP_CONTRACT OFF
-        //       |#if !__FMA__ && !__FMA4__
-        //       |  #pragma message("Fast FMA not supported by architecture. Supported architectures: >=haswell (FMA3), >=bdver1 (FMA4)'")
-        //       |#endif
-        //       |
-        //       |""".stripMargin)
-        // }
         sb.append("#include <math.h>\n")
         if (defs.flatMap(_.body).exists(
           TreeOps.exists{ case e => e.getType match {
             case FinitePrecisionType(pr) => pr >= DoubleDouble case _ => false }})) {
           sb.append("#include <qd/dd_real.h>\n")
         }
+        nl
         defs.foreach {
           m => pp(m, p)(lvl)
         }
@@ -110,21 +101,20 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
           sb.append("\n")
           ind
           sb.append("/* ")
-          sb.append("@pre : ")
+          sb.append("@pre: ")
           pp(prec, p)(lvl)
           sb.append(" */")
+          sb.append("\n")
         }}
 
         fd.postcondition.foreach{ post => {
           ind
-          sb.append("/*")
+          sb.append("/* ")
           sb.append("@post: ")
           pp(post, p)(lvl)
-          sb.append("*/")
+          sb.append(" */")
           sb.append("\n")
         }}
-
-        nl(lvl)
 
         ind
         pp(fd.returnType, p)
@@ -156,8 +146,12 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
             sb.append("[unknown function implementation]")
         }
         nl(lvl)
-        sb.append(s"} // ${ctx.resultRealRanges(fd.id)} +/- ${ctx.resultAbsoluteErrors(fd.id)}")
-        nl(lvl-1)
+        sb.append("}")
+        if (ctx.resultRealRanges.get(fd.id).isDefined) {
+          sb.append(s" // ${ctx.resultRealRanges(fd.id)} +/- ${ctx.resultAbsoluteErrors(fd.id)}")
+        }
+        nl(lvl - 1)
+        nl(lvl - 1)
 
     case _ => super.pp(tree, parent)
     }

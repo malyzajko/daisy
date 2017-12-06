@@ -3,6 +3,8 @@
 
 package daisy
 
+import daisy.lang.Identifiers.Identifier
+
 import scala.collection.immutable.Seq
 import lang.Trees.{FunDef, Program}
 
@@ -19,12 +21,12 @@ trait DaisyPhase extends Pipeline[Program, Program] {
   def runPhase(ctx: Context, prog: Program): (Context, Program)
 
   override def run(ctx: Context, prg: Program): (Context, Program) = {
-    ctx.timers.get(shortName).start
+    ctx.timers.get(shortName).start()
     ctx.reporter.info(s"\nStarting ${name} phase")
 
     val (_ctx, _prg) = runPhase(ctx, prg)
 
-    _ctx.timers.get(shortName).stop
+    _ctx.timers.get(shortName).stop()
     // cfg.reporter.info(s"Finished ${name} phase\n")
     (_ctx, _prg)
   }
@@ -40,5 +42,15 @@ trait DaisyPhase extends Pipeline[Program, Program] {
       case fncs => funs = funs.filter(f => fncs.contains(f.id.toString))
     }
     funs
+  }
+
+  def analyzeConsideredFunctions[T](ctx: Context, prg: Program)(f: FunDef => T): Map[Identifier, T] = {
+    functionsToConsider(ctx, prg).map(fnc => fnc.id -> f(fnc)).toMap
+  }
+
+  def transformConsideredFunctions(ctx: Context, prg: Program)(f: FunDef => FunDef): Seq[FunDef] = {
+    prg.defs.map{ fnc =>
+      if (functionsToConsider(ctx, prg).contains(fnc)) f(fnc) else fnc
+    }
   }
 }

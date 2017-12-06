@@ -4,11 +4,9 @@ package daisy
 package analysis
 
 import lang.Trees._
-import lang.TreeOps.allVariablesOf
 import lang.Identifiers._
 import tools._
 import FinitePrecision._
-
 
 /**
   Computes and stores intermediate ranges.
@@ -36,7 +34,6 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
     val rangeMethod = ctx.option[String]("rangeMethod")
     val errorMethod = ctx.option[String]("errorMethod")
 
-    val trackInitialErrs = !ctx.hasFlag("noInitialErrors")
     val trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
 
     val mixedPrecision = ctx.option[Option[String]]("mixed-precision").isDefined
@@ -50,46 +47,14 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
 
     // returns (abs error, result range, interm. errors, interm. ranges)
     val res: Map[Identifier, (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval])] =
-      functionsToConsider(ctx, prg).map(fnc => {
+      analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       ctx.reporter.info("analyzing fnc: " + fnc.id)
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
-      val precisionMap: Map[Identifier, Precision] = if (mixedPrecision) {
-        ctx.specMixedPrecisions(fnc.id)
-      } else {
-        allVariablesOf(fnc.body.get).map(id => (id -> uniformPrecision)).toMap
-      }
+      val precisionMap: Map[Identifier, Precision] = ctx.specInputPrecisions(fnc.id)
 
-      // If we track both input and roundoff errors, then we pre-compute
-      // the roundoff errors for those variables that do not have a user-defined
-      // error, in order to keep correlations.
-      val inputErrorMap: Map[Identifier, Rational] =
-        if (trackInitialErrs && trackRoundoffErrs) {
-
-          val inputErrs = ctx.specInputErrors(fnc.id)
-          val allIDs = fnc.params.map(_.id).toSet
-          val missingIDs = allIDs -- inputErrs.keySet
-          inputErrs ++ missingIDs.map(id => (id -> precisionMap(id).absRoundoff(inputValMap(id))))
-
-        } else if (trackInitialErrs) {
-
-          val inputErrs = ctx.specInputErrors(fnc.id)
-          val allIDs = fnc.params.map(_.id).toSet
-          val missingIDs = allIDs -- inputErrs.keySet
-          inputErrs ++ missingIDs.map(id => (id -> Rational.zero))
-
-        } else if (trackRoundoffErrs) {
-
-          val allIDs = fnc.params.map(_.id)
-          allIDs.map(id => (id -> precisionMap(id).absRoundoff(inputValMap(id)))).toMap
-
-        } else {
-
-          val allIDs = fnc.params.map(_.id)
-          allIDs.map(id => (id -> Rational.zero)).toMap
-
-        }
+      val inputErrorMap: Map[Identifier, Rational] = ctx.specInputErrors(fnc.id)
 
       val fncBody = fnc.body.get
 
@@ -142,9 +107,9 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
           (Interval.maxAbs(resRoundoff.toInterval), allErrors.mapValues(e => Interval.maxAbs(e.toInterval)))
       }
 
-      (fnc.id -> ((resError, resRange, intermediateErrors, intermediateRanges)))
+      (resError, resRange, intermediateErrors, intermediateRanges)
 
-    }).toMap
+    }
 
     (ctx.copy(
       resultAbsoluteErrors = res.mapValues(_._1),

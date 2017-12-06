@@ -3,6 +3,8 @@
 
 package daisy
 
+import java.io.File
+
 import daisy.tools.FinitePrecision._
 
 import lang.Trees.Program
@@ -37,8 +39,7 @@ object Main {
     MultiStringOption(
       "functions",
       List("f1", "f2"),
-                                    // TODO @robert is this still true?
-      "Which functions to consider (currently only for error analysis)"),
+      "Which functions to consider"),
     FlagOption(
       "print-tough-smt-calls",
       "If enabled, will print those SMT queries to file which take longer"),
@@ -118,32 +119,27 @@ object Main {
     verifyCmdLineOptions()
 
     ctx = processOptions(args.toList)
-    ctx.timers.total.start
+    ctx.timers.total.start()
 
-    if (ctx.hasFlag("help")) {
-      showHelp(ctx.reporter)
-    } else {
+    val pipeline = computePipeline(ctx)
 
-      val pipeline = computePipeline(ctx)
+    ctx.reporter.info("\n************ Starting Daisy ************")
 
-      ctx.reporter.info("\n************ Starting Daisy ************")
-
-      try { // for debugging it's better to have these off.
-        pipeline.run(ctx, Program(null, Nil))
-      } catch {
-        case tools.DivisionByZeroException(msg) =>
-          ctx.reporter.warning(msg)
-        case tools.DenormalRangeException(msg) =>
-          ctx.reporter.warning(msg)
-        case tools.OverflowException(msg) =>
-          ctx.reporter.warning(msg)
-        case e: java.lang.UnsatisfiedLinkError =>
-          ctx.reporter.warning("A library could not be loaded: " + e)
-        //case e: DaisyFatalError => ctx.reporter.info("Something really bad happened. Cannot continue.")
-      }
+    try { // for debugging it's better to have these off.
+      pipeline.run(ctx, Program(null, Nil))
+    } catch {
+      case tools.DivisionByZeroException(msg) =>
+        ctx.reporter.warning(msg)
+      case tools.DenormalRangeException(msg) =>
+        ctx.reporter.warning(msg)
+      case tools.OverflowException(msg) =>
+        ctx.reporter.warning(msg)
+      case e: java.lang.UnsatisfiedLinkError =>
+        ctx.reporter.warning("A library could not be loaded: " + e)
+      case e: DaisyFatalError => //ctx.reporter.info("Something really bad happened. Cannot continue.")
     }
 
-    ctx.timers.get("total").stop
+    ctx.timers.get("total").stop()
     ctx.reporter.info("time: \n" + ctx.timers.toString)
   }
 
@@ -213,6 +209,10 @@ object Main {
   def processOptions(args: List[String]): Context = {
     val initReporter = new DefaultReporter(Set(), false)
 
+    if (args.isEmpty || args.contains("--help")) {
+      showHelp(initReporter)
+    }
+
     val argsMap: Map[String, String] =
       args.filter(_.startsWith("--")).map(_.drop(2).split("=", 2).toList match {
       case List(name, value) => name -> value
@@ -239,7 +239,7 @@ object Main {
             name -> s.toLong
           } catch {
             case e: NumberFormatException =>
-              initReporter.warning("Can't parse argument for option $name, using default")
+              initReporter.warning(s"Can't parse argument for option $name, using default")
               name -> default
           }
         }
@@ -267,10 +267,11 @@ object Main {
       }
     }).toMap
 
-    val inputFile: String = args.filterNot(_.startsWith("-")).toSeq match {
-      case fs if fs.isEmpty => showHelp(initReporter)
-      case fs if fs.size > 1 => initReporter.fatalError("More than one input file." + fs.mkString(":"))
-      case fs => fs.head
+    val inputFile: String = args.filterNot(_.startsWith("-")) match {
+      case Seq() => initReporter.fatalError("No input file")
+      case Seq(f) if new File(f).exists => f
+      case Seq(f) => initReporter.fatalError(s"File $f does not exist")
+      case fs => initReporter.fatalError("More than one input file: " + fs.mkString(", "))
     }
 
     Context(

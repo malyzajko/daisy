@@ -5,9 +5,7 @@ package backend
 
 import daisy.utils.CodePrinter
 
-import scala.collection.immutable.Seq
 import lang.Trees._
-import lang.TreeOps.allVariablesOf
 import tools.FinitePrecision._
 import lang.Types._
 import lang.Extractors.ArithOperator
@@ -34,8 +32,8 @@ object CodeGenerationPhase extends DaisyPhase {
   var reporter: Reporter = null
 
   def runPhase(ctx: Context, prg: Program): (Context, Program) = {
-    var mixedPrecision = ctx.option[Option[String]]("mixed-precision").isDefined
-    var uniformPrecision = ctx.option[Precision]("precision")
+    val mixedPrecision = ctx.option[Option[String]]("mixed-precision").isDefined
+    val uniformPrecision = ctx.option[Precision]("precision")
     val lang = ctx.option[String]("lang")
 
     reporter = ctx.reporter
@@ -46,9 +44,10 @@ object CodeGenerationPhase extends DaisyPhase {
           ctx.reporter.error("Mixed-precision code generation is currently not supported for fixed-points.")
         }
         // if we have fixed-point code, we need to generate it first
-        val newDefs = prg.defs.map(fnc => if (!fnc.body.isEmpty && !fnc.precondition.isEmpty) {
-          val newBody = toFixedPointCode(fnc.body.get, FixedPrecision(b),
-            ctx.intermediateRanges(fnc.id), ctx.intermediateAbsErrors(fnc.id))
+        // TODO handle ignored functions
+        val newDefs = transformConsideredFunctions(ctx,prg){ fnc =>
+          val newBody = fnc.body.map(toFixedPointCode(_, FixedPrecision(b),
+            ctx.intermediateRanges(fnc.id), ctx.intermediateAbsErrors(fnc.id)))
           val valDefType = b match {
             case 8 => Int16Type
             case 16 => Int32Type
@@ -56,32 +55,15 @@ object CodeGenerationPhase extends DaisyPhase {
           }
           fnc.copy(
             params = fnc.params.map(vd => ValDef(vd.id.changeType(valDefType))),
-            body = Some(newBody),
+            body = newBody,
             returnType = valDefType)
-        } else {
-          fnc
-        })
+        }
         Program(prg.id, newDefs)
       case up @ FloatPrecision(_) =>
-        val precisionMap: Map[Identifier, Map[Identifier, Precision]] = if (mixedPrecision) {
-          ctx.specMixedPrecisions
-        } else {
-          prg.defs.map(fnc =>
-            if (fnc.body.isEmpty) {
-              (fnc.id -> Map[Identifier, Precision]())
-            } else {
-              (fnc.id -> allVariablesOf(fnc.body.get).map(id => (id -> up)).toMap)
-            }
-          ).toMap
-        }
-        val returnPrecisionMap: Map[Identifier, Precision] = if (mixedPrecision) {
-          ctx.specInferredReturnTypes
-        } else {
-          prg.defs.map(fnc => (fnc.id -> up)).toMap
-        }
-
         // if we have floating-point code, we need to just change the types
-        assignFloatType(prg, precisionMap, returnPrecisionMap, up)
+        Program(prg.id, prg.defs.map { fnc =>
+          assignFloatType(fnc, ctx.specInputPrecisions(fnc.id), ctx.specResultPrecisions(fnc.id), up)
+        })
     }
 
     writeFile(newProgram, lang, ctx)
@@ -99,8 +81,8 @@ object CodeGenerationPhase extends DaisyPhase {
     CodePrinter(prg, ctx, lang, out)
   }
 
-  private def assignFloatType(prg: Program, typeMaps: Map[Identifier, Map[Identifier, Precision]],
-                              returnTypes: Map[Identifier, Precision], defaultPrecision: Precision): Program = {
+  private def assignFloatType(fnc: FunDef, typeMap: Map[Identifier, Precision],
+                              returnType: Precision, defaultPrecision: Precision): FunDef = {
 
     def changeType(e: Expr, tpeMap: Map[Identifier, Precision]): (Expr, Precision) = e match {
 
@@ -130,22 +112,12 @@ object CodeGenerationPhase extends DaisyPhase {
         }
     }
 
-    val newDefs = prg.defs.map({
-      case FunDef(id, returnType, params, pre, body, post, isField) =>
-
-        FunDef(id, FinitePrecisionType(returnTypes(id)),
-          params.map(vd => ValDef(vd.id.changeType(FinitePrecisionType(typeMaps(id)(vd.id))))),
-          // this should really be changed too
-          pre,
-          body.map(changeType(_, typeMaps(id))._1),
-          post,
-          isField
-        )
-    })
-
-
-    Program(prg.id, newDefs)
-
+    fnc.copy(
+      returnType = FinitePrecisionType(returnType),
+      params = fnc.params.map(vd => ValDef(vd.id.changeType(FinitePrecisionType(typeMap(vd.id))))),
+      // this should really be changed too
+      body = fnc.body.map(changeType(_, typeMap)._1)
+    )
   }
 
   /*
@@ -184,7 +156,6 @@ object CodeGenerationPhase extends DaisyPhase {
 
       case Sqrt(t) =>
         throw new Exception("Sqrt is not supported for fixed-points!")
-        null
 
       case x @ Plus(lhs, rhs) =>
         val fLhs = getFractionalBits(lhs)

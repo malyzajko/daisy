@@ -4,8 +4,6 @@
 package daisy
 package lang
 
-import scala.collection.immutable.Seq
-
 import Trees._
 import TreeOps._
 

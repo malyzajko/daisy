@@ -6,7 +6,7 @@ package tools
 import lang.Trees._
 import lang.Types.RealType
 import lang.Identifiers._
-import lang.TreeOps.freeVariablesOf
+import lang.TreeOps.{freeVariablesOf, replace}
 import tools.FinitePrecision.Float64
 
 trait DeltaAbstractionUtils {
@@ -216,52 +216,7 @@ trait DeltaAbstractionUtils {
    * @param expr - expression to replace deltas and epsilons in
    * @return expr - expression with RealLiteral(0.) instead of deltas and epsilons
    */
-  def replaceDeltasWithZeros(expr: Expr): Expr = expr match {
-    case x @ Delta(id) => zero
-    case x @ Epsilon(id) => zero
-    case x @ Variable(id) => x
-    case x @ RealLiteral(r) => x
-    case UMinus(x) =>
-      UMinus(replaceDeltasWithZeros(x))
-
-    case z @ Plus(x, y) =>
-      Plus(replaceDeltasWithZeros(x), replaceDeltasWithZeros(y))
-
-    case z @ Minus(x, y) =>
-      Minus(replaceDeltasWithZeros(x), replaceDeltasWithZeros(y))
-
-    case z @ Times(x, y) =>
-      Times(replaceDeltasWithZeros(x), replaceDeltasWithZeros(y))
-
-    case z @ Division(x, y) =>
-      Division(replaceDeltasWithZeros(x), replaceDeltasWithZeros(y))
-
-    case z @ Pow(x, n) =>
-      Pow(replaceDeltasWithZeros(x), replaceDeltasWithZeros(n))
-
-    case z @ Sqrt(x) =>
-      Sqrt(replaceDeltasWithZeros(x))
-
-    case z @ Sin(x) =>
-      Sin(replaceDeltasWithZeros(x))
-
-    case z @ Cos(x) =>
-      Cos(replaceDeltasWithZeros(x))
-
-    case z @ Tan(x) =>
-      Tan(replaceDeltasWithZeros(x))
-
-    case z @ Exp(x) =>
-      Exp(replaceDeltasWithZeros(x))
-
-    case z @ Log(x) =>
-      Log(replaceDeltasWithZeros(x))
-
-    case z @ Let(x, value, body) =>
-      Let(x, value, replaceDeltasWithZeros(body))
-
-    case z => throw new IllegalArgumentException(s"Unknown expression $z. Replacing deltas failed")
-  }
+  def replaceDeltasWithZeros(expr: Expr): Expr = replace{ case Delta(_) | Epsilon(_) => zero }(expr)
 
 
 }

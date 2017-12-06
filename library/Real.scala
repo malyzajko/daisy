@@ -39,7 +39,7 @@ object Real {
     def exp(x: Real): Real = ???
 
     @ignore
-    def pow(x: Real, y: Real): Real = ???
+    def pow(x: Real, y: Int): Real = ???
 
     @ignore
     def fma(x: Real, y: Real, z: Real): Real = ???

@@ -24,8 +24,8 @@ case class Context(
   // indexed by FunDef.id
   specInputRanges: Map[Identifier, Map[Identifier, Interval]] = Map(),
   specInputErrors: Map[Identifier, Map[Identifier, Rational]] = Map(),
-  specMixedPrecisions: Map[Identifier, Map[Identifier, Precision]] = Map(),
-  specInferredReturnTypes: Map[Identifier, Precision] = Map(),
+  specInputPrecisions: Map[Identifier, Map[Identifier, Precision]] = Map(),
+  specResultPrecisions: Map[Identifier, Precision] = Map(),
   specAdditionalConstraints: Map[Identifier, Expr] = Map(),
 
   // for now we only support a single result value, i.e. no tuples

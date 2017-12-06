@@ -4,24 +4,16 @@ package daisy
 package analysis
 
 import lang.Trees._
-import lang.Constructors._
 
-import lang.Identifiers.{Identifier}
-import lang.Types.RealType
+import lang.Identifiers.Identifier
 import lang.TreeOps._
 
 import tools.{SMTRange, Evaluators, Interval, Rational, AffineForm, DivisionByZeroException}
-import Rational._
 import tools.FinitePrecision._
 import Interval._
 import daisy.utils.CachingMap
 
-import solvers.{Solver, Z3Solver}
-import smtlib.parser.Commands.{AttributeOption, SetOption}
-import smtlib.parser.Terms.{Attribute, SKeyword, SNumeral, SSymbol}
-
 import scala.collection.immutable.Map
-import scala.collection.parallel.{ParSeq, ParSet}
 import scala.util.control.Breaks._
 
 
@@ -385,7 +377,9 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
 
       case Division(lhs, rhs) => evalSMT(lhs) / (evalSMT(rhs), precisionDefault, loopLower)
 
-      case Pow(lhs, rhs) => evalSMT(lhs) ^ (evalSMT(rhs), precisionDefault, loopLower)
+//      case Pow(lhs, rhs) => evalSMT(lhs) ^ (evalSMT(rhs), precisionDefault, loopLower)
+
+      case IntPow(lhs, rhs) => evalSMT(lhs) ^ rhs
 
       case UMinus(t) => - evalSMT(t)
 

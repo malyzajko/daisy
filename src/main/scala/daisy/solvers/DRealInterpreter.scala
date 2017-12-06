@@ -3,8 +3,6 @@
 package daisy
 package solvers
 
-import scala.collection.immutable.Seq
-
 import scala.concurrent.{Future, blocking, ExecutionContext, Await, TimeoutException}
 import scala.concurrent.duration._
 

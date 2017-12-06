@@ -3,23 +3,13 @@
 package daisy
 package analysis
 
-import lang.Trees.{Expr, _}
-import tools.Rational.{zero, abs, max}
+import lang.Trees._
+import tools.Rational.max
 import lang.Identifiers.Identifier
-import lang.Types.RealType
 import tools._
-import Interval._
-import lang.Constructors._
-import solvers.{Solver, Z3Solver}
 import tools.FinitePrecision._
-import lang.TreeOps._
-import smtlib.parser.Commands.{AttributeOption, SetOption}
-import smtlib.parser.Terms.{Attribute, SKeyword, SNumeral, SSymbol}
 
 import scala.collection.immutable.Map
-import scala.collection.parallel.{ParSeq, ParSet}
-import scala.util.control.Breaks._
-
 
 /**
  * Compute relative errors through absolute, i.e. not through first computing
@@ -54,23 +44,16 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
   implicit val debugSection = DebugSectionAnalysis
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
-    val rangeMethod = ctx.option[String]("rangeMethod")
     val errorMethod = ctx.option[String]("errorMethod")
     require(errorMethod == "affine", s"$name only supports error method 'affine'")
-
-    val uniformPrecision = ctx.option[Precision]("precision")
-
-    val trackInitialErrs = !ctx.hasFlag("noInitialErrors")
-    val trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
 
     val divLimit = ctx.option[Long]("divLimit").toInt
     //  val subdiv: String = ctx.option("subdiv")
 
     // for each function, returns (abs error, rel error, result interval)
-    val res: Map[Identifier, (Rational, Option[Rational], Interval)] = functionsToConsider(ctx, prg).map(fnc => {
+    val res: Map[Identifier, (Rational, Option[Rational], Interval)] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       ctx.reporter.info("analyzing fnc: " + fnc.id)
-      val startTime = System.currentTimeMillis
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
       val bodyReal = fnc.body.get
@@ -82,34 +65,7 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
       // Evaluate each input range
       val errors = subIntervals.par.map(subInt => {
 
-        // If we track both input and roundoff errors, then we pre-compute
-        // the roundoff errors for those variables that do not have a user-defined
-        // error, in order to keep correlations.
-        val inputErrorMap: Map[Identifier, Rational] = if (trackInitialErrs && trackRoundoffErrs){
-
-          val inputErrs = ctx.specInputErrors(fnc.id)
-          val allIDs = fnc.params.map(_.id).toSet
-          val missingIDs = allIDs -- inputErrs.keySet
-          inputErrs ++ missingIDs.map(id => (id -> uniformPrecision.absRoundoff(inputValMap(id))))
-
-        } else if (trackInitialErrs) {
-
-          val inputErrs = ctx.specInputErrors(fnc.id)
-          val allIDs = fnc.params.map(_.id).toSet
-          val missingIDs = allIDs -- inputErrs.keySet
-          inputErrs ++ missingIDs.map(id => (id -> Rational.zero))
-
-        } else if (trackRoundoffErrs) {
-
-          val allIDs = fnc.params.map(_.id)
-          allIDs.map(id => (id -> uniformPrecision.absRoundoff(inputValMap(id)))).toMap
-
-        } else {
-
-          val allIDs = fnc.params.map(_.id)
-          allIDs.map(id => (id -> Rational.zero)).toMap
-
-        }
+        val inputErrorMap: Map[Identifier, Rational] = ctx.specInputErrors(fnc.id)
 
         val (absError, realRange) = evalError(bodyReal, subInt, inputErrorMap,
           ctx.option[String]("rangeMethod"), ctx.option[String]("errorMethod"),
@@ -142,7 +98,7 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
         case (x, y) => x.union(y)
         })
 
-        (fnc.id -> (totalAbsError, totalRelError, totalRange))
+        (totalAbsError, totalRelError, totalRange)
       // val relError = errors.max(optionAbsOrdering).getOrElse("NaN")
 
       // if (failIntervals.nonEmpty)
@@ -153,7 +109,7 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
       // }
       // ctx.reporter.info(s"relError: $relError, time: " +
       //   (System.currentTimeMillis - startTime))
-    }).toMap
+    }
 
     (ctx.copy(
       resultAbsoluteErrors = res.mapValues(_._1),

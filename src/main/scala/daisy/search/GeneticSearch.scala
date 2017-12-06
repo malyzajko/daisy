@@ -6,9 +6,7 @@ package search
 import util.Random
 import scala.collection.immutable.Seq
 
-import lang.Trees.Expr
 import tools.Rational
-import Rational._
 
 // The MutationRules should probably not be mixed-in to the generic genetic program
 trait GeneticSearch[T] {

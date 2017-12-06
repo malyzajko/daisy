@@ -37,6 +37,8 @@ abstract class CodePrinter(buffer: Appendable) extends PrettyPrinter(buffer) {
       case Not(Equals(l, r)) => ppBinary(l, r, " != ")
       case Not(expr) => ppUnary(expr, "!(", ")")
 
+      case IntPow(_, _) => throw new Exception("IntPow in CodePrinter")
+
       // this should never be called by this printer, i.e. all RealTypes
       // should have been transformed before
       case RealType => throw new Exception("RealType found in code generator")
