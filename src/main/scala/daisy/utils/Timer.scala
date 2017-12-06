@@ -10,18 +10,18 @@ class Timer {
   var beginning: Long = 0L
   var end: Long = 0L
 
-  def start: this.type = {
+  def start(): Unit = {
     beginning = System.currentTimeMillis
     end       = 0L
-    this
   }
 
-  def stop: Unit = {
+  def stop(): Unit = {
+    assert(end == 0L)
     end         = System.currentTimeMillis
   }
 
   override def toString: String = {
-    "%6d ms".format((end - beginning))
+    "%6d ms".format(end - beginning)
   }
 
 }
@@ -47,9 +47,5 @@ class TimerStorage extends Dynamic {
 
   def selectDynamic(name: String): Timer = get(name)
 
-  override def toString: String = {
-    val sb = new StringBuffer
-
-    keys.map(key => s"$key: ${fields(key).toString}").mkString(", ")
-  }
+  override def toString: String = keys.map(key => s"$key: ${fields(key).toString}").mkString(", ")
 }

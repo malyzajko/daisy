@@ -138,12 +138,12 @@ trait ASTExtractors {
       }
     }
 
-    // object ExFloat64Literal {
-    //   def unapply(tree: Literal): Option[Double] = tree match {
-    //     case Literal(c @ Constant(i)) if c.tpe == DoubleClass.tpe => Some(c.doubleValue)
-    //     case _ => None
-    //   }
-    // }
+    object ExFloat64Literal {
+      def unapply(tree: Literal): Option[Double] = tree match {
+        case Literal(c @ Constant(i)) if c.tpe == DoubleClass.tpe => Some(c.doubleValue)
+        case _ => None
+      }
+    }
 
     object ExIdentifier {
       def unapply(tree: Ident): Option[(Symbol,Tree)] = tree match {

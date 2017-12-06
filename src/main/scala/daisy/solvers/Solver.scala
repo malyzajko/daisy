@@ -19,10 +19,7 @@ import lang.Identifiers._
 import utils.Bijection
 import lang.TreeOps._
 import tools.Rational
-import Rational._
 import lang.Constructors._
-
-import scala.collection.mutable.StringBuilder
 
 object Solver {
 
@@ -395,7 +392,8 @@ abstract class SMTLibSolver(val ctx: Context) {
     case Times(a, b)    if (e.getType == RealType) => Reals.Mul(toSMT(a), toSMT(b))
     case Division(a, b) if (e.getType == RealType) => Reals.Div(toSMT(a), toSMT(b))
 
-    case Pow(x, n) => Power(toSMT(x), toSMT(n))
+    case IntPow(a, b)   if (e.getType == RealType) => Power(toSMT(a), SNumeral(b))
+//    case Pow(x, n) => Power(toSMT(x), toSMT(n))
     /**
      * ===== Logic =====
      */
@@ -572,8 +570,11 @@ abstract class SMTLibSolver(val ctx: Context) {
           case ("/", List(a, b)) =>
             Division(fromSMT(a, otpe), fromSMT(b, otpe))
 
-          case ("^", List(a, b)) =>
-            Pow(fromSMT(a, otpe), fromSMT(b, otpe))
+          case ("^", List(a, SNumeral(b))) =>
+            IntPow(fromSMT(a, otpe), b.toInt)
+
+//          case ("^", List(a, b)) =>
+//            Pow(fromSMT(a, otpe), fromSMT(b, otpe))
 
           case ("div", List(a, b)) =>
             Division(fromSMT(a, otpe), fromSMT(b, otpe))

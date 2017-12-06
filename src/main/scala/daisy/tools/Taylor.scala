@@ -3,18 +3,15 @@
 package daisy
 package tools
 
-import lang.Identifiers.{FreshIdentifier, Identifier}
+import lang.Identifiers.Identifier
 import lang.TreeOps._
-import lang.Trees.{RealLiteral, _}
-import lang.Types.RealType
+import lang.Trees._
 import tools.FinitePrecision.Float64
 import tools.Interval._
 // TODO: can we do without the breaks?
 import scala.util.control.Breaks._
 
 import scala.collection.immutable.Map
-
-import scala.collection.parallel.{ParSeq, ParSet}
 
 /**
  * Trait with collections of methods to perform Taylor simplifications
@@ -57,15 +54,15 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
       listElements(lhs).++(listElements(rhs))
     case UMinus(Times(lhs, rhs)) =>
       listElements(UMinus(lhs)).++(listElements(rhs))
-    case Pow(x, RealLiteral(n)) =>
+    case IntPow(x, n) =>
       var tmp: Seq[Expr] = Seq.empty
-      for (i <-0 until n.intValue()){
+      for (i <-0 until n){
         tmp = listElements(x).++(tmp)
       }
       tmp
-    case UMinus(Pow(x, RealLiteral(n))) =>
+    case UMinus(IntPow(x, n)) =>
       var tmp: Seq[Expr] = Seq.empty
-      for (i <-0 until n.intValue()){
+      for (i <-0 until n){
         tmp = listElements(x).++(tmp)
       }
       // ctx.reporter.warning(s"List elements $tmp")
@@ -140,7 +137,7 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
         lst.foreach(x => {
           tmp = if (x == UMinus(one)) UMinus(tmp) else Times(tmp, x)
         })
-        // here Pow will come back
+        // here IntPow will come back
         easySimplify(tmp)
       }
     }
@@ -278,8 +275,8 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
             Division(simpleRound(lhs), simpleRound(rhs))
         }
 
-      case x @ Pow(lhs, n) =>
-        Pow(simpleRound(lhs), n)
+      case x @ IntPow(lhs, n) =>
+        IntPow(simpleRound(lhs), n)
 
       case x @ UMinus(lhs) =>
         lhs match {
@@ -459,7 +456,7 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
         }
 
       case x @ Times(lhs, rhs) if expressionsEqual(lhs, rhs) =>
-        val tmp = Pow(simpleRound(lhs), two)
+        val tmp = IntPow(simpleRound(lhs), 2)
         tmp
 
       case x @ Times(lhs, rhs) =>
@@ -509,22 +506,22 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
               simpleRound(denom))
 
           case (Times(lhsIn, rhsIn), _) if expressionsEqual(rhsIn, rhs) =>
-            Times(lhsIn, Pow(simpleRound(rhs), two))
+            Times(lhsIn, IntPow(simpleRound(rhs), 2))
 
-          case (Times(lhsIn, Pow(rhsIn, RealLiteral(n))), _) if expressionsEqual(rhsIn, rhs) =>
-            Times(lhsIn, Pow(simpleRound(rhs), RealLiteral(n + Rational.one)))
+          case (Times(lhsIn, IntPow(rhsIn, n)), _) if expressionsEqual(rhsIn, rhs) =>
+            Times(lhsIn, IntPow(simpleRound(rhs), (n + 1)))
 
-          case (Pow(lhsIn, RealLiteral(n1)), Pow(rhsIn, RealLiteral(n2)))
+          case (IntPow(lhsIn, n1), IntPow(rhsIn, n2))
             if expressionsEqual(lhsIn, rhsIn) =>
-            Pow(simpleRound(lhsIn), RealLiteral(n1 + n2))
+            IntPow(simpleRound(lhsIn), n1 + n2)
 
-          case (Pow(lhsIn, RealLiteral(n)), _)
+          case (IntPow(lhsIn, n), _)
             if expressionsEqual(lhsIn, rhs) =>
-            Pow(simpleRound(lhsIn), RealLiteral(n + Rational.one))
+            IntPow(simpleRound(lhsIn), n + 1)
 
-          case (_, Pow(rhsIn, RealLiteral(n)))
+          case (_, IntPow(rhsIn, n))
             if expressionsEqual(lhs, rhsIn) =>
-            Pow(simpleRound(rhsIn), RealLiteral(n + Rational.one))
+            IntPow(simpleRound(rhsIn), n)
 
           case _ =>
             Times(simpleRound(lhs), simpleRound(rhs))
@@ -550,21 +547,21 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
 
           case (Times(_, _), Times(_,_)) =>
             cancelNominators(simpleRound(lhs), simpleRound(rhs))
-          case (Times(_, _), Pow(_,_)) =>
+          case (Times(_, _), IntPow(_,_)) =>
             cancelNominators(simpleRound(lhs), simpleRound(rhs))
-          case (Pow(_, _), Times(_,_)) =>
+          case (IntPow(_, _), Times(_,_)) =>
             cancelNominators(simpleRound(lhs), simpleRound(rhs))
-          case (Pow(_, _), Pow(_,_)) =>
+          case (IntPow(_, _), IntPow(_,_)) =>
             cancelNominators(simpleRound(lhs), simpleRound(rhs))
           case _ =>
             Division(simpleRound(lhs), simpleRound(rhs))
         }
 
-      case x @ Pow(Pow(lhs, RealLiteral(n1)), RealLiteral(n)) =>
-        Pow(simpleRound(lhs), RealLiteral(n * n1))
+      case x @ IntPow(IntPow(lhs, n1), n) =>
+        IntPow(simpleRound(lhs), n * n1)
 
-      case x @ Pow(lhs, n) =>
-        Pow(simpleRound(lhs), n)
+      case x @ IntPow(lhs, n) =>
+        IntPow(simpleRound(lhs), n)
 
       case x @ UMinus(lhs) =>
         lhs match {
@@ -672,17 +669,17 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
       // case z @ Pow(x, n) if containsVariables(n, wrt) =>
       //   ???
 
-    case z @ Pow(x, RealLiteral(n)) if containsVariables(x, wrt) =>
-      assert(n > Rational.one)
+    case z @ IntPow(x, n) if containsVariables(x, wrt) =>
+      assert(n > 1)
       // assert(n.isValidInt)
-      if (n == Rational.two) {
+      if (n == 2) {
         getPartialDerivative(x, wrt)
       } else {
-        Times(RealLiteral(n),
-          Pow(getPartialDerivative(x, wrt), RealLiteral(n-Rational.one)))
+        Times(RealLiteral(Rational(n)),
+          IntPow(getPartialDerivative(x, wrt), n-1))
       }
 
-    // case z @ Pow(x, n) => zero
+    // case z @ IntPow(x, n) => zero
 
     case z @ Sqrt(x) if containsVariables(x, wrt) =>
       Division(getPartialDerivative(x, wrt), Times(two, Sqrt(x)))
@@ -827,74 +824,10 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
    * @param wrt - Delta or Epsilon variable
    * @return boolean
    */
-  private def containsVariables(e: Expr, wrt: Identifier): Boolean = {
-
-    def recurse(ex: Expr, wrt: Identifier): Boolean = ex match {
-      // if we compute w.r.t. this delta, it's a var
-      case x @ Delta(id) if wrt.equals(id) =>
-        true
-      // otherwise a constant
-      case x @ Delta(id) =>
-        false
-      // if we compute w.r.t. this epsilon, it's a var
-      case x @ Epsilon(id) if wrt.equals(id) =>
-        true
-      // otherwise a constant
-      case x @ Epsilon(id) =>
-        false
-
-      // all variables are constants
-      case x @ Variable(id) =>
-        false
-
-      case x @ RealLiteral(r) =>
-        false
-
-      case x @ Plus(lhs, rhs) =>
-        recurse(lhs, wrt) || recurse(rhs, wrt)
-
-      case x @ Minus(lhs, rhs) =>
-        recurse(lhs, wrt) || recurse(rhs, wrt)
-
-      case x @ Times(lhs, rhs) =>
-        recurse(lhs, wrt) || recurse(rhs, wrt)
-
-      case x @ Division(lhs, rhs) =>
-        recurse(lhs, wrt) || recurse(rhs, wrt)
-
-      case x @ Pow(lhs, rhs) =>
-        recurse(lhs, wrt) || recurse(rhs, wrt)
-
-      case x @ UMinus(lhs) =>
-        recurse(lhs, wrt)
-
-      case x @ Sqrt(lhs) =>
-        recurse(lhs, wrt)
-
-      case x @ Sin(lhs) =>
-        recurse(lhs, wrt)
-
-      case x @ Cos(lhs) =>
-        recurse(lhs, wrt)
-
-      case x @ Tan(lhs) =>
-        recurse(lhs, wrt)
-
-      case x @ Exp(lhs) =>
-        recurse(lhs, wrt)
-
-      case x @ Log(lhs) =>
-        recurse(lhs, wrt)
-
-      case x @ Let(id, value, body) =>
-        recurse(body, wrt)
-
-      case n =>
-        throw new IllegalArgumentException("Unknown expression. Check expression for variables failed" + n.toString)
-    }
-
-    recurse(e, wrt)
-  }
+  private def containsVariables(e: Expr, wrt: Identifier): Boolean = exists{
+    // if we compute w.r.t. this delta or epsilon, it's a var
+    case Delta(`wrt`) | Epsilon(`wrt`) => true
+  }(e)
 
   /**
    * Compares two expressions
@@ -933,22 +866,21 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
       expressionsEqual(lhs1, lhs2) && expressionsEqual(rhs1, rhs2)
     case (Division(lhs1, rhs1), Division(lhs2, rhs2)) =>
       expressionsEqual(lhs1, lhs2) && expressionsEqual(rhs1, rhs2)
-    case (Pow(x1, n1), Pow(x2, n2)) =>
-      expressionsEqual(x1, x2) && expressionsEqual(n1, n2)
+    case (IntPow(x1, n1), IntPow(x2, n2)) =>
+      expressionsEqual(x1, x2) && n1 == n2
     case _ => false
   }
 
-  private def evaluateInterval(expr: Expr,
-    _intMap: collection.immutable.Map[Identifier, Interval] = Map.empty): Option[Interval] = {
+  private def evaluateInterval(expr: Expr, intMap: collection.immutable.Map[Identifier, Interval]): Option[Interval] = {
     try {
       // TODO remove it! only for Doppler evaluation!
-      // Some(Evaluators.evalSMT(expr,_intMap.map({
+      // Some(Evaluators.evalSMT(expr,intMap.map({
       // case (id, int) => (id -> SMTRange(Variable(id), int)) })).toInterval)
-      //Some(Evaluators.evalInterval(expr,_intMap))
-      Some(evalRange[Interval](expr, _intMap, Interval.apply)._1)
+      //Some(Evaluators.evalInterval(expr,intMap))
+      Some(evalRange[Interval](expr, intMap, Interval.apply)._1)
     }
     catch {
-      case e: DivisionByZeroException => None
+      case DivisionByZeroException(_) => None
     }
 
   }

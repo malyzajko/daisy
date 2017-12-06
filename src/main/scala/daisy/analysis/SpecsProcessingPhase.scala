@@ -3,7 +3,7 @@
 package daisy
 package analysis
 
-import scala.collection.immutable.Seq
+import scala.collection.immutable.{Map, Seq}
 import scala.util.parsing.combinator._
 
 import lang.Trees._
@@ -11,7 +11,7 @@ import tools.{Interval, PartialInterval, Rational, FinitePrecision}
 import FinitePrecision._
 import lang.Identifiers._
 import lang.Extractors._
-import lang.TreeOps.{preTraversal, allVariablesOf}
+import lang.TreeOps.allVariablesOf
 import lang.Trees.Program
 
 /**
@@ -43,38 +43,41 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
   def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     reporter = ctx.reporter
 
+    val trackInitialErrs = !ctx.hasFlag("noInitialErrors")
+    val trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
     val defaultPrecision = ctx.option[Precision]("precision")
 
-    val precisionMap: Map[Identifier, (Map[Identifier, Precision], Precision)] =
-      ctx.option[Option[String]]("mixed-precision") match {
+    // By default, each function's input variables are given defaultPrecision
+    var inputPrecision: Map[Identifier, Map[Identifier, Precision]] =
+      Map.empty.withDefaultValue(Map.empty.withDefaultValue(defaultPrecision))
 
+    // By default, each function will return with defaultPrecision
+    var resultPrecisions: Map[Identifier, Precision] =
+      Map.empty.withDefaultValue(defaultPrecision)
+
+    ctx.option[Option[String]]("mixed-precision") match {
       case Some(file) =>
-        // maps from fnc/variable names to their respective identifiers
-        val (fncIdMap, varIdMap) = buildIdentifierMap(prg)
 
         // a mixed-precision assignment file has been provided, parse it
-        val precMapsParsed = parseMixedPrecisionFile(file, fncIdMap, varIdMap)
-        prg.defs.map(fnc => {
-          (precMapsParsed.get(fnc.id), fnc.body) match {
-            case (None, None) =>
-              (fnc.id -> (Map[Identifier, Precision](), defaultPrecision))
+        val precMapsParsed = parseMixedPrecisionFile(file, prg)
 
-            case (None, Some(body)) =>
-              // no spec is given, so assign default precision
-              (fnc.id -> (allVariablesOf(body).map(v => (v -> defaultPrecision)).toMap,
-                defaultPrecision))
+        prg.defs.foreach(fnc => {
+          (precMapsParsed.get(fnc.id), fnc.body) match {
+            // no spec is given, so use default precision
+            case (None, _) =>
 
             case (Some(precMap), None) =>
-              (fnc.id -> (precMap, defaultPrecision))
+              inputPrecision += fnc.id -> precMap
 
             case (Some(precMap), Some(body)) =>
               val (completePrecMap, returnPrec) = typecheck(body, precMap, defaultPrecision)
-              (fnc.id -> (completePrecMap, returnPrec))
+              inputPrecision += fnc.id -> completePrecMap
+              resultPrecisions += fnc.id -> returnPrec
 
           }
-        }).toMap
+        })
+
       case None =>
-        Map()
     }
 
     // ctx.reporter.info("precision map:")
@@ -88,15 +91,46 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
     // var requiredOutputRanges: Map[Identifier, Map[Identifier, PartialInterval]] = Map()
     // var requiredOutputErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
 
-    for (fnc <- prg.defs) {
+    for (fnc <- functionsToConsider(ctx, prg)) {
 
       fnc.precondition match {
         case Some(pre) =>
           // TODO: additional constraints
           val (ranges, errors, addConds) = extractPreCondition(pre)
 
+          val missingKeys = fnc.params.map(_.id).diff(ranges.keys.toSeq)
+          if (!missingKeys.isEmpty) {
+            reporter.fatalError("Incomplete or missing range for " + missingKeys.mkString(", "))
+          }
+
           allRanges += (fnc.id -> ranges.map(x => (x._1 -> Interval(x._2._1, x._2._2))))
-          allErrors += (fnc.id -> errors)
+          // If we track both input and roundoff errors, then we pre-compute
+          // the roundoff errors for those variables that do not have a user-defined
+          // error, in order to keep correlations.
+          allErrors += (fnc.id -> (
+            if (trackInitialErrs && trackRoundoffErrs){
+
+              val allIDs = fnc.params.map(_.id).toSet
+              val missingIDs = allIDs -- errors.keySet
+              errors ++ missingIDs.map(id => (id -> defaultPrecision.absRoundoff(allRanges(fnc.id)(id))))
+
+            } else if (trackInitialErrs) {
+
+              val allIDs = fnc.params.map(_.id).toSet
+              val missingIDs = allIDs -- errors.keySet
+              errors ++ missingIDs.map(id => (id -> Rational.zero))
+
+            } else if (trackRoundoffErrs) {
+
+              val allIDs = fnc.params.map(_.id)
+              allIDs.map(id => (id -> defaultPrecision.absRoundoff(allRanges(fnc.id)(id)))).toMap
+
+            } else {
+
+              val allIDs = fnc.params.map(_.id)
+              allIDs.map(id => (id -> Rational.zero)).toMap
+
+            }))
           addConds match {
             case Seq() => additionalConst += (fnc.id -> BooleanLiteral(true)) // no additional constraints
             case Seq(x) => additionalConst += (fnc.id -> x)
@@ -167,8 +201,8 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       specInputErrors = allErrors,
       specResultRangeBounds = resRanges,
       specResultErrorBounds = resErrors,
-      specMixedPrecisions = precisionMap.mapValues(_._1),
-      specInferredReturnTypes = precisionMap.mapValues(_._2),
+      specInputPrecisions = inputPrecision,
+      specResultPrecisions = resultPrecisions,
       specAdditionalConstraints = additionalConst),
     prg)
   }
@@ -178,10 +212,11 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
 
     val (lowerBound, upperBound, absError, addCond) = extractCondition(expr)
 
-    (lowerBound.map({
-      case (x, r) => (x, (r, upperBound(x))) // assumes that it exists
-      }),
-      absError, addCond)
+    // only return complete ranges, check for completeness is done later
+    val bounds = (lowerBound.keySet.intersect(upperBound.keySet)).map(k =>
+      (k, (lowerBound(k), upperBound(k)))).toMap
+
+    (bounds, absError, addCond)
   }
 
   def extractPostCondition(expr: Expr): (Map[Identifier, (Option[Rational], Option[Rational])],
@@ -236,18 +271,14 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
     (lowerBound, upperBound, absError, additionalCond)
   }
 
-  def buildIdentifierMap(prg: Program): (Map[String, Identifier], Map[String, Map[String, Identifier]]) = {
-    def buildIdentifierMapFunction(f: FunDef): Map[String, Identifier] = {
-      allVariablesOf(f.body.get).map(id => ((id.toString) -> id)).toMap
-    }
+  private def parseMixedPrecisionFile(f: String, prg: Program): Map[Identifier, Map[Identifier, Precision]] = {
 
-    (prg.defs.map(fnc => (fnc.id.name -> fnc.id)).toMap,
-      prg.defs.map(fnc => (fnc.id.name -> buildIdentifierMapFunction(fnc))).toMap)
-  }
-
-
-  private def parseMixedPrecisionFile(f: String, fncIdMap: Map[String, Identifier],
-    varIdMap: Map[String, Map[String, Identifier]]): Map[Identifier, Map[Identifier, Precision]] = {
+    val fncIdMap: Map[String, Identifier] = prg.defs.map(fnc =>
+      fnc.id.toString -> fnc.id
+    ).toMap
+    val varIdMap: Map[String, Map[String, Identifier]] = prg.defs.map(fnc =>
+      fnc.id.toString -> allVariablesOf(fnc.body.get).map(id => id.toString -> id).toMap
+    ).toMap
 
     def treeToMap(p: List[FunAssign]): Map[Identifier, Map[Identifier, Precision]] = {
 

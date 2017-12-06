@@ -76,14 +76,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
   // for compatibility with RangeArithmetic
   def +/-(r: Rational): AffineForm = this :+ r
 
-  def unary_-(): AffineForm = {
-    var newTerms: Seq[Deviation] = Seq.empty
-    var iter = noise.iterator
-    while(iter.hasNext) {
-      newTerms :+= - iter.next  // just flip the sign
-    }
-    AffineForm(-x0, newTerms)
-  }
+  def unary_-(): AffineForm = AffineForm(-x0, noise.map(-_))
 
   def +(y: AffineForm): AffineForm =
     AffineForm(this.x0 + y.x0, addQueues(this.noise, y.noise))
@@ -95,7 +88,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     var z0 = this.x0 * y.x0
 
     // z0Addition is not necessarily used, depending on which fnc you use
-    var (z0Addition, delta) = multiplyQueuesOptimized(this.noise, y.noise)
+    val (z0Addition, delta) = multiplyQueuesOptimized(this.noise, y.noise)
     z0 += z0Addition
     var newTerms: Seq[Deviation] = multiplyQueuesAndMerge(this.x0, this.noise, y.x0, y.noise)
     if(delta != 0) {
@@ -150,13 +143,23 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     this * y.inverse
   }
 
-  // FIXME implement Pow for affine
-  def ^(n: AffineForm): AffineForm = {
-    ???
+  def ^(_n: Int): AffineForm = {
+    var x = this
+    var n = _n - 1
+    while (n > 0){
+      if (n % 2 == 1) {
+        n -= 1
+        x *= this
+      } else {
+        n /= 2
+        x = x * x
+      }
+    }
+    x
   }
 
   def squareRoot: AffineForm = {
-    var (a, b) = (toInterval.xlo, toInterval.xhi)
+    val (a, b) = (toInterval.xlo, toInterval.xhi)
 
     if (b < rzero) {
      throw NegativeSqrtException("Sqrt of negative number: " + toString)
@@ -275,7 +278,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
   }
 
   def log: AffineForm = {
-    var (a, b) = (toInterval.xlo, toInterval.xhi)
+    val (a, b) = (toInterval.xlo, toInterval.xhi)
 
     if (a <= rzero) {
       throw NonPositiveLogException("Trying to take the log of a non-positive number!")
@@ -327,13 +330,12 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     val iterX = xn.iterator
     val iterY = yn.iterator
 
-    val fx = (xi: Deviation) => { deviation :+= xi; val x = 0 }
-    val fy = (yi: Deviation) => { deviation :+= yi; val x = 0 }
+    val fx = (xi: Deviation) => deviation :+= xi
+    val fy = (yi: Deviation) => deviation :+= yi
 
     val fCouple = (xi: Deviation, yi: Deviation) => {
       val zi =  xi + yi
       if (!zi.isZero) deviation :+= zi
-      val x = 0
     }
     DoubleQueueIterator.iterate(iterX, iterY, dummyDev, fx, fy, fCouple)
     assert(!iterX.hasNext && !iterY.hasNext)
@@ -345,13 +347,12 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     val iterX = xn.iterator
     val iterY = yn.iterator
 
-    val fx = (xi: Deviation) => { deviation :+= xi; val x = 0 }
-    val fy = (yi: Deviation) => { deviation :+= -yi; val x = 0 }
+    val fx = (xi: Deviation) => deviation :+= xi
+    val fy = (yi: Deviation) => deviation :+= -yi
 
     val fCouple = (xi: Deviation, yi: Deviation) => {
       val zi =  xi - yi
       if (!zi.isZero) deviation :+= zi
-      val x = 0
     }
     DoubleQueueIterator.iterate(iterX, iterY, dummyDev, fx, fy, fCouple)
     assert(!iterX.hasNext && !iterY.hasNext)
@@ -367,55 +368,53 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     val fx = (dev: Deviation) => {
       val zi = dev * b
       if (!zi.isZero) deviation :+= zi
-      val x = 0
     }
     val fy = (dev: Deviation) => {
       val zi = dev * a
       if (!zi.isZero) deviation :+= zi
-      val x = 0
     }
     val fCouple = (xi: Deviation, yi: Deviation) => {
       val zi = xi * b + yi * a
       if (!zi.isZero) deviation :+= zi
-      val x = 0
     }
     DoubleQueueIterator.iterate(iterX, iterY, dummyDev, fx, fy, fCouple)
     assert(!iterX.hasNext && !iterY.hasNext)
     deviation
   }
 
-  private def multiplyQueuesSimple(xqueue: Seq[Deviation], yqueue: Seq[Deviation]): (Rational, Rational) = {
-    val indices = mergeIndices(getIndices(xqueue), getIndices(yqueue))
-    var zqueue = rzero
-    var z0Addition = rzero
+  // private def multiplyQueuesSimple(xqueue: Seq[Deviation], yqueue: Seq[Deviation]): (Rational, Rational) = {
+  //   val indices = mergeIndices(getIndices(xqueue), getIndices(yqueue))
+  //   var zqueue = rzero
+  //   var z0Addition = rzero
 
-    var i = 0
-    while (i < indices.length) {
-      val iInd = indices(i)
-      // quadratic
-      val xi = xqueue.find((d: Deviation) => d.index == iInd) match {
-        case Some(d) => d.mgnt; case None => Rational(0) }
-      val yi = yqueue.find((d: Deviation) => d.index == iInd) match {
-        case Some(d) => d.mgnt; case None => Rational(0) }
-      val zii = xi * yi
-      // z0Addition += zii / Rational(2.0)
-      if (zii != 0) zqueue += abs(zii)
+  //   var i = 0
+  //   while (i < indices.length) {
+  //     val iInd = indices(i)
+  //     // quadratic
+  //     val xi = xqueue.find((d: Deviation) => d.index == iInd) match {
+  //       case Some(d) => d.mgnt; case None => Rational(0) }
+  //     val yi = yqueue.find((d: Deviation) => d.index == iInd) match {
+  //       case Some(d) => d.mgnt; case None => Rational(0) }
+  //     val zii = xi * yi
+  //     // z0Addition += zii / Rational(2.0)
+  //     if (zii != 0) zqueue += abs(zii)
 
-      var j = i + 1
-      while (j < indices.length) {
-        val jInd = indices(j)
-        val xj = xqueue.find((d: Deviation) => d.index == jInd) match {
-          case Some(d) => d.mgnt; case None => Rational(0) }
-        val yj = yqueue.find((d: Deviation) => d.index == jInd) match {
-        case Some(d) => d.mgnt; case None => Rational(0) }
-        val zij = xi * yj + xj * yi
-        if (zij != 0) zqueue += abs(zij)
-        j += 1
-      }
-      i += 1
-    }
-    (z0Addition, zqueue)
-  }
+  //     var j = i + 1
+  //     while (j < indices.length) {
+  //       val jInd = indices(j)
+  //       val xj = xqueue.find((d: Deviation) => d.index == jInd) match {
+  //         case Some(d) => d.mgnt; case None => Rational(0) }
+  //       val yj = yqueue.find((d: Deviation) => d.index == jInd) match {
+  //       case Some(d) => d.mgnt; case None => Rational(0) }
+  //       val zij = xi * yj + xj * yi
+  //       if (zij != 0) zqueue += abs(zij)
+  //       j += 1
+  //     }
+  //     i += 1
+  //   }
+  //   (z0Addition, zqueue)
+  // }
+
 
   // Does a smarter computation of the quadratic terms
   private def multiplyQueuesOptimized(xqueue: Seq[Deviation], yqueue: Seq[Deviation]): (Rational, Rational) = {

@@ -1,7 +1,5 @@
-
 package daisy
 package tools
-import Interval._
 
 abstract sealed class MonotonicityPhase
 case class Rising() extends MonotonicityPhase

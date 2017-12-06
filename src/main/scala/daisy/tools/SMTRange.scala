@@ -3,8 +3,6 @@
 package daisy
 package tools
 
-import scala.collection.immutable.Seq
-
 import lang.Trees._
 import lang.TreeOps.isBooleanTerm
 import lang.Constructors._
@@ -272,7 +270,8 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
   def -(y: SMTRange): SMTRange = this - (y, lowPrecision, lowLoopThreshold)
   def *(y: SMTRange): SMTRange = this * (y, lowPrecision, lowLoopThreshold)
   def /(y: SMTRange): SMTRange = this / (y, lowPrecision, lowLoopThreshold)
-  def ^(n: SMTRange): SMTRange = this ^ (n, lowPrecision, lowLoopThreshold)
+//  def ^(n: SMTRange): SMTRange = this ^ (n, lowPrecision, lowLoopThreshold)
+  def ^(n: Int): SMTRange = this ^ (n, lowPrecision, lowLoopThreshold)
   def squareRoot: SMTRange = this.squareRoot(lowPrecision, lowLoopThreshold)
   def sine: SMTRange = this.sine(lowPrecision, lowLoopThreshold)
   def cosine: SMTRange = this.cosine(lowPrecision, lowLoopThreshold)
@@ -313,13 +312,20 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
     ???
   }
 
-  // todo fix Pow: check if it is correct
-  def ^(n: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
-    val newTree = Pow(this.tree, n.tree)
-    val newConstraints = mergeConstraints(this.constraints, n.constraints)
-    val newInterval = tightenBounds(this.interval ^ n. interval, newTree, newConstraints,
+//  // todo fix Pow: check if it is correct
+//  def ^(n: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+//    val newTree = Pow(this.tree, n.tree)
+//    val newConstraints = mergeConstraints(this.constraints, n.constraints)
+//    val newInterval = tightenBounds(this.interval ^ n. interval, newTree, newConstraints,
+//      precision, maxLoops)
+//    SMTRange(newInterval, newTree, newConstraints)
+//  }
+
+  def ^(n: Int, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = IntPow(this.tree, n)
+    val newInterval = tightenBounds(this.interval ^ n, newTree, constraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, newConstraints)
+    SMTRange(newInterval, newTree, constraints)
   }
 
   def /(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {

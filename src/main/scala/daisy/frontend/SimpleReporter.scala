@@ -7,7 +7,7 @@ package frontend
 import scala.tools.nsc.Settings
 import scala.tools.nsc.reporters.AbstractReporter
 
-import scala.reflect.internal.util.{Position, NoPosition, FakePos, StringOps}
+import scala.reflect.internal.util.{Position, NoPosition, FakePos}
 import utils.{Position => DaisyPosition, NoPosition => DaisyNoPosition, OffsetPosition => DaisyOffsetPosition}
 
 /** This implements a reporter that calls the callback with every line that a
@@ -25,9 +25,6 @@ class SimpleReporter(val settings: Settings, reporter: daisy.Reporter) extends A
     val label0 = label(severity)
     if (label0 eq null) "" else label0 + ": "
   }
-
-  private def getCountString(severity: Severity): String =
-    StringOps.countElementsAsString(severity.count, label(severity))
 
   /** Prints the message. */
   def printMessage(msg: String, pos: DaisyPosition, severity: Severity): Unit = {

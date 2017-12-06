@@ -116,27 +116,29 @@ object TreeOps {
    *
    * @note The mode with applyRec true can diverge if f is not well formed (i.e. not convergent)
    */
-  def postMap(f: Expr => Option[Expr], applyRec: Boolean = false)(e: Expr): Expr = {
-    val rec = postMap(f, applyRec) _
-
-    val Operator(es, builder) = e
-    val newEs = es.map(rec)
-    val newV = {
-      if ((newEs zip es).exists { case (bef, aft) => aft ne bef }) {
-        builder(newEs)
-      } else {
-        e
+  def postMap(f: Expr => Option[Expr], applyRec: Boolean = false)(e: Expr): Expr =
+    if (applyRec) {
+      var prev = e
+      var curr = postMap(f)(e)
+      while (prev != curr) {
+        prev = curr
+        curr = postMap(f)(curr)
       }
-    }
+      curr
+    } else {
+      val rec = postMap(f, applyRec) _
 
-    /* if (applyRec) {
-      // Apply f as long as it returns Some()
-      fixpoint { e : Expr => f(e) getOrElse e } (newV)
-    } else { */
+      val Operator(es, builder) = e
+      val newEs = es.map(rec)
+      val newV = {
+        if ((newEs zip es).exists { case (bef, aft) => aft ne bef }) {
+          builder(newEs)
+        } else {
+          e
+        }
+      }
       f(newV) getOrElse newV
-    /* } */
-
-  }
+    }
 
   /** Checks if the predicate holds in some sub-expression */
   def exists(matcher: PartialFunction[Expr, Boolean])(e: Expr): Boolean = {
@@ -163,8 +165,8 @@ object TreeOps {
   }
 
   /** Replaces bottom-up sub-expressions by looking up for them in a map */
-  def replace(substs: Map[Expr,Expr], expr: Expr): Expr = {
-    postMap(substs.lift)(expr)
+  def replace(substs: PartialFunction[Expr,Expr], applyRec: Boolean = false)(expr: Expr): Expr = {
+    postMap(substs.lift, applyRec)(expr)
   }
 
   /** Returns the set of free variables in an expression */

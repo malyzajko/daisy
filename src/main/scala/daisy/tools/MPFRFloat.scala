@@ -12,6 +12,8 @@ object MPFRFloat {
   // if this is changed in some way, make sure you check all the places
   // where MPFRFloats have been used!
   val context = BinaryMathContext.BINARY128  // TODO, BinaryMathContext seems immutable
+  val roundUpContext = new BinaryMathContext(128, java.math.RoundingMode.CEILING)
+  val roundDownContext = new BinaryMathContext(128, java.math.RoundingMode.FLOOR)
   // val context = new BinaryMathContext(500, 24)
   // val context = BinaryMathContext.BINARY128
 
@@ -22,12 +24,26 @@ object MPFRFloat {
   val E: MPFRFloat = new MPFRFloat(BigFloat.e(context))
 
   def sqrt(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.sqrt(context))
+  def sqrtDown(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.sqrt(roundDownContext))
+  def sqrtUp(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.sqrt(roundUpContext))
+
   def cbrt(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.cbrt(context))
+
   def log(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.log(context))
+  def logDown(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.log(roundDownContext))
+  def logUp(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.log(roundUpContext))
+
   def exp(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.exp(context))
+  def expDown(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.exp(roundDownContext))
+  def expUp(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.exp(roundUpContext))
+
   def pow(x: MPFRFloat, y: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.pow(y.bf, context))
   def cos(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.cos(context))
+
   def sin(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.sin(context))
+  def sinDown(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.sin(roundDownContext))
+  def sinUp(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.sin(roundUpContext))
+
   def sec(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.sec(context))
   def csc(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.csc(context))
   def cot(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.cot(context))
@@ -80,7 +96,6 @@ class MPFRFloat(val bf: BigFloat) extends ScalaNumber with Ordered[MPFRFloat] {
       }
     } else {
       throw new Exception("longString not 1 or 2 as expected, but " + longString.length)
-      null
     }
   }
 

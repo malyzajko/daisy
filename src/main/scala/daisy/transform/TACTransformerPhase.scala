@@ -9,7 +9,6 @@ import lang.Trees._
 import lang.Identifiers._
 import lang.Types.RealType
 import lang.Extractors._
-import lang.TreeOps.replace
 
 /**
   Transforms the code into SSA-like form.
@@ -29,12 +28,7 @@ object TACTransformerPhase extends DaisyPhase {
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     // need to replace function bodies, create a copy of the whole program
-    val newDefs = prg.defs.map(fnc =>
-      if (fnc.body.isDefined) {
-        fnc.copy(body = Some(toSSA(fnc.body.get)))
-      } else {
-        fnc
-      })
+    val newDefs = transformConsideredFunctions(ctx, prg){ fnc => fnc.copy(body = Some(toSSA(fnc.body.get)))}
     (ctx, Program(prg.id, newDefs))
   }
 
@@ -56,7 +50,6 @@ object TACTransformerPhase extends DaisyPhase {
 
     case Let(id, value, body) =>
       val ssaValue = toSSA(value)
-
       val ssaBody = toSSA(body)
 
       val tmp = ssaValue match {
@@ -71,7 +64,7 @@ object TACTransformerPhase extends DaisyPhase {
 
   private def replaceBody(expr: Expr, nextId: Identifier, nextBody: Expr): Expr = (expr: @unchecked) match {
     case Let(id, value, x @ Let(id2, value2, body)) =>
-      Let(id, value, replaceBody(x, id, nextBody))
+      Let(id, value, replaceBody(x, nextId, nextBody))
 
     case Let(id, value, body) =>
       Let(id, value,
@@ -123,12 +116,7 @@ object TACTransformerPhase extends DaisyPhase {
 
 
   def isSimpleExpr(e: Expr): Boolean = e match {
-    case Plus(l: Terminal, r: Terminal) => true
-    case Minus(l: Terminal, r: Terminal) => true
-    case Times(l: Terminal, r: Terminal) => true
-    case Division(l: Terminal, r: Terminal) => true
-    case UMinus(l: Terminal) => true
-    case Sqrt(l: Terminal) => true
+    case ArithOperator(_, _) => true
     case _ => false
   }
 }

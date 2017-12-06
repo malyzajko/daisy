@@ -3,7 +3,6 @@
 package daisy
 package tools
 
-import scala.collection.immutable.Seq
 import scala.math.{ScalaNumber, ScalaNumericConversions}
 import java.math.BigInteger
 
@@ -16,13 +15,9 @@ object Rational {
   private val zeroBigInt = new BigInt(new BigInteger("0"))
   private val twoBigInt = new BigInt(new BigInteger("2"))
 
-  private val MAX_DOUBLE = new BigInt(new BigInteger(Double.MaxValue.toInt.toString))
-  private val MIN_DOUBLE = new BigInt(new BigInteger(Double.MinValue.toInt.toString))
-
   private val MAX_INT = new BigInt(new BigInteger(Int.MaxValue.toString))
   private val MAX_LONG = new BigInt(new BigInteger(Long.MaxValue.toString))
 
-  private val baseTen = 10
   private val bits32 = 32
 
 
@@ -42,8 +37,7 @@ object Rational {
       new Rational(zeroBigInt, oneBigInt)
     }
     else if (d == 0) {
-      throw new DivisionByZeroException("Zero denominator is not allowed.")
-      null
+      throw DivisionByZeroException("Zero denominator is not allowed.")
     }
     else {
       // reduce fraction
@@ -88,60 +82,52 @@ object Rational {
   // This computes an approximation of the square root (only), since sqrt(x)
   // is not necessarily a rational number.
   def sqrtUp(x: Rational): Rational = {
-    val dblValue = Rational.scaleToIntsUp(x).doubleValue
-    val mpfrSqrt = MPFRFloat.sqrt(MPFRFloat.fromDouble(dblValue))
-    val mpfrString = mpfrSqrt.toString
-    Rational.fromString(mpfrString)
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextUp(MPFRFloat.sqrtUp(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
   }
   def sqrtDown(x: Rational): Rational = {
-    val dblValue = Rational.scaleToIntsDown(x).doubleValue
-    val mpfrSqrt = MPFRFloat.sqrt(MPFRFloat.fromDouble(dblValue))
-    val mpfrString = mpfrSqrt.toString
-    Rational.fromString(mpfrString)
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextDown(MPFRFloat.sqrtDown(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
   }
 
-  def sineBounded(x: Rational, order: Int = 1): (Rational, Rational) = {
+  def sineBounded(x: Rational): (Rational, Rational) = {
     (sineDown(x), sineUp(x))
   }
 
   def sineUp(x: Rational): Rational = {
-    val dblValue = Rational.scaleToIntsUp(x).doubleValue
-    val mpfrexp = MPFRFloat.sin(MPFRFloat.fromDouble(dblValue))
-    val mpfrString = mpfrexp.toString
-    Rational.fromString(mpfrString)
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextUp(MPFRFloat.sinUp(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
   }
 
   def sineDown(x: Rational): Rational = {
-    val dblValue = Rational.scaleToIntsDown(x).doubleValue
-    val mpfrexp = MPFRFloat.sin(MPFRFloat.fromDouble(dblValue))
-    val mpfrString = mpfrexp.toString
-    Rational.fromString(mpfrString)
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextDown(MPFRFloat.sinDown(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
   }
 
   def expUp(x: Rational): Rational = {
-    val dblValue = Rational.scaleToIntsUp(x).doubleValue
-    val mpfrexp = MPFRFloat.exp(MPFRFloat.fromDouble(dblValue))
-    val mpfrString = mpfrexp.toString
-    Rational.fromString(mpfrString)
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextUp(MPFRFloat.expUp(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
   }
   def expDown(x: Rational): Rational = {
-    val dblValue = Rational.scaleToIntsDown(x).doubleValue
-    val mpfrexp = MPFRFloat.exp(MPFRFloat.fromDouble(dblValue))
-    val mpfrString = mpfrexp.toString
-    Rational.fromString(mpfrString)
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextDown(MPFRFloat.expDown(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
   }
 
   def logUp(x: Rational): Rational = {
-    val dblValue = Rational.scaleToIntsUp(x).doubleValue
-    val mpfrlog = MPFRFloat.log(MPFRFloat.fromDouble(dblValue))
-    val mpfrString = mpfrlog.toString
-    Rational.fromString(mpfrString)
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextUp(MPFRFloat.logUp(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
   }
   def logDown(x: Rational): Rational = {
-    val dblValue = Rational.scaleToIntsDown(x).doubleValue
-    val mpfrlog = MPFRFloat.log(MPFRFloat.fromDouble(dblValue))
-    val mpfrString = mpfrlog.toString
-    Rational.fromString(mpfrString)
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextDown(MPFRFloat.logDown(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
   }
 
 
@@ -437,9 +423,9 @@ object Rational {
   def niceDoubleString(d: Double): String = {
     // TODO: is there a library function maybe for this?
     def removeTrailingZeroes(s: String): String = {
-      if (s.last == '0') { removeTrailingZeroes(s.init) } else { s }
+      if (s.last == '0' && s.init.last != '.') { removeTrailingZeroes(s.init) } else { s }
     }
-    var numString = "%.18g".format(d)
+    val numString = "%.18g".format(d)
     numString.split('e') match {
       case Array(digitsOnly, exponent) =>
         removeTrailingZeroes(digitsOnly) + "e" + exponent
@@ -498,6 +484,7 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
   }
   def *(other: Rational): Rational = Rational(n * other.n, d * other.d)
   def /(other: Rational): Rational = Rational(n * other.d, d* other.n)
+  def ^(exp: Int): Rational = Rational(n.pow(exp), d.pow(exp))
 
   override def toString: String = niceDoubleString(this.toDouble)
 
@@ -514,7 +501,6 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
   def compare(other: Rational): Int = {
     val xNom = this.n * other.d
     val yNom = other.n * this.d
-    val denom = this.d * other.d
     xNom.compare(yNom)
   }
 

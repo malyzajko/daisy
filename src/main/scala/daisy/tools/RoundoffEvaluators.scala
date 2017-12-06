@@ -32,7 +32,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
 
     val (resRange, intermediateRanges) = evalRange[Interval](expr, inputValMap, Interval.apply)
 
-    val (resRoundoff, allErrors) = evalRoundoff[AffineForm](expr, intermediateRanges,
+    val (resRoundoff, _) = evalRoundoff[AffineForm](expr, intermediateRanges,
       Map.empty.withDefaultValue(uniformPrecision),
       inputErrorMap.mapValues(AffineForm.+/-),
       zeroError = AffineForm.zero,
@@ -65,7 +65,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
     val (resRange, intermediateRanges) = evalRange[AffineForm](expr,
       inputValMap.mapValues(AffineForm(_)), AffineForm.apply)
 
-    val (resRoundoff, allErrors) = evalRoundoff[AffineForm](expr,
+    val (resRoundoff, _) = evalRoundoff[AffineForm](expr,
       intermediateRanges.mapValues(_.toInterval),
       Map.empty.withDefaultValue(uniformPrecision),
       inputErrorMap.mapValues(AffineForm.+/-),
@@ -100,7 +100,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
       inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }),
       SMTRange.apply)
 
-    val (resRoundoff, allErrors) = evalRoundoff[AffineForm](expr,
+    val (resRoundoff, _) = evalRoundoff[AffineForm](expr,
       intermediateRanges.mapValues(_.toInterval),
       Map.empty.withDefaultValue(uniformPrecision),
       inputErrorMap.mapValues(AffineForm.+/-),
@@ -216,7 +216,6 @@ trait RoundoffEvaluators extends RangeEvaluators {
 
         val rangeFac1 = interval2T(range(fac1))
         val rangeFac2 = interval2T(range(fac2))
-        val rangeSum = interval2T(range(sum))
 
         val propagatedError =
           rangeFac1 * errorFac2 +
@@ -247,7 +246,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
         // error propagation
         val inverse: Interval = rangeRhs.inverse
 
-        var propagatedError =
+        val propagatedError =
           interval2T(rangeLhs) * invErr +
           interval2T(inverse) * errorLhs +
           errorLhs * invErr
@@ -367,7 +366,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
       case _ => throw new Exception("Not supported")
 
     })
-    val (resError, resPrecision) = eval(expr)
+    val (resError, _) = eval(expr)
     (resError, intermediateErrors.mapValues(_._1).toMap)
   }
 

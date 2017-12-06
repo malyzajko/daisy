@@ -3,16 +3,10 @@
 package daisy
 package tools
 
-import analysis._
-import analysis.DynamicPhase._
 import lang.Trees._
 import lang.Identifiers._
-import Interval._
 import Rational.max
 import FinitePrecision._
-
-import daisy.analysis.Sampler._
-import MPFRFloat.{abs => mpfr_abs, max => mpfr_max, min => mpfr_min}
 
 import scala.collection.immutable._
 

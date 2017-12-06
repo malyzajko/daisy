@@ -4,7 +4,6 @@ package daisy
 package tools
 
 import Rational._
-import daisy.lang.Identifiers.Identifier
 
 object Interval {
 
@@ -124,21 +123,21 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
         }
       } else {
         throw DivisionByZeroException("trying to divide by interval containing 0")
-        null // Interval(zero, zero) //dummy
       }
 
   }
 
-  def ^(n: Interval): Interval = {
-    assert(n.xlo > Rational.one)
-    //    assert(n.xlo.isValidInt && n.xhi.isValidInt)
-    // fixme remove this assertion when we will allow expressions in power
-    assert(n.xlo == n.xhi)
-    var x = this
-    for (i <- 1 until n.xlo.intValue()){
-      x = x * this
+  def ^(n: Int): Interval = {
+    if (n % 2 == 0 && includes(zero)) {
+      // even powers non-monotonic over - / +
+      Interval(zero, Interval.maxAbs(this) ^ n)
+    } else if (n % 2 == 0 && xhi < zero) {
+      // even powers monotonically falling over - / -
+      Interval(xhi ^ n, xlo ^ n)
+    } else {
+      // odd powers, and even powers over + / + monotonically rising
+      Interval(xlo ^ n, xhi ^ n)
     }
-    x
   }
 
   /**

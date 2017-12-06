@@ -4,11 +4,9 @@ package daisy
 package analysis
 
 import lang.Trees._
-import lang.TreeOps.allVariablesOf
 import lang.Identifiers._
 import tools.{AffineForm, Interval, Rational}
 import tools.FinitePrecision._
-import tools.Interval._
 
 /**
   This phase computes roundoff errors for a given precision and data type
@@ -35,41 +33,12 @@ object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
   implicit val debugSection = DebugSectionAnalysis
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
-    val trackInitialErrs = !ctx.hasFlag("noInitialErrors")
     val trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
     val uniformPrecision = ctx.option[Precision]("precision")
 
-    val res: Map[Identifier, (Rational, Map[Expr, Rational])] =
-      functionsToConsider(ctx, prg).map(fnc => {
+    val res: Map[Identifier, (Rational, Map[Expr, Rational])] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
-      val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
-
-      val inputErrorMap: Map[Identifier, Rational] =
-        if (trackInitialErrs && trackRoundoffErrs) {
-
-          val inputErrs = ctx.specInputErrors(fnc.id)
-          val allIDs = fnc.params.map(_.id).toSet
-          val missingIDs = allIDs -- inputErrs.keySet
-          inputErrs ++ missingIDs.map(id => (id -> uniformPrecision.absRoundoff(inputValMap(id))))
-
-        } else if (trackInitialErrs) {
-
-          val inputErrs = ctx.specInputErrors(fnc.id)
-          val allIDs = fnc.params.map(_.id).toSet
-          val missingIDs = allIDs -- inputErrs.keySet
-          inputErrs ++ missingIDs.map(id => (id -> Rational.zero))
-
-        } else if (trackRoundoffErrs) {
-
-          val allIDs = fnc.params.map(_.id)
-          allIDs.map(id => (id -> uniformPrecision.absRoundoff(inputValMap(id)))).toMap
-
-        } else {
-
-          val allIDs = fnc.params.map(_.id)
-          allIDs.map(id => (id -> Rational.zero)).toMap
-
-        }
+      val inputErrorMap: Map[Identifier, Rational] = ctx.specInputErrors(fnc.id)
 
       val fncBody = fnc.body.get
       val intermediateRanges = ctx.intermediateRanges(fnc.id)
@@ -84,8 +53,8 @@ object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
         trackRoundoffErrs)
 
       // computeAbsError(fnc.body.get, Map.empty, trackInitialErrs, trackRoundoffErrs)
-      fnc.id -> (Interval.maxAbs(resRoundoff.toInterval), allErrors.mapValues(aa => Interval.maxAbs(aa.toInterval)))
-    }).toMap
+      (Interval.maxAbs(resRoundoff.toInterval), allErrors.mapValues(aa => Interval.maxAbs(aa.toInterval)))
+    }
 
     (ctx.copy(
       resultAbsoluteErrors = res.mapValues(_._1),

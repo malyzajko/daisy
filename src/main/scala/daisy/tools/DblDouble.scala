@@ -3,7 +3,7 @@
 package daisy
 package tools
 
-import scala.math.{ScalaNumericConversions, ScalaNumber}
+import scala.math.ScalaNumber
 
 import scala.language.implicitConversions
 
@@ -118,8 +118,6 @@ class DblDouble(val hi: Double, val lo: Double) extends ScalaNumber with Ordered
     c = ((((xhi - U) - u) + xlo) - C * ylo) / yhi;
     u = C + c;
 
-    val zhi = u;
-    val zlo = (C - u) + c;
     new DblDouble(u, (C - u) + c)
 
   }

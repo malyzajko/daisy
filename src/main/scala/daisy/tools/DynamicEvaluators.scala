@@ -6,12 +6,8 @@ package tools
 import analysis._
 import lang.Trees._
 import lang.Identifiers._
-import Interval._
-import Rational._
-import FinitePrecision._
 
 import daisy.analysis.Sampler._
-import MPFRFloat.{abs => mpfr_abs, max => mpfr_max, min => mpfr_min}
 
 import scala.collection.immutable._
 
@@ -160,6 +156,8 @@ trait DynamicEvaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
+//      case Pow(x, y) => eval(x) ^ eval(y)
+      case IntPow(x, y) => eval(x) ^ y
       case UMinus(x) => - eval(x)
       case Let(id, v, b) =>
         valMap += (id -> eval(v))
@@ -181,7 +179,8 @@ trait DynamicEvaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
-      case Pow(x, y) => math.pow(eval(x), eval(y))
+//      case Pow(x, y) => math.pow(eval(x), eval(y))
+      case IntPow(x, y) => math.pow(eval(x), y)
       case UMinus(x) => - eval(x)
       case Sqrt(x) => math.sqrt(eval(x))
       case Sin(x) => math.sin(eval(x))
@@ -209,7 +208,8 @@ trait DynamicEvaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
-      case Pow(x, y) => MPFRFloat.pow(eval(x), eval(y))
+//      case Pow(x, y) => MPFRFloat.pow(eval(x), eval(y))
+      case IntPow(x, y) => MPFRFloat.pow(eval(x), MPFRFloat.fromDouble(y))
       case UMinus(x) => - eval(x)
       case Sqrt(x) => MPFRFloat.sqrt(eval(x) )
       case Sin(x) => MPFRFloat.sin(eval(x))

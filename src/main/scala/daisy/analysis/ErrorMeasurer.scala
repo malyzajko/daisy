@@ -89,10 +89,10 @@ class ErrorMeasurerMPFR {
     if (x != x) return Long.MinValue; // Maximum error
     if (y != y) return Long.MinValue; // Maximum error
 
-    var xx = java.lang.Double.doubleToLongBits(x)
+    val xx = java.lang.Double.doubleToLongBits(x)
     if (xx < 0) Long.MinValue - xx
 
-    var yy = java.lang.Double.doubleToLongBits(y)
+    val yy = java.lang.Double.doubleToLongBits(y)
     if (yy < 0) Long.MinValue - yy
 
     if (xx >= yy) {

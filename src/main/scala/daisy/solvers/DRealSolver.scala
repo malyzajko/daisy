@@ -9,7 +9,7 @@ import scala.collection.immutable.Seq
 import _root_.smtlib.parser.Commands._
 import _root_.smtlib.parser.Terms.SExpr
 import _root_.smtlib.printer.{RecursivePrinter => SMTPrinter}
-import _root_.smtlib.parser.CommandsResponses.{Error => ErrorResponse, _}
+import _root_.smtlib.parser.CommandsResponses.{Error => ErrorResponse}
 
 import lang.Trees._
 import lang.Identifiers._

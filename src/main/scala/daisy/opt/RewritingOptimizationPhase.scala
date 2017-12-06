@@ -3,19 +3,13 @@
 package daisy
 package opt
 
-import scala.collection.immutable.Seq
-import java.io.FileWriter
-import java.io.BufferedWriter
 import util.Random
 
-import lang.Trees.{Program, Expr, Terminal}
+import lang.Trees.{Program, Expr}
 import search.GeneticSearch
 import tools._
 import lang.Identifiers._
 import FinitePrecision._
-
-import lang.TreeOps._
-
 
 /**
   Optimizes the order of expressions.
@@ -97,15 +91,14 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
 
 
 
-    val newDefs = for (fnc <- functionsToConsider(ctx, prg, requirePrecond = false)) yield
-    if (fnc.precondition.isDefined) {
+    val newDefs = transformConsideredFunctions(ctx, prg){ fnc =>
 
       ctx.reporter.info(s"\nGoing to rewrite ${fnc.id}")
 
       val allIDs = fnc.params.map(_.id)
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
-      var inputErrors = allIDs.map {
+      val inputErrors = allIDs.map {
         id => (id -> uniformPrecision.absRoundoff(inputValMap(id)))
       }.toMap
 
@@ -124,9 +117,6 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
       }
 
       fnc.copy(body = Some(newBody))
-
-    } else {
-      fnc
     }
 
     (ctx, Program(prg.id, newDefs))
