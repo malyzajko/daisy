@@ -97,8 +97,8 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
       null
     }
 
-
-    for (fnc <- functionsToConsider(ctx, prg)) {
+    // returns max absolute and max relative error found
+    val res: Map[Identifier, (Rational, Rational)] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       val id = fnc.id
       val body = fnc.body.get
@@ -153,6 +153,8 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
         }
         ctx.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError}" +
           s" maxRelError: ${measurer.maxRelError}")
+
+        (measurer.maxAbsError, measurer.maxRelError)
 
       } else {
 
@@ -217,7 +219,8 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
         }
         ctx.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError.toDoubleString}" +
           s" maxRelError: ${measurer.maxRelError.toDoubleString}")
-
+        (Rational.fromString(measurer.maxAbsError.toString),
+          Rational.fromString(measurer.maxRelError.toString))
       }
 
 
@@ -228,7 +231,10 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
       logFile.close()
     }
 
-    (ctx, prg)
+    (ctx.copy(
+      resultAbsoluteErrors = res.mapValues(_._1),
+      resultRelativeErrors = res.mapValues((x: (Rational, Rational)) => Some(x._2))),
+      prg)
   }
 
 }

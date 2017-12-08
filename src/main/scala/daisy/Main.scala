@@ -155,6 +155,7 @@ object Main {
 
     if (ctx.hasFlag("dynamic")) {
       pipeline >>= analysis.DynamicPhase
+      pipeline >>= backend.InfoPhase
     } else {
       if (ctx.hasFlag("three-address") || (ctx.fixedPoint && ctx.hasFlag("codegen"))) {
         pipeline >>= transform.TACTransformerPhase

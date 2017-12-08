@@ -34,7 +34,7 @@ object InfoPhase extends DaisyPhase {
         val append = f.exists
         val o = new BufferedWriter(new FileWriter(f, append))
         if (!append) {
-          o.write("Function name, Absolute error, Real range low, Real range high, Relative error\n")
+          o.write("Function name, Absolute error, Relative error, Real range low, Real range high, \n")
         }
         o
       }
@@ -66,9 +66,9 @@ object InfoPhase extends DaisyPhase {
         out.get.write(
           fnc.id + ","+
           absError.map(_.toString).getOrElse("") + "," +
+          relError.map(_.toString).getOrElse("") + "," +
           range.map(_.xlo.toString).getOrElse("") + "," +
-          range.map(_.xhi.toString).getOrElse("") + "," +
-          relError.map(_.toString).getOrElse("") + "\n"
+          range.map(_.xhi.toString).getOrElse("") + "\n"
         )
       }
     }
