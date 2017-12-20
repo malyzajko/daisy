@@ -199,10 +199,10 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
 
           assert(currentMaxAbs <= measurer.maxAbsError.doubleValue)
           currentMaxAbs = measurer.maxAbsError.doubleValue
-          if (abs(dblOutput) <= java.lang.Double.MIN_NORMAL) {
-            ctx.reporter.warning(s"THE SUBNORMAL")
-            i = i - 1
-          }
+          //if (abs(dblOutput) <= java.lang.Double.MIN_NORMAL) {
+          //  ctx.reporter.warning(s"THE SUBNORMAL")
+          //  i = i - 1
+          //}
         }
 
         if (logToFile) {
