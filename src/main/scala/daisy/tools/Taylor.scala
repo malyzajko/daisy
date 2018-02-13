@@ -5,7 +5,8 @@ package tools
 
 import lang.Identifiers.Identifier
 import lang.TreeOps._
-import lang.Trees._
+import lang.Trees.{RealLiteral, _}
+import lang.Trees.RealLiteral.{zero, one, two}
 import tools.FinitePrecision.Float64
 import tools.Interval._
 // TODO: can we do without the breaks?
@@ -22,6 +23,7 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
 
   implicit val debugSection: DebugSection // = DebugSectionAnalysis
 
+  // TODO: this can be replaced by reduceOption(Rational.max)
   implicit val optionAbsOrdering = new Ordering[Option[Rational]]{
     override def compare(x: Option[Rational], y: Option[Rational]): Int = {
       if (x.isDefined) {

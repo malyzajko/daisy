@@ -19,7 +19,7 @@ object CodeGenerationPhase extends DaisyPhase {
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     StringChoiceOption(
       "lang",
-      Set("C", "Scala"),
+      Set("C", "Scala", "FPCore"),
       "Scala",
       "Language for which to generate code"),
     FlagOption(
@@ -74,8 +74,8 @@ object CodeGenerationPhase extends DaisyPhase {
   private def writeFile(prg: Program, lang: String, ctx: Context): Unit = {
     import java.io.FileWriter
     import java.io.BufferedWriter
-    val filename = "./output/" + prg.id + CodePrinter.suffix(lang)
-    ctx.reporter.info("generating code in " + filename)
+    val filename = System.getProperty("user.dir")+"/output/" + prg.id + CodePrinter.suffix(lang)
+    ctx.codegenOutput.append(prg.id)
     val fstream = new FileWriter(filename)
     val out = new BufferedWriter(fstream)
     CodePrinter(prg, ctx, lang, out)

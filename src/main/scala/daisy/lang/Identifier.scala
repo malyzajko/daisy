@@ -49,8 +49,8 @@ object Identifiers {
     def toDeltaVariable: Delta = Delta(this)
     def toEpsilonVariable: Epsilon = Epsilon(this)
     // FIXME remove string comparison do something reasonable instead
-    def isDeltaId: Boolean = this.toString.contains("delta")
-    def isEpsilonId: Boolean = this.toString.contains("eps")
+    def isDeltaId: Boolean = this.toString.contains(deltaName)
+    def isEpsilonId: Boolean = this.toString.contains(epsilonName)
 
     def freshen: Identifier = FreshIdentifier(name, tpe, alwaysShowUniqueID)
 
@@ -69,6 +69,9 @@ object Identifiers {
       new Identifier(this.name, this.globalId, this.id, newTpe, this.alwaysShowUniqueID)
     }
   }
+
+  val deltaName = "delta"
+  val epsilonName = "eps"
 
   class UniqueCounter[K] {
 

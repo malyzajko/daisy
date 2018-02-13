@@ -114,33 +114,45 @@ object Main {
 
   var ctx: Context = null
 
-  def main(args: Array[String]): Unit = {
+  def interfaceMain(args: Array[String]): Option[Context] = {
     // TODO: only needs to be run once at compile time, maybe make this into a test
     verifyCmdLineOptions()
+    processOptions(args.toList) match {
+      case Some(new_ctx) =>
+        ctx = new_ctx
+        ctx.timers.total.start
+        val pipeline = computePipeline(ctx)
+        ctx.reporter.info("\n************ Starting Daisy ************")
+        try { // for debugging it's better to have these off.
+          pipeline.run(ctx, Program(null, Nil))
+        } catch {
+          case tools.DivisionByZeroException(msg) =>
+            ctx.reporter.warning(msg)
+          case tools.DenormalRangeException(msg) =>
+            ctx.reporter.warning(msg)
+          case tools.OverflowException(msg) =>
+            ctx.reporter.warning(msg)
+          case e: java.lang.UnsatisfiedLinkError =>
+            ctx.reporter.warning("A library could not be loaded: " + e)
+          case tools.NegativeSqrtException(msg) =>
+            ctx.reporter.warning(msg)
+          case e: DaisyFatalError =>
+            ctx.reporter.info("Something really bad happened. Cannot continue.")
+          case _ : Throwable =>
+            ctx.reporter.info("Something really bad happened. Cannot continue.")
 
-    ctx = processOptions(args.toList)
-    ctx.timers.total.start()
-
-    val pipeline = computePipeline(ctx)
-
-    ctx.reporter.info("\n************ Starting Daisy ************")
-
-    try { // for debugging it's better to have these off.
-      pipeline.run(ctx, Program(null, Nil))
-    } catch {
-      case tools.DivisionByZeroException(msg) =>
-        ctx.reporter.warning(msg)
-      case tools.DenormalRangeException(msg) =>
-        ctx.reporter.warning(msg)
-      case tools.OverflowException(msg) =>
-        ctx.reporter.warning(msg)
-      case e: java.lang.UnsatisfiedLinkError =>
-        ctx.reporter.warning("A library could not be loaded: " + e)
-      case e: DaisyFatalError => //ctx.reporter.info("Something really bad happened. Cannot continue.")
+        }
+        ctx.timers.get("total").stop
+        ctx.reporter.info("time: \n" + ctx.timers.toString)
+        Option(ctx)
+      case None =>
+        None
     }
+  }
 
-    ctx.timers.get("total").stop()
-    ctx.reporter.info("time: \n" + ctx.timers.toString)
+  def main(args: Array[String]): Unit = {
+    interfaceMain(args)
+    return
   }
 
   private def computePipeline(ctx: Context): Pipeline[Program, Program] = {
@@ -177,7 +189,7 @@ object Main {
     pipeline
   }
 
-  private def showHelp(reporter: Reporter): Nothing = {
+  private def showHelp(reporter: Reporter): Unit = {
     reporter.info("usage: [--help] [--debug=<N>] [..] <files>")
     reporter.info("")
     for (opt <- Main.globalOptions.toSeq.sortBy(_.name)) {
@@ -193,7 +205,7 @@ object Main {
         reporter.info(opt.helpLine)
       }
     }
-    sys.exit(0)
+    None
   }
 
   private def verifyCmdLineOptions(): Unit = {
@@ -207,11 +219,12 @@ object Main {
     }
   }
 
-  def processOptions(args: List[String]): Context = {
+  def processOptions(args: List[String]): Option[Context] = {
     val initReporter = new DefaultReporter(Set(), false)
 
     if (args.isEmpty || args.contains("--help")) {
       showHelp(initReporter)
+      return None
     }
 
     val argsMap: Map[String, String] =
@@ -275,10 +288,10 @@ object Main {
       case fs => initReporter.fatalError("More than one input file: " + fs.mkString(", "))
     }
 
-    Context(
+    Option(Context(
+      initReport = initReporter.report,
       file = inputFile,
       options = opts
-    )
-
+    ))
   }
 }

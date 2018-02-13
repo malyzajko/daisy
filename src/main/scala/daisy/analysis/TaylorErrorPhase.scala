@@ -68,11 +68,8 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
       ctx.reporter.error("The Taylor approach currently does not support Let definitions.")
     }
 
-    val deltaVarMap = mapDeltasToVars(bodyReal)
-    val epsVarMap = mapEpsilonsToVars(bodyReal)
-
     // derive f~(x)
-    val (bodyDelta, transDeltas) = deltaAbstract(bodyReal, deltaVarMap, epsVarMap, ctx.hasFlag("denormals"))
+    val (bodyDelta, transDeltas) = deltaAbstract(bodyReal, ctx.hasFlag("denormals"))
     //println(transDeltas)
 
     // get set of partial derivatives wrt deltas

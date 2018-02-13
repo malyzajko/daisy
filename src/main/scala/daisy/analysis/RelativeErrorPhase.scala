@@ -8,10 +8,9 @@ import lang.Trees._
 import lang.Identifiers.Identifier
 import lang.TreeOps._
 
-import tools.{SMTRange, Evaluators, Interval, Rational, AffineForm, DivisionByZeroException}
+import tools.{SMTRange, RangeEvaluators, Interval, Rational, AffineForm, DivisionByZeroException}
 import tools.FinitePrecision._
 import Interval._
-import daisy.utils.CachingMap
 
 import scala.collection.immutable.Map
 import scala.util.control.Breaks._
@@ -28,7 +27,7 @@ import scala.util.control.Breaks._
  * - SpecsProcessingPhase
  */
 object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdivision
-  with tools.RoundoffEvaluators {
+  with tools.RoundoffEvaluators with RangeEvaluators {
 
   override val name = "Relative Error"
   override val shortName = "relative"
@@ -83,18 +82,12 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
     approach = ctx.option[String]("approach")
     uniformPrecision = ctx.option[Precision]("precision")
 
-    for (fnc <- functionsToConsider(ctx, prg)){
+    val res: Map[Identifier, Option[Rational]] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       ctx.reporter.info("Evaluating " + fnc.id + "...")
       val bodyReal = fnc.body.get
-      val deltaVarMap = mapDeltasToVars(bodyReal)
-      val epsVarMap = mapEpsilonsToVars(bodyReal)
-      val bodyDeltaAbs = if (ctx.hasFlag("denormals")) {
-        deltaAbstract(bodyReal, deltaVarMap, epsVarMap, true)._1
-      } else {
-        deltaAbstract(bodyReal, deltaVarMap, Map.empty, false)._1
-      }
-      // ctx.reporter.warning(s"bodyDelta $bodyDeltaAbs")
+      val bodyDeltaAbs = deltaAbstract(bodyReal, ctx.hasFlag("denormals"))._1
+      // cfg.reporter.warning(s"bodyDelta $bodyDeltaAbs")
       // Step 1: disregard initial errors for now
       // (f(x) - fl(x))/ f(x)
 
@@ -124,7 +117,9 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
           case "taylor" => getRelErrorTaylorApprox(relErrorExpr, inputValMap, bodyReal)
           case "naive" => getRelErrorNaive(relErrorExpr, inputValMap, bodyReal)
         }
-        ctx.reporter.warning("Failed on " + tmpList.distinct.size + " sub-domain(s)")
+        if (tmpList.distinct.size > 0) {
+          ctx.reporter.warning("Failed on " + tmpList.distinct.size + " sub-domain(s)")
+        }
 
         val list = mergeIntervals(tmpList, inputValMap)
 
@@ -143,6 +138,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
                 (System.currentTimeMillis - time))
             }
           }
+          relError
         } else {
           ctx.reporter.info("Not possible to get relative error, compute the absolute instead, time:" +
             (System.currentTimeMillis - startTime))
@@ -151,16 +147,18 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
           val absError = getAbsError(bodyReal, inputValMap, inputErrorMap, uniformPrecision)
           ctx.reporter.info(s"absError: $absError, time: " +
             (System.currentTimeMillis - time))
+          None
         }
       }
       catch {
         case e: Throwable => {
           ctx.reporter.info("Something went wrong while computing the relative error.")
           ctx.reporter.info(e.printStackTrace())}
+          None
       }
 
     }
-    (ctx, prg)
+    (ctx.copy(resultRelativeErrors = res), prg)
   }
 
   /**
@@ -287,18 +285,18 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
     try {
       rangeMethod match {
         case ("interval") =>
-          Some(maxAbs(Evaluators.evalInterval(relErrorExpr, inputValMap)))
+          Some(maxAbs(evalRange[Interval](relErrorExpr, inputValMap, Interval.apply)._1))
 
         case ("affine") =>
-          Some(maxAbs(Evaluators.evalAffine(relErrorExpr,
-            inputValMap.map(x => (x._1 -> AffineForm(x._2)))).toInterval))
+          Some(maxAbs(evalRange[AffineForm](relErrorExpr,
+            inputValMap.mapValues(AffineForm(_)), AffineForm.apply)._1.toInterval))
 
         case ("smtreuse") =>
-          Some(maxAbs(evaluateSMTReuse(relErrorExpr,
-            inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) })).toInterval))
+          Some(maxAbs(evalRange[SMTRange](relErrorExpr,
+            inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }), SMTRange.apply)._1.toInterval))
 
         case ("smtredo") =>
-          Some(maxAbs(Evaluators.evalSMT(relErrorExpr,
+          Some(maxAbs(evaluateSMTRedo(relErrorExpr,
             inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) })).toInterval))
 
         case("smtcomplete") =>
@@ -339,7 +337,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
   def evaluateSMTComplete(expr: Expr, _intMap: Map[Identifier, Interval]): SMTRange = {
 
     val intMap = _intMap
-    val interval = Evaluators.evalInterval(expr, intMap)
+    val interval = evalRange[Interval](expr, intMap, Interval.apply)._1
     var constrs: Set[Expr] = Set.empty
     val deltas = deltasOf(expr)
     val eps = epsilonsOf(expr)
@@ -354,47 +352,30 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
   }
 
   /**
-   * This version records the already seen intervals (from identical, repeated subtrees)
-   * and does not recompute the range.
+   * This version does not record the already seen intervals (from identical, repeated subtrees)
+   * and does recompute the range.
    */
-  def evaluateSMTReuse(expr: Expr, _intMap: collection.immutable.Map[Identifier, SMTRange] = Map.empty): SMTRange = {
+  def evaluateSMTRedo(expr: Expr, _intMap: Map[Identifier, SMTRange] = Map.empty): SMTRange = {
 
-    // TODO check whether the expr is the best solution here
-    val smtRangeMap: collection.mutable.Map[Expr, SMTRange] = new CachingMap[Expr, SMTRange]
-    for ((id, smtrange) <- _intMap) {
-      smtRangeMap.put(Variable(id), smtrange)
-    }
+    var valMap: Map[Identifier, SMTRange] = _intMap
 
-    def evalSMT(e: Expr): SMTRange = smtRangeMap.getOrElse(e, e match {
+    def eval(e: Expr): SMTRange = (e: @unchecked) match {
 
+      case Variable(id) => valMap(id)
       case RealLiteral(r) => SMTRange(r)
-
-      case Plus(lhs, rhs) => evalSMT(lhs) + (evalSMT(rhs), precisionDefault, loopLower)
-
-      case Minus(lhs, rhs) => evalSMT(lhs) - (evalSMT(rhs), precisionDefault, loopLower)
-
-      case Times(lhs, rhs) => evalSMT(lhs) * (evalSMT(rhs), precisionDefault, loopLower)
-
-      case Division(lhs, rhs) => evalSMT(lhs) / (evalSMT(rhs), precisionDefault, loopLower)
-
-//      case Pow(lhs, rhs) => evalSMT(lhs) ^ (evalSMT(rhs), precisionDefault, loopLower)
-
-      case IntPow(lhs, rhs) => evalSMT(lhs) ^ rhs
-
-      case UMinus(t) => - evalSMT(t)
-
-      case Sqrt(t) => evalSMT(t).squareRoot(precisionDefault, loopDefault)
-
-      case Let(id, value, body) => {
-          val smtRange = evalSMT(value)
-          smtRangeMap += (Variable(id) -> smtRange)
-          evalSMT(body)
-        }
-
-      case _ =>
-        throw new IllegalArgumentException("Unknown expression. Evaluation failed")
-    })
-    evalSMT(expr)
+      case Plus(x, y) => eval(x) + eval(y)
+      case Minus(x, y) => eval(x) - eval(y)
+      case Times(x, y) => eval(x) * eval(y)
+      case Division(x, y) => eval(x) / eval(y)
+      // case Pow(x, n) => eval(x) ^ eval(n)
+      case IntPow(x, n) => eval(x) ^ n
+      case UMinus(x) => - eval(x)
+      case Let(id, v, b) =>
+        val temp = eval(v)
+        valMap += (id -> temp)
+        eval(b)
+    }
+    eval(expr)
   }
 
   def compareMaps(first: Map[Identifier, Interval], second: Map[Identifier, Interval]): Boolean = {

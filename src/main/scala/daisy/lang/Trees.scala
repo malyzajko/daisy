@@ -417,6 +417,7 @@ object Trees {
 //  }
 
   case class IntPow(base: Expr, exp: Int) extends Expr {
+    assert(exp > 0)
     override val getType: TypeTree = base.getType
   }
 

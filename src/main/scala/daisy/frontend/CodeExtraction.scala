@@ -6,7 +6,7 @@ package frontend
 
 import scala.reflect.internal.util._
 import scala.language.implicitConversions
-
+import java.io.File
 import scala.collection.immutable.Seq
 
 import lang.Trees.{
@@ -187,7 +187,7 @@ trait CodeExtraction extends ASTExtractors {
 
     private def isLibrary(u: CompilationUnit) = {
       // TODO: big hack
-      u.source.file.absolute.path.endsWith(self.ctx.libFiles.head)
+      u.source.file.absolute.path.endsWith(new File(self.ctx.libFiles.head).getAbsolutePath())
     }
 
     // private def extractPackageRef(refPath: RefTree): PackageRef = {

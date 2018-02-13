@@ -36,5 +36,6 @@ for file in "${files[@]}"
 do
   echo "*******"
   echo ${file}
-  time ./daisy --silent --precision="${prec}" --analysis=dataflow --rangeMethod=interval --errorMethod=affine ${file}
+  time ./daisy --silent --precision="${prec}" --results-csv=dataflow_IA_AA_results.csv \
+    --analysis=dataflow --rangeMethod=interval --errorMethod=affine ${file}
 done

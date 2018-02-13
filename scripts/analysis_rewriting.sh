@@ -34,6 +34,7 @@ fi
 # Run daisy on each testfile
 for file in "${files[@]}"
 do
-  ./daisy --precision="${prec}" --rewrite --analysis=dataflow --rangeMethod=smt \
+  ./daisy --precision="${prec}" --rewrite --results-csv=rewriting_results.csv \
+    --analysis=dataflow --rangeMethod=smt \
     --solver=z3 --errorMethod=affine ${file}
 done

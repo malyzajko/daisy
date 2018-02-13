@@ -9,8 +9,8 @@ declare -a files=("testcases/rosa/Bsplines.scala" \
   "testcases/control/InvertedPendulum.scala" \
   "testcases/real2float/Kepler.scala" \
   "testcases/rosa/RigidBody.scala" \
-  "testcases/trigApprox/Sine.scala" \
-  "testcases/trigApprox/Sqrt.scala" \
+  "testcases/misc/Sine.scala" \
+  "testcases/misc/Sqrt.scala" \
   "testcases/control/Traincar4.scala" \
   "testcases/rosa/Turbine.scala")
 
@@ -26,5 +26,6 @@ fi
 # Run daisy on each testfile
 for file in "${files[@]}"
 do
-  ./daisy --codegen --precision=Fixed32 ${file}
+  ./daisy --codegen --precision=Fixed32 --results-csv=fixed_codegen_rewriting_results.csv \
+    --rewrite --rangeMethod=smt --solver=z3 ${file}
 done

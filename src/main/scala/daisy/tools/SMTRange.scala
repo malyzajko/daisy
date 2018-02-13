@@ -111,7 +111,13 @@ object SMTRange {
 
         // Make numerator and denominator smaller to avoid unsound dReal results.
         // It should not matter in which direction to round here.
-        mid = scaleToLongUp(mid)
+        try {
+          mid = scaleToLongUp(mid)
+        } catch {
+          case e: RationalCannotBeCastToIntException =>
+            reporter.warning("Cannot reasonably shorten fraction, resorting to sound lower bound")
+            return lo
+        }
 
         val solverQuery = And(condition, LessThan(t, RealLiteral(mid)))
         reporter.debug(s"\nloop count: $loopCount, [$lo, $hi], mid: ${mid}")
@@ -142,7 +148,13 @@ object SMTRange {
 
         // Make numerator and denominator smaller to avoid unsound dReal results.
         // It should not matter in which direction to round here.
-        mid = scaleToLongUp(mid)
+        try {
+          mid = scaleToLongUp(mid)
+        } catch {
+          case e: RationalCannotBeCastToIntException =>
+            reporter.warning("Cannot reasonably shorten fraction, resorting to sound lower bound")
+            return hi
+        }
 
         val solverQuery = And(condition, LessThan(RealLiteral(mid), t))
         reporter.debug(s"\nloop count: $loopCount, [$lo, $hi], mid: ${mid}")

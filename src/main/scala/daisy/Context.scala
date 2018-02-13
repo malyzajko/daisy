@@ -9,19 +9,22 @@ import lang.Trees.Expr
 import lang.Identifiers._
 import tools.{Interval, PartialInterval, Rational, FinitePrecision}
 import FinitePrecision.{Precision, FixedPrecision}
+import scala.collection.mutable.ArrayBuffer
 
 case class Context(
   file: String,
   options: Map[String, Any],
+  initReport: ArrayBuffer[String] = new ArrayBuffer[String],
 
   timers: TimerStorage = new TimerStorage,
 
-  libFiles: List[String] = List("library/Real.scala"),
+  libFiles: List[String] = List(System.getProperty("user.dir")+"/library/Real.scala"),
 
   // Information we want to persist through phases,
   // but don't want to pollute the nice and clean trees.
   // If these get too many, move to their own "Summary".
   // indexed by FunDef.id
+  codegenOutput: StringBuilder = new StringBuilder(),
   specInputRanges: Map[Identifier, Map[Identifier, Interval]] = Map(),
   specInputErrors: Map[Identifier, Map[Identifier, Rational]] = Map(),
   specInputPrecisions: Map[Identifier, Map[Identifier, Precision]] = Map(),
@@ -48,7 +51,9 @@ case class Context(
 
   val reporter = new DefaultReporter(
     option[List[DebugSection]]("debug").toSet,
-    silent = hasFlag("silent"))
+    silent = hasFlag("silent"),
+    report = initReport
+  )
 
   val fixedPoint: Boolean = option[Precision]("precision") match {
     case FixedPrecision(_) => true

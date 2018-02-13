@@ -1,11 +1,10 @@
+# Project Daisy
 
-<img src="https://people.mpi-sws.org/~eva/daisy_logo.jpg" width="150"> 
+<img src="https://people.mpi-sws.org/~eva/daisy_logo.jpg" width="150">
 
-# Project Daisy 
+Daisy now also has an online interface: http://daisy.mpi-sws.org/.
 
- Daisy now also has an online interface: http://daisy.mpi-sws.org/. 
- 
- It's a brand new feature, so please be patient while we work out all the kinks.
+It's a brand new feature, so please be patient while we work out all the kinks.
 
 ## First steps
 
@@ -57,10 +56,10 @@ To see all command-line options:
 If you don't want to run in interactive mode, you can also call all of the above
 commands simply with 'sbt' prefixed, e.g.
 ```
-$ sbt compile.
+$ sbt compile
 ```
 
-You can also run Daisy outside of sbt. For this use 
+You can also run Daisy outside of sbt. For this use
 ```
 $ sbt script
 ```
@@ -75,30 +74,28 @@ $ ./daisy testcases/rosa/Doppler.scala
 Some features of Daisy require additional software to be installed.
 Currently, this is
 
-* Z3: if you want to compute ranges with the help of the SMT solver Z3, you need to
-[install it first on your machine](https://github.com/Z3Prover/z3).
+* An SMT solver which can be used to improve ranges: [Z3](https://github.com/Z3Prover/z3) \[[Linux](https://github.com/Z3Prover/z3/releases)\] \[[Mac](https://github.com/Z3Prover/z3/releases)\] and/or [dReal](https://github.com/dreal/dreal3) \[[Linux](https://github.com/dreal/dreal3/releases)\]
 
-* MPFR: Daisy uses a [Java binding](https://github.com/kframework/mpfr-java).
-(TODO: figure out whether we used the static or dynamic binding)
+* [MPFR](http://www.mpfr.org/) for error under-approximation and transcendental calculations: \[`apt-get install libmpfr4`\]  \[`brew install mpfr`\]
 
 ## Contributors
 
-In no particular order: Saksham Sharma, Einar Horn, Debasmita Lohar, Heiko Becker, Ezequiel Postan, 
+In no particular order: Saksham Sharma, Einar Horn, Debasmita Lohar, Heiko Becker, Ezequiel Postan,
 Fabian Ritter, Anastasiia Izycheva, Raphael Monat, Fariha Nasir, and Robert Bastian.
 
 ## Documentation
 
 To come.
 
-## IntelliJ IDEA Setup
-To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins. 
-Choose Scala in the list and select "Install JetBrains Plugin ...". 
+## Intellij Idea Setup
+To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins.
+Choose Scala in the list and select "Install JetBrains Plugin ...".
 Then let Idea know where is your Scala (or make sure Scala SDK is already there): Project Structure -> Global Libraries -> New Global Library -> Scala SDK -> select the source folder for the SDK on your machine.
 Also make sure the Java SDK is set up for Idea (Project Structure -> SDKs -> check that your JDK is here or add it here).
 
 Choose File -> New -> Project from Existing Source -> path-to-the-build.sbt-file
 or
-File -> New -> Project from Version Control -> Git -> and put git@github.com:malyzajko/daisy.git into the URL field and 
+File -> New -> Project from Version Control -> Git -> and put git-rts@gitlab.mpi-sws.org:AVA/daisy.git into the URL field and
 select the destination folder for source files to be copied.
 
 After the setup run Daisy in the Terminal of Intellij Idea using sbt as described above.

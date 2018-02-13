@@ -4,8 +4,9 @@
 package daisy
 
 import utils.{NoPosition, OffsetPosition, RangePosition, Position}
+import scala.collection.mutable.ArrayBuffer
 
-abstract class Reporter(val debugSections: Set[DebugSection], silent: Boolean) {
+abstract class Reporter(val debugSections: Set[DebugSection], silent: Boolean, val report: ArrayBuffer[String] = new ArrayBuffer[String]) {
 
   abstract class Severity
   case object INFO    extends Severity
@@ -120,7 +121,7 @@ abstract class Reporter(val debugSections: Set[DebugSection], silent: Boolean) {
     whenDebug(NoPosition, section)(body)
 }
 
-class DefaultReporter(debugSections: Set[DebugSection], silent: Boolean = false) extends Reporter(debugSections, silent) {
+class DefaultReporter(debugSections: Set[DebugSection], silent: Boolean = false, report: ArrayBuffer[String] = new ArrayBuffer[String]) extends Reporter(debugSections, silent, report) {
   protected def severityToPrefix(sev: Severity): String = sev match {
     case ERROR    => "[" + Console.RED              + " Error  " + Console.RESET + "]"
     case WARNING  => "[" + Console.YELLOW           + "Warning " + Console.RESET + "]"
@@ -145,6 +146,7 @@ class DefaultReporter(debugSections: Set[DebugSection], silent: Boolean = false)
   }
 
   def emit(msg: Message): Unit = {
+    report += msg.msg.toString
     println(reline(severityToPrefix(msg.severity), smartPos(msg.position) + msg.msg.toString))
     printLineContent(msg.position)
   }
