@@ -85,7 +85,7 @@ Fabian Ritter, Anastasiia Izycheva, Raphael Monat, Fariha Nasir, and Robert Bast
 
 ## Documentation
 
-To come.
+There is no formal documentation, but [the recent tool paper](https://github.com/malyzajko/daisy/blob/master/daisy_tool_paper_preprint.pdf) serves as a good starting point about the usage and the internals of Daisy.
 
 ## Intellij Idea Setup
 To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins.
