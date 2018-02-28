@@ -107,12 +107,15 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
           // If we track both input and roundoff errors, then we pre-compute
           // the roundoff errors for those variables that do not have a user-defined
           // error, in order to keep correlations.
-          allErrors += (fnc.id -> (
+          allErrors += (fnc.id -> ({
+            // get the possibly mixed-precision map
+            val precisionMap = inputPrecision(fnc.id)
+
             if (trackInitialErrs && trackRoundoffErrs){
 
               val allIDs = fnc.params.map(_.id).toSet
               val missingIDs = allIDs -- errors.keySet
-              errors ++ missingIDs.map(id => (id -> defaultPrecision.absRoundoff(allRanges(fnc.id)(id))))
+              errors ++ missingIDs.map(id => (id -> precisionMap(id).absRoundoff(allRanges(fnc.id)(id))))
 
             } else if (trackInitialErrs) {
 
@@ -123,14 +126,14 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
             } else if (trackRoundoffErrs) {
 
               val allIDs = fnc.params.map(_.id)
-              allIDs.map(id => (id -> defaultPrecision.absRoundoff(allRanges(fnc.id)(id)))).toMap
+              allIDs.map(id => (id -> precisionMap(id).absRoundoff(allRanges(fnc.id)(id)))).toMap
 
             } else {
 
               val allIDs = fnc.params.map(_.id)
               allIDs.map(id => (id -> Rational.zero)).toMap
 
-            }))
+            }}))
           addConds match {
             case Seq() => additionalConst += (fnc.id -> BooleanLiteral(true)) // no additional constraints
             case Seq(x) => additionalConst += (fnc.id -> x)
