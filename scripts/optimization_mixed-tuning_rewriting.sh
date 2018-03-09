@@ -43,7 +43,7 @@ do
   echo "---> $file"   # --rangeMethod=smt #--rewrite-seed-system-millis \
   if [ "$1" = "rewriting" ]; then
     ./daisy --mixed-tuning --rewrite --rangeMethod=smt \
-      --rewrite-custom-seed=1490794789615 "testcases/mixed-precision/${file}.scala"
+      --rewrite-seed=1490794789615 "testcases/mixed-precision/${file}.scala"
       #--rewrite-seed-system-millis "testcases/mixed-precision/${file}.scala"
 
   else

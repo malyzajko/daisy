@@ -27,7 +27,7 @@ declare -a arr=("Bsplines0" \
 for file in "${arr[@]}"
 do
   echo "---> $file"
-  ./daisy --rangeMethod=smt --rewrite --choosePrecision --rewrite-custom-seed=1490794789615 \
+  ./daisy --rangeMethod=smt --rewrite --choosePrecision --rewrite-seed=1490794789615 \
     "testcases/mixed-precision/${file}.scala"
 done
 
