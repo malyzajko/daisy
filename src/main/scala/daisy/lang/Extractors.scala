@@ -89,8 +89,8 @@ object Extractors {
         Some((Seq(t), (es: Seq[Expr]) => RightShift(es.head, by)))
       case LeftShift(t, by) =>
         Some((Seq(t), (es: Seq[Expr]) => LeftShift(es.head, by)))
-      case Downcast(e, newType) =>
-        Some(Seq(e), (es: Seq[Expr]) => Downcast(es.head, newType))
+      case Cast(e, newType) =>
+        Some(Seq(e), (es: Seq[Expr]) => Cast(es.head, newType))
 
       case Lambda(args, body) =>
         Some((Seq(body), (es: Seq[Expr]) => Lambda(args, es.head)))

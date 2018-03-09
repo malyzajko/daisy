@@ -35,8 +35,8 @@ object FinitePrecision {
 
     override def compare(that: Precision): Int = (this,that) match {
       case (FloatPrecision(a), FloatPrecision(b)) => a - b
-      case (FixedPrecision(a), FixedPrecision(b)) =>
-        if (a == b) 0 else throw new Exception("mixed-precision currently unsupported for fixed-points")
+      case (FixedPrecision(a), FixedPrecision(b)) => a - b
+        //if (a == b) 0 else throw new Exception("mixed-precision currently unsupported for fixed-points")
       case (FloatPrecision(_), FixedPrecision(_)) |
            (FixedPrecision(_), FloatPrecision(_)) => throw new Exception("comparing incompatible precisions")
     }

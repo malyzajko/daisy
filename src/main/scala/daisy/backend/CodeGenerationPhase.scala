@@ -3,8 +3,7 @@
 package daisy
 package backend
 
-import daisy.utils.CodePrinter
-
+import utils.CodePrinter
 import lang.Trees._
 import tools.FinitePrecision._
 import lang.Types._
@@ -38,32 +37,72 @@ object CodeGenerationPhase extends DaisyPhase {
 
     reporter = ctx.reporter
 
-    val newProgram = uniformPrecision match {
-      case FixedPrecision(b) =>
-        if (mixedPrecision) {
-          ctx.reporter.error("Mixed-precision code generation is currently not supported for fixed-points.")
+    val newProgram =
+      if (ctx.hasFlag("mixed-tuning")) {
+        if (ctx.hasFlag("mixed-fixedpoint")) {
+
+          // generate fixed-point code, types are already attached to the tree
+          // TODO: keep the types in a map...
+
+          val newDefs = prg.defs.map(fnc => if (!fnc.body.isEmpty && !fnc.precondition.isEmpty) {
+            // TODO: check that these ranges are actually there, otehrwise,
+            // we may need to do some copying in MixedTuning
+            val newBody = toMixedFixedPointCode(fnc.body.get, ctx.intermediateRanges(fnc.id))
+            val retType = fnc.returnType match {
+              case FinitePrecisionType(FixedPrecision(16)) => Int32Type
+              case FinitePrecisionType(FixedPrecision(32)) => Int64Type
+            }
+            fnc.copy(
+              params = fnc.params.map(vd =>
+                vd.id.getType match {
+                  case FinitePrecisionType(FixedPrecision(16)) =>
+                    ValDef(vd.id.changeType(Int32Type))
+                  case FinitePrecisionType(FixedPrecision(32)) =>
+                    ValDef(vd.id.changeType(Int64Type))
+                }),
+              body = Some(newBody),
+              returnType = retType)
+          } else {
+            fnc
+          })
+
+          Program(prg.id, newDefs)
+
+        } else { //floats
+          // the types have already been changed and nothing more needs to be done
+          // types are changed before, since the semantics of type assignments is special
+          prg
         }
-        // if we have fixed-point code, we need to generate it first
-        // TODO handle ignored functions
-        val newDefs = transformConsideredFunctions(ctx,prg){ fnc =>
-          val newBody = fnc.body.map(toFixedPointCode(_, FixedPrecision(b),
-            ctx.intermediateRanges(fnc.id), ctx.intermediateAbsErrors(fnc.id)))
-          val valDefType = b match {
-            case 8 => Int16Type
-            case 16 => Int32Type
-            case 32 => Int64Type
-          }
-          fnc.copy(
-            params = fnc.params.map(vd => ValDef(vd.id.changeType(valDefType))),
-            body = newBody,
-            returnType = valDefType)
+
+      } else {
+        uniformPrecision match {
+          case FixedPrecision(b) =>
+            if (mixedPrecision) {
+              ctx.reporter.error("Mixed-precision code generation is currently not supported for fixed-points.")
+            }
+            // if we have fixed-point code, we need to generate it first
+            // TODO handle ignored functions
+            val newDefs = transformConsideredFunctions(ctx,prg){ fnc =>
+              val newBody = fnc.body.map(toFixedPointCode(_, FixedPrecision(b),
+                ctx.intermediateRanges(fnc.id), ctx.intermediateAbsErrors(fnc.id)))
+              val valDefType = b match {
+                case 8 => Int16Type
+                case 16 => Int32Type
+                case 32 => Int64Type
+              }
+              fnc.copy(
+                params = fnc.params.map(vd => ValDef(vd.id.changeType(valDefType))),
+                body = newBody,
+                returnType = valDefType)
+            }
+            Program(prg.id, newDefs)
+
+          case up @ FloatPrecision(_) =>
+            // if we have floating-point code, we need to just change the types
+            Program(prg.id, prg.defs.map { fnc =>
+              assignFloatType(fnc, ctx.specInputPrecisions(fnc.id), ctx.specResultPrecisions(fnc.id), up)
+            })
         }
-        Program(prg.id, newDefs)
-      case up @ FloatPrecision(_) =>
-        // if we have floating-point code, we need to just change the types
-        Program(prg.id, prg.defs.map { fnc =>
-          assignFloatType(fnc, ctx.specInputPrecisions(fnc.id), ctx.specResultPrecisions(fnc.id), up)
-        })
     }
 
     writeFile(newProgram, lang, ctx)
@@ -107,7 +146,7 @@ object CodeGenerationPhase extends DaisyPhase {
         if (idPrec >= valuePrec) {
           (Let(id.changeType(FinitePrecisionType(tpeMap(id))), eValue, eBody), bodyPrec)
         } else {
-          val newValue = Downcast(eValue, FinitePrecisionType(idPrec))
+          val newValue = Cast(eValue, FinitePrecisionType(idPrec))
           (Let(id.changeType(FinitePrecisionType(tpeMap(id))), newValue, eBody), bodyPrec)
         }
     }
@@ -255,4 +294,167 @@ object CodeGenerationPhase extends DaisyPhase {
 
     _toFPCode(expr)
   }
+
+  /*
+   * Expects code to be already in SSA form.
+   * Expects the types to be attached to the tree and expects the program
+   * to be in SSA form.
+   * TODO: check that this is sound, I think the range should be finite-precision
+   * and not real-valued as it is most likely here...
+   */
+  def toMixedFixedPointCode(expr: Expr, rangeMap: Map[Expr, Interval]): Expr = (expr: @unchecked) match {
+
+    case x @ Variable(id) => id.getType match {
+      case FinitePrecisionType(FixedPrecision(16)) => Variable(id.changeType(Int32Type))
+      case FinitePrecisionType(FixedPrecision(32)) => Variable(id.changeType(Int64Type))
+    }
+
+    // case Let(id, x @ RealLiteral(r), body) =>
+    //   val tpe = id.getType.asInstanceOf[Fixed]
+    //   val f = tpe.fractionalBits(r)
+    //   tpe match {
+    //     case FixedPrecision(16) =>
+    //       val tmp = Int32Literal((r * Rational.fromDouble(math.pow(2, f))).roundToInt)
+    //       Let(id.changeType(Int32Type), tmp, toMixedFixedPointCode(body))
+
+    //     case FixedPrecision(32) =>
+    //       val tmp = Int64Literal((r * Rational.fromDouble(math.pow(2, f))).roundToLong)
+    //       Let(id.changeType(Int64Type), tmp, toMixedFixedPointCode(body))
+    //   }
+
+    case FinitePrecisionLiteral(r, prec @ FixedPrecision(_), strVal) =>
+      val f = prec.fractionalBits(r)
+      prec match {
+        case FixedPrecision(16) => Int32Literal((r * Rational.fromDouble(math.pow(2, f))).roundToInt)
+        case FixedPrecision(32) => Int64Literal((r * Rational.fromDouble(math.pow(2, f))).roundToLong)
+      }
+
+    // TODO: we may shift too much, i.e. (x >> 32) << 3, which can be optmixed/
+    // cleaned up after the fact.
+    // necessarily a down cast from 32 bit
+    case Cast(e, FinitePrecisionType(FixedPrecision(16))) =>
+      Cast(RightShift(toMixedFixedPointCode(e, rangeMap), 16), Int32Type)
+
+    // necessarily an up cast from 16 bit, and not redundant (if all went well in mixed-opt)
+    case Cast(e, FinitePrecisionType(FixedPrecision(32))) =>
+      Cast(LeftShift(toMixedFixedPointCode(e, rangeMap), 16), Int64Type)
+
+    // case Let(id, x @ UMinus(y @ Variable(t)), body) =>
+    //   if (id.getType == t.getType) {
+    //     UMinus(toMixedFixedPointCode(t))
+    //   } else {
+    //     assert(id.getType < t.getType)
+    //     //downcast
+    //     RightShift(UMinus(toMixedFixedPointCode(t)), 16)
+    //   }
+
+    case UMinus(t) => UMinus(toMixedFixedPointCode(t, rangeMap))
+
+    case Sqrt(t) =>
+      throw new Exception("Sqrt is not supported for fixed-points!")
+      //null
+
+    case x @ Plus(lhs, rhs) =>
+      // TODO: is there some better way?!
+      val lhsPrec = lhs.getType.asInstanceOf[FinitePrecisionType].prec.asInstanceOf[FixedPrecision]
+      val rhsPrec = rhs.getType.asInstanceOf[FinitePrecisionType].prec.asInstanceOf[FixedPrecision]
+      // fractional bits from lhs
+      val fLhs = lhsPrec.fractionalBits(rangeMap(lhs))
+      val fRhs = rhsPrec.fractionalBits(rangeMap(rhs))
+
+      // determine how much to shift left or right
+      val fAligned = math.max(fLhs, fRhs)
+      val newLhs =
+        if (fLhs < fAligned) LeftShift(toMixedFixedPointCode(lhs, rangeMap), (fAligned - fLhs))
+        else toMixedFixedPointCode(lhs, rangeMap)
+      val newRhs =
+        if (fRhs < fAligned) LeftShift(toMixedFixedPointCode(rhs, rangeMap), (fAligned - fRhs))
+        else toMixedFixedPointCode(rhs, rangeMap)
+
+      // fractional bits result
+      val fRes = getUpperBound(lhsPrec, rhsPrec).asInstanceOf[FixedPrecision].fractionalBits(rangeMap(x))
+      // shift result
+      if (fAligned == fRes) {
+        Plus(newLhs, newRhs)
+      } else if(fRes < fAligned) {
+        RightShift(Plus(newLhs, newRhs), (fAligned - fRes))
+      } else { //(fAligned < fRes) {
+        // TODO: this sounds funny. does this ever happen?
+        reporter.warning("funny shifting condition is happening")
+        LeftShift(Plus(newLhs, newRhs), (fRes - fAligned))
+
+      }
+
+    case x @ Minus(lhs, rhs) =>
+      // TODO: is there some better way?!
+      val lhsPrec = lhs.getType.asInstanceOf[FinitePrecisionType].prec.asInstanceOf[FixedPrecision]
+      val rhsPrec = rhs.getType.asInstanceOf[FinitePrecisionType].prec.asInstanceOf[FixedPrecision]
+      // fractional bits from lhs
+      val fLhs = lhsPrec.fractionalBits(rangeMap(lhs))
+      val fRhs = rhsPrec.fractionalBits(rangeMap(rhs))
+
+      // determine how much to shift left or right
+      val fAligned = math.max(fLhs, fRhs)
+      val newLhs =
+        if (fLhs < fAligned) LeftShift(toMixedFixedPointCode(lhs, rangeMap), (fAligned - fLhs))
+        else toMixedFixedPointCode(lhs, rangeMap)
+      val newRhs =
+        if (fRhs < fAligned) LeftShift(toMixedFixedPointCode(rhs, rangeMap), (fAligned - fRhs))
+        else toMixedFixedPointCode(rhs, rangeMap)
+
+      // fractional bits result
+      val fRes = getUpperBound(lhsPrec, rhsPrec).asInstanceOf[FixedPrecision].fractionalBits(rangeMap(x))
+      // shift result
+      if (fAligned == fRes) {
+        Minus(newLhs, newRhs)
+      } else if(fRes < fAligned) {
+        RightShift(Minus(newLhs, newRhs), (fAligned - fRes))
+      } else { //(fAligned < fRes) {
+        // TODO: this sounds funny. does this ever happen?
+        reporter.warning("funny shifting condition is happening")
+        LeftShift(Minus(newLhs, newRhs), (fRes - fAligned))
+      }
+
+    case x @ Times(lhs, rhs) =>
+      // TODO: is there some better way?!
+      val lhsPrec = lhs.getType.asInstanceOf[FinitePrecisionType].prec.asInstanceOf[FixedPrecision]
+      val rhsPrec = rhs.getType.asInstanceOf[FinitePrecisionType].prec.asInstanceOf[FixedPrecision]
+
+      val mult = Times(toMixedFixedPointCode(lhs, rangeMap), toMixedFixedPointCode(rhs, rangeMap))
+      val fMult = lhsPrec.fractionalBits(rangeMap(lhs)) +
+        rhsPrec.fractionalBits(rangeMap(rhs))
+
+      // fractional bits result
+      val fRes = getUpperBound(lhsPrec, rhsPrec).asInstanceOf[FixedPrecision].fractionalBits(rangeMap(x))
+      // shift result
+      if (fMult == fRes) {
+        mult
+      } else if(fRes < fMult) {
+        RightShift(mult, (fMult - fRes))
+      } else { //(fAligned < fRes) {
+        // TODO: this sounds funny. does this ever happen?
+        reporter.warning("funny shifting condition is happening")
+        LeftShift(mult, (fRes - fMult))
+      }
+
+    case x @ Division(lhs, rhs) =>
+      // TODO: is there some better way?!
+      val lhsPrec = lhs.getType.asInstanceOf[FinitePrecisionType].prec.asInstanceOf[FixedPrecision]
+      val rhsPrec = rhs.getType.asInstanceOf[FinitePrecisionType].prec.asInstanceOf[FixedPrecision]
+
+      val fLhs = lhsPrec.fractionalBits(rangeMap(lhs))
+      val fRhs = rhsPrec.fractionalBits(rangeMap(rhs))
+
+      val fRes = getUpperBound(lhsPrec, rhsPrec).asInstanceOf[FixedPrecision].fractionalBits(rangeMap(x))
+      val shift = fRes + fRhs - fLhs
+      Division(LeftShift(toMixedFixedPointCode(lhs, rangeMap), shift), toMixedFixedPointCode(rhs, rangeMap))
+
+    case Let(id, value, body) =>
+      val newId = id.changeType(id.getType match {
+              case FinitePrecisionType(FixedPrecision(16)) => Int32Type
+              case FinitePrecisionType(FixedPrecision(32)) => Int64Type
+            })
+      Let(newId, toMixedFixedPointCode(value, rangeMap), toMixedFixedPointCode(body, rangeMap))
+  }
+
 }

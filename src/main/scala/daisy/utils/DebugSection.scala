@@ -16,6 +16,12 @@ case object DebugSectionAnalysis        extends DebugSection("analysis",       1
 case object DebugSectionBackend         extends DebugSection("backend",        1 << 4)
 case object DebugSectionTaylor          extends DebugSection("taylor",         1 << 5)
 case object DebugSectionOptimization    extends DebugSection("opt",            1 << 6)
+case object DebugSectionExprOptimizer   extends DebugSection("expr-optimizer", 1 << 7)
+case object DebugSectionFitnessEval     extends DebugSection("fitness-eval",   1 << 8)
+case object DebugSectionSimplify        extends DebugSection("simplify",       1 << 9)
+case object DebugSectionExperiment      extends DebugSection("experiment",     1 << 10)
+case object DebugSectionOptimisation    extends DebugSection("optimisation",   1 << 11)
+case object DebugSectionTransform       extends DebugSection("transform",      1 << 12)
 
 object DebugSections {
   val all = Set[DebugSection](
@@ -25,7 +31,11 @@ object DebugSections {
     DebugSectionAnalysis,
     DebugSectionBackend,
     DebugSectionTaylor,
-    DebugSectionOptimization
+    DebugSectionOptimization,
+    DebugSectionExprOptimizer,
+    DebugSectionFitnessEval,
+    DebugSectionOptimisation,
+    DebugSectionTransform
   )
 
 }

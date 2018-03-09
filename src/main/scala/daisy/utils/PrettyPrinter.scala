@@ -172,7 +172,7 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
         sb.append(stringValue + "f")
       case x @ FinitePrecisionLiteral(r, _, stringValue) =>
         sb.append(stringValue)
-      case Downcast(expr, tpe) => ppUnary(expr, "downcast(", ", " + tpe + ")")
+      case Cast(expr, tpe) => ppUnary(expr, "cast(", ", " + tpe + ")")
       case FunctionInvocation(fdId, _, args, _) =>
         pp(fdId, p)
 
@@ -226,6 +226,7 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case FinitePrecisionType(Float64) => sb.append("Double")
       case FinitePrecisionType(DoubleDouble) => sb.append("DoubleDouble")
       case FinitePrecisionType(QuadDouble) => sb.append("QuadDouble")
+      case FinitePrecisionType(FixedPrecision(b)) => sb.append(s"Fixed($b)")
       case FunctionType(fts, tt) =>
         if (fts.size > 1) {
           ppNary(fts, "(", ", ", ")")

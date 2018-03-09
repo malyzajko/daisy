@@ -52,8 +52,6 @@ lazy val basic = Project("daisy", file(".")
   inConfig(Benchmark)(Defaults.testSettings): _*
 )
 
-lazy val apps = project in file("apps")
-
 lazy val scriptFile = file(".") / "daisy"
 
 clean := {

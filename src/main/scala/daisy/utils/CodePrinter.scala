@@ -45,7 +45,7 @@ abstract class CodePrinter(buffer: Appendable) extends PrettyPrinter(buffer) {
 
       // this should never be called by this printer, i.e. all RealTypes
       // should have been transformed before
-      case RealType => throw new Exception("RealType found in code generator")
+      //case RealType => throw new Exception("RealType found in code generator")
       case _ => super.pp(tree, parent)
     }
   }

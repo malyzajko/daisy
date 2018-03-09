@@ -84,7 +84,7 @@ class FPCorePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
         sb.append(stringValue)
       case x @ FinitePrecisionLiteral(r, _, stringValue) =>
         sb.append(stringValue)
-      case Downcast(expr, tpe) => ppUnary(expr, "downcast "+ tpe, "")
+      case Cast(expr, tpe) => ppUnary(expr, "downcast "+ tpe, "")
 
       case Plus(l,r) => ppBinary(l, r, " + ")
       case Minus(l,r) => ppBinary(l, r, " - ")

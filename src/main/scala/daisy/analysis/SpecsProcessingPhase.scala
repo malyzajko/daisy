@@ -207,7 +207,7 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       specInputPrecisions = inputPrecision,
       specResultPrecisions = resultPrecisions,
       specAdditionalConstraints = additionalConst),
-    prg)
+      prg)
   }
 
   def extractPreCondition(expr: Expr): (Map[Identifier, (Rational, Rational)],

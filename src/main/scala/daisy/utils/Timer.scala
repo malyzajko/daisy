@@ -24,6 +24,10 @@ class Timer {
     "%6d ms".format(end - beginning)
   }
 
+  def millisNow: Long = {
+    (System.currentTimeMillis - beginning)
+  }
+
 }
 
 

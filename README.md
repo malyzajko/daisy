@@ -2,9 +2,13 @@
 
 <img src="https://people.mpi-sws.org/~eva/daisy_logo.jpg" width="150">
 
-Daisy now also has an online interface: http://daisy.mpi-sws.org/.
+## News
 
-It's a brand new feature, so please be patient while we work out all the kinks.
+  * Daisy now has [documentation](doc/documentation.md)!
+
+  * Mixed-precision tuning is now available through the `--mixed-tuning` flag!
+
+  * Daisy now also has an online interface: http://daisy.mpi-sws.org/! It's a brand new feature, so please be patient while we work out all the kinks.
 
 ## First steps
 

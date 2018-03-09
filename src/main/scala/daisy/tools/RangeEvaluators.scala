@@ -9,11 +9,6 @@ import lang.Identifiers._
 
 trait RangeEvaluators {
 
-  // TODO: this function probably subsumes other evaluators, probably remove them?
-  //       assert stmt that precision map cannot mix floats and fps
-  // regression tests for mixed-precision and rewriting (separately)
-  // TODO: fix fixed-point arithmetic code generation
-
   /**
    * Evaluates the range of this expression using the given RangeArithmetic
    * and saves the intermediate ranges in a map.

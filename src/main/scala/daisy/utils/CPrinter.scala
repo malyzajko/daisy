@@ -35,7 +35,7 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
           case _ => sb.append(";")
         }
 
-      case Downcast(expr, t) =>
+      case Cast(expr, t) =>
         sb.append("(")
         pp(t,p)
         sb.append(") (")

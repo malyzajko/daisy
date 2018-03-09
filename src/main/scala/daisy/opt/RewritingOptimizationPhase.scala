@@ -18,103 +18,76 @@ import FinitePrecision._
     - SpecsProcessingPhase
  */
 object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] with RewritingOps with
-  RoundoffEvaluators with DynamicEvaluators {
+  opt.CostFunctions with RoundoffEvaluators with DynamicEvaluators {
 
   override val name = "Rewriting-Optimization"
   override val shortName = "rewriting"
   override val description = "Optimization by rewriting"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
-    NumOption(
-      "rewrite-generations",
-      30,
-      "Number of generations to search for"),
-    NumOption(
-      "rewrite-population-size",
-      30,
-      "Size of the population for genetic search"),
-    //    ChoiceOption(
-    //      "rewrite-fitness-fnc",
-    //      Map("interval-affine" -> uniformRoundoffApprox_IA_AA(_, _, _, uniformPrecision)._1,
-    //           "affine-affine" -> uniformRoundoff_AA_AA(_, _, _, uniformPrecision)._1,
-    //           "smt-affine", -> uniformRoundoff_SMT_AA(_, _, _, uniformPrecision)._1,
-    //           "dynamic-256" -> (e: Expr, in: Map[Identifier, Interval], err: Map[Identifier, Rational]) =>
-    //              errorDynamicWithInputRoundoff(e, in, 256)),
-    //      "interval-affine",
-    //      "Fitness function to be used during search"),
-    FlagOption(
-      "rewrite-baseline",
-      "Compute baseline errors dynamically (expensive!)"),
-    // this could be just one option: rewrite-seed and allow the option 'systemmillis'
-    NumOption(
-      "rewrite-custom-seed", // pseudo argument "rewrite-seed"
-      4781,
-      "Seed to use for random number generator. 0 for System.currentTimeMillis()")
+    NumOption("rewrite-generations",      30,   "Number of generations to search for"),
+    NumOption("rewrite-population",  30,   "Size of the population for genetic search"),
+    NumOption("rewrite-seed",              0,   "Seed to use for random number generator." +
+      "If not set or 0, will use System.currentTimeMillis()"),
+    StringChoiceOption("rewrite-fitness-fnc", Set("interval-affine", "affine-affine", "dynamic"),
+      "interval-affine", "Fitness function to be used for rewriting")
   )
 
   implicit val debugSection = DebugSectionOptimization
 
   var reporter: Reporter = null
 
-  val baselineDynamicSamples = 100000
-  // ridiculously high value to signify that an expression is VERY bad,
-  // e.g. due to division by zero
+  // ridiculously high value to signify that an expression is VERY bad, e.g. due to division by zero
   val fitnessOnFail = Rational(1000)
 
-  val activeRules = commRules ++ assocRules ++ distRules ++ idReduceRules ++
-    fracTransRules ++ fracDistRules
+  val activeRules = COMMUTATIVITY ++ ASSOCIATIVITY ++ DISTRIBUTIVITY ++ List(IDENTITIES) ++
+    FRACTIONS_TRANSFORM ++ FRACTIONS_DISTRIBUTE
 
-  var seed = System.currentTimeMillis()
-  var rand = new Random(seed)
+  var seed: Long = 0l
+  var rand: Random = null
+
+  var optimizeForAccuracy = true
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     reporter = ctx.reporter
     maxGenerations = ctx.option[Long]("rewrite-generations").toInt
-    populationSize = ctx.option[Long]("rewrite-population-size").toInt
-
-    val uniformPrecision: Precision = ctx.option[Precision]("precision")
-
-    // Affine arithmetic for ranges is needed to make this work for jetEngine
-    val fitnessFunction: (Expr, Map[Identifier, Interval], Map[Identifier, Rational]) => Rational =
-      uniformRoundoff_IA_AA(_, _, _, uniformPrecision, true, true)._1
-    val fitnessFunctionName = "interval-affine"
-
-    val seed = if (ctx.option[Long]("rewrite-custom-seed") == 0) {
+    populationSize = ctx.option[Long]("rewrite-population").toInt
+    seed = if (ctx.option[Long]("rewrite-seed") == 0) {
       System.currentTimeMillis()
     } else {
-      ctx.option[Long]("rewrite-custom-seed")
+      ctx.option[Long]("rewrite-seed")
     }
-    rand = new Random(seed)
+    val uniformPrecision: Precision = ctx.option[Precision]("precision")
+
+    optimizeForAccuracy = !ctx.hasFlag("mixed-tuning")
+
+    // Affine arithmetic for ranges is needed to make this work for jetEngine
+    val fitnessFunctionName = ctx.option[String]("rewrite-fitness-fnc")
+    val fitnessFunction: (Expr, Map[Identifier, Interval], Map[Identifier, Rational]) => Rational =
+      fitnessFunctionName match {
+      case "interval-affine" =>
+        uniformRoundoff_IA_AA(_, _, _, uniformPrecision, true, true)._1
+      case "affine-affine" =>
+        uniformRoundoff_AA_AA(_, _, _, uniformPrecision, true, true)._1
+      case "dynamic" =>
+        (e: Expr, in: Map[Identifier, Interval], err: Map[Identifier, Rational]) =>
+          errorDynamicWithInputRoundoff(e, in, 256)
+    }
 
     val infoString = s"fitness function: $fitnessFunctionName, # generations: $maxGenerations, " +
       s"population size: $populationSize, seed: $seed"
     ctx.reporter.info(infoString)
 
 
-
     val newDefs = transformConsideredFunctions(ctx, prg){ fnc =>
-
       ctx.reporter.info(s"\nGoing to rewrite ${fnc.id}")
 
-      val allIDs = fnc.params.map(_.id)
-      val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
+      val inputValMap = ctx.specInputRanges(fnc.id)
+      val inputErrors = ctx.specInputErrors(fnc.id)
 
-      val inputErrors = allIDs.map {
-        id => (id -> uniformPrecision.absRoundoff(inputValMap(id)))
-      }.toMap
-
-      val newBody = rewriteExpression(fnc.body.get, fitnessFunction, inputValMap, inputErrors)
+      val newBody = rewriteExpression(fnc.body.get, fitnessFunction(_, inputValMap, inputErrors))
 
       ctx.reporter.info("error after: " + fitnessFunction(newBody, inputValMap, inputErrors))
       ctx.reporter.debug("expr after: " + newBody)
-
-      if(ctx.hasFlag("rewrite-baseline")) {
-        val dynamicErrorBefore = errorDynamicWithInputRoundoff(fnc.body.get, inputValMap, baselineDynamicSamples)
-        val dynamicErrorAfter = errorDynamicWithInputRoundoff(newBody, inputValMap, baselineDynamicSamples)
-        ctx.reporter.info(s"dynamic error before: $dynamicErrorBefore, after: $dynamicErrorAfter")
-
-        val improvement = (dynamicErrorBefore - dynamicErrorAfter) / dynamicErrorBefore
-        ctx.reporter.info(s"improvement: $improvement")
-      }
 
       fnc.copy(body = Some(newBody))
     }
@@ -123,16 +96,15 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
   }
 
   // refactor as we need to call this several times
-  def rewriteExpression(initExpr: Expr,
-    roundoffFunction: (Expr, Map[Identifier, Interval], Map[Identifier, Rational]) => Rational,
-    inputValMap: Map[Identifier, Interval],
-    inputErrors: Map[Identifier, Rational]): Expr = {
+  def rewriteExpression(initExpr: Expr, roundoffFunction: (Expr) => Rational): Expr = {
 
-    val fitnessBefore = roundoffFunction(initExpr, inputValMap, inputErrors)
+    val fitnessBefore = roundoffFunction(initExpr)
     reporter.info(s"error before: $fitnessBefore")
     reporter.debug("expr before: " + initExpr)
 
-    var bestErrorExpr = initExpr
+    val costBefore = countOps(initExpr)
+
+    var bestCostExpr = initExpr
     var bestError = fitnessBefore
 
     rand = new Random(seed)  // reset generator to obtain deterministic search
@@ -142,22 +114,28 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
     val (bestExprFound, _) = runGenetic(initExpr,
       (e: Expr) => {
         try {
-          val fitness = roundoffFunction(e, inputValMap, inputErrors)
+          val fitness = roundoffFunction(e)
 
           // saves the expression with smallest error, which does not increase the initial cost
-          if (fitness < bestError) {
-            bestErrorExpr = e
+          if (fitness < bestError && countOps(e) <= costBefore) {
+            bestCostExpr = e
             bestError = fitness
           }
 
           fitness
         } catch {
-          case e: daisy.tools.DivisionByZeroException =>
-            fitnessOnFail
+          case _: DivisionByZeroException |
+               _: NonPositiveLogException |
+               _: NegativeSqrtException => fitnessOnFail
+
         }
       })
 
-    bestExprFound
+    if (optimizeForAccuracy) {
+      bestExprFound
+    } else {// instead of the most accurate, choose the one with least cost
+      bestCostExpr
+    }
   }
 
   def mutate(expr: Expr): Expr = _mutate(expr, rand.nextInt(sizeWithoutTerminals(expr)), activeRules)

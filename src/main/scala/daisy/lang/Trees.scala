@@ -9,7 +9,7 @@ import TypeOps._
 import Types._
 import utils.{Positioned, PrettyPrinter}
 import Identifiers._
-import tools.FinitePrecision.Precision
+import tools.FinitePrecision._
 import tools.Rational
 
 object Trees {
@@ -281,7 +281,7 @@ object Trees {
     val getType = FinitePrecisionType(prec)
   }
 
-  case class Downcast(expr: Expr, newType: TypeTree) extends Expr {
+  case class Cast(expr: Expr, newType: TypeTree) extends Expr {
     val getType = newType
   }
 

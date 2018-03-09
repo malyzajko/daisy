@@ -9,6 +9,7 @@ import scala.collection.mutable.ArrayBuffer
 abstract class Reporter(val debugSections: Set[DebugSection], silent: Boolean, val report: ArrayBuffer[String] = new ArrayBuffer[String]) {
 
   abstract class Severity
+  case object RESULT  extends Severity
   case object INFO    extends Severity
   case object WARNING extends Severity
   case object ERROR   extends Severity
@@ -49,8 +50,6 @@ abstract class Reporter(val debugSections: Set[DebugSection], silent: Boolean, v
       emit(account(Message(INFO, pos, msg)))
     }
   }
-
-  //final def info(pos: Position, msg: Any): Unit    = emit(account(Message(INFO, pos, msg)))
   final def warning(pos: Position, msg: Any): Unit = emit(account(Message(WARNING, pos, msg)))
   final def error(pos: Position, msg: Any): Unit   = emit(account(Message(ERROR, pos, msg)))
   final def title(pos: Position, msg: Any): Unit   = emit(account(Message(INFO, pos,
@@ -211,7 +210,7 @@ class DefaultReporter(debugSections: Set[DebugSection], silent: Boolean = false,
 
 }
 
-class PlainTextReporter(debugSections: Set[DebugSection]) extends DefaultReporter(debugSections) {
+class PlainTextReporter(debugSections: Set[DebugSection], silent: Boolean) extends DefaultReporter(debugSections, silent) {
   override protected def severityToPrefix(sev: Severity): String = sev match {
     case ERROR    => "[ Error  ]"
     case WARNING  => "[Warning ]"

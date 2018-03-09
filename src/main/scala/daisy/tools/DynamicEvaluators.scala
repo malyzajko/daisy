@@ -145,6 +145,59 @@ trait DynamicEvaluators {
 
   }
 
+  /**
+    * Estimates the (roundoff) error of an expression dynamically
+    * by executing the finite-precision computation side-by-side with a higher-
+    * precision one in MPFR.
+    * In this version roundoff errors on inputs are considered by converting
+    * a double-valued sample into a String and considering that string as the
+    * 'baseline'. If you don't want roundoff errors, use the other errorDynamic
+    * function.
+    *
+    * @param expr expression whose error is to be calculated
+    * @param inputValMap map from variable identifier to its input interval
+    * @param dynamicSamples how many samples to use
+    */
+  def generalErrorDynamicWithInputRoundoff(
+    expr: Expr,
+    inputValMap: Map[Identifier, Interval],
+    dynamicSamples: Int = dynamicSamplesDefault): ErrorMeasurerMPFR = {
+
+    val inputRanges: Map[Identifier, Interval] = inputValMap.map({
+      case (id, i) =>
+        (id, Interval(i.mid - inputRangeFactor * i.radius,
+          i.mid + inputRangeFactor * i.radius))
+    })
+
+    val sampler = new Uniform(inputRanges, 485793)  //no seed = System millis
+    val measurer = new ErrorMeasurerMPFR()
+    //var currentAvrgAbsMPFR = measurer.avrgError
+    //var currentAvrgAbs: Double = measurer.maxAvrgError.doubleValue
+
+    var i = 0
+    while (i < dynamicSamples) {
+      i = i + 1
+      // roundoff errors on inputs
+      val dblInputs: Map[Identifier, Double] = sampler.next
+      val mpfrInputs: Map[Identifier, MPFRFloat] = dblInputs.map({
+        case (x, d) => (x -> MPFRFloat.fromString(d.toString))
+      })
+
+      val dblOutput: Double = evalDouble(expr, dblInputs)
+      val mpfrOutput: MPFRFloat = evalMPFR(expr, mpfrInputs)
+
+      measurer.nextValues(dblOutput, mpfrOutput)
+
+      //currentAvrgAbsMPFR = measurer.maxAbsError
+      //currentAvrgAbs = measurer.maxAbsError.doubleValue
+
+    }
+    //Rational.fromString(measurer.maxAbsError.toString())
+
+    // and then get whichever measure you need
+    measurer
+  }
+
   def evalRational(expr: Expr, _valMap: Map[Identifier, Rational]): Rational = {
     var valMap = _valMap
 

@@ -90,7 +90,14 @@ object Main {
         The file can also only give a partial precision map."""),
     FlagOption(
       "denormals",
-      "Include parameter for denormals in the FP abstraction (for optimization-based approach only).")
+      "Include parameter for denormals in the FP abstraction (for optimization-based approach only)."),
+
+    FlagOption("rewrite-fitness-eval", "Generate expressions and analyze errors for various fitness functions"),
+    FlagOption("rewrite-stability-experiment", "Run rewriting stability experiment."),
+    FlagOption("mixed-cost-eval", "Mixed-precision cost function evaluation experiment"),
+    FlagOption("mixed-exp-gen", "Mixed-precision experiment generation"),
+
+    FlagOption("mixed-tuning", "Perform mixed-precision tuning")
   )
 
   lazy val allPhases: Set[DaisyPhase] = Set(
@@ -105,8 +112,14 @@ object Main {
     transform.TACTransformerPhase,
     analysis.DynamicPhase,
     opt.RewritingOptimizationPhase,
+    transform.ConstantTransformerPhase,
+    opt.MixedPrecisionOptimizationPhase,
+    experiment.RewritingFitnessEvaluation,
+    experiment.MixedPrecisionExperimentGenerationPhase,
+    experiment.CostFunctionEvaluationExperiment,
     backend.InfoPhase,
-    frontend.ExtractionPhase)
+    frontend.ExtractionPhase
+  )
 
   // all available options from all phases
   private val allOptions: Set[CmdLineOption[Any]] =
@@ -168,7 +181,32 @@ object Main {
     if (ctx.hasFlag("dynamic")) {
       pipeline >>= analysis.DynamicPhase
       pipeline >>= backend.InfoPhase
+
+    } else if (ctx.hasFlag("rewrite-fitness-eval")) {
+      pipeline >>= experiment.RewritingFitnessEvaluation
+
+    // } else if (ctx.hasFlag("rewrite-stability-experiment")) {
+    //   pipeline >>= experiment.RewritingStabilityExperiment
+
+    } else if (ctx.hasFlag("mixed-cost-eval")) {
+      pipeline >>= transform.TACTransformerPhase >>
+        transform.ConstantTransformerPhase >>
+        analysis.RangePhase >>
+        experiment.CostFunctionEvaluationExperiment
+
+    } else if (ctx.hasFlag("mixed-exp-gen")) {
+      pipeline >>= experiment.MixedPrecisionExperimentGenerationPhase
+
+    } else if (ctx.hasFlag("mixed-tuning")) {
+      pipeline >>= transform.TACTransformerPhase >>
+        transform.ConstantTransformerPhase >>
+        analysis.RangePhase >>
+        opt.MixedPrecisionOptimizationPhase >>
+        backend.InfoPhase >>
+        backend.CodeGenerationPhase
+
     } else {
+      // Standard static analyses
       if (ctx.hasFlag("three-address") || (ctx.fixedPoint && ctx.hasFlag("codegen"))) {
         pipeline >>= transform.TACTransformerPhase
       }

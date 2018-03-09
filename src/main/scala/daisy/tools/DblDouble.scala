@@ -6,7 +6,9 @@ package tools
 import scala.math.ScalaNumber
 
 import scala.language.implicitConversions
+import scala.annotation.strictfp
 
+@strictfp
 object DblDouble {
 
   implicit def int2DblDouble(i: Int): DblDouble = new DblDouble(i.toDouble)
@@ -39,6 +41,7 @@ object DblDouble {
  * Implementation is according to M. Davis. DblDouble.java.
  * http://tsusiatsoftware.net/dd/main.html.
  */
+@strictfp
 class DblDouble(val hi: Double, val lo: Double) extends ScalaNumber with Ordered[DblDouble] {
   import DblDouble._
 

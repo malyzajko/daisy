@@ -234,6 +234,9 @@ object TreeOps {
     case _ => false
   }
 
+  /**
+    * Returns size of the tree, counting the operators and the terminal nodes
+    */
   def size(e: Expr): Int = e match {
     case Operator(es, _) =>
       es.map(size).sum + 1

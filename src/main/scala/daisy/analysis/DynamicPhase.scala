@@ -8,7 +8,6 @@ import java.io.BufferedWriter
 
 import lang.Trees._
 import tools.{Rational, Interval, MPFRFloat, DynamicEvaluators}
-import Rational._
 import lang.Identifiers._
 import Sampler._
 

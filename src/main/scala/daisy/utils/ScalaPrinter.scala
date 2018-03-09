@@ -8,7 +8,9 @@ import lang.Trees._
 import lang.Types._
 import tools.FinitePrecision.{DoubleDouble, Float32, Float64}
 
-class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
+
+class ScalaPrinter(buffer: Appendable, ctx: Context,
+  val generateDaisyInput: Boolean = false, val importString: String = "") extends CodePrinter(buffer) {
 
   override val mathPrefix: String = "Math."
 
@@ -27,12 +29,26 @@ class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer)
         nl(lvl)
         pp(e, p)(lvl)
 
-      case Downcast(expr, FinitePrecisionType(Float32)) => ppUnary(expr, "", ".toFloat")
-      case Downcast(expr, FinitePrecisionType(Float64)) => ppUnary(expr, "", ".toDouble")
-      case Downcast(expr, FinitePrecisionType(DoubleDouble)) => ppUnary(expr, "DblDouble(", ")")
+      case Sqrt(x) => if (generateDaisyInput || x.getType == FinitePrecisionType(DoubleDouble)) {
+        ppUnary(x, "sqrt(", ")")
+      } else {
+        ppUnary(x, "math.sqrt(", ")")
+      }
+
+      case FinitePrecisionType(DoubleDouble) => sb.append("DblDouble")
+
+      case Cast(expr, FinitePrecisionType(Float32)) => ppUnary(expr, "", ".toFloat")
+      case Cast(expr, FinitePrecisionType(Float64)) => ppUnary(expr, "", ".toDouble")
+      case Cast(expr, FinitePrecisionType(DoubleDouble)) => ppUnary(expr, "DblDouble(", ")")
+      case Cast(expr, Int32Type) => ppUnary(expr, "", ".toInt")
+      case Cast(expr, Int64Type) => ppUnary(expr, "", ".toLong")
 
       case Program(id, defs) =>
         assert(lvl == 0)
+        sb.append("import scala.annotation.strictfp\n")
+        sb.append(importString)
+        nl(lvl)
+        sb.append("@strictfp\n")
         sb.append("object ")
         pp(id, p)
         sb.append(" {\n")
@@ -60,23 +76,27 @@ class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer)
         sb.append("}\n")
 
       case fd: FunDef =>
-        fd.precondition.foreach{ prec => {
-          ind
-          sb.append("/* ")
-          sb.append("@pre: ")
-          pp(prec, p)(lvl)
-          sb.append(" */")
-          sb.append("\n")
-        }}
+        if (!generateDaisyInput){
+          fd.precondition.foreach{ prec => {
+            ind
+            sb.append("/* ")
+            sb.append("@pre: ")
+            pp(prec, p)(lvl)
+            sb.append(" */")
+            sb.append("\n")
+          }}
 
-        fd.postcondition.foreach{ post => {
-          ind
-          sb.append("/* ")
-          sb.append("@post: ")
-          pp(post, p)(lvl)
-          sb.append(" */")
-          sb.append("\n")
-        }}
+          fd.postcondition.foreach{ post => {
+            ind
+            sb.append("/* ")
+            sb.append("@post: ")
+            pp(post, p)(lvl)
+            sb.append(" */")
+            sb.append("\n")
+          }}
+        }
+
+        nl(lvl)
 
         ind
         sb.append("def ")
@@ -99,7 +119,15 @@ class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer)
         sb.append("): ")
         pp(fd.returnType, p)
         sb.append(" = {")
-        nl(lvl + 1)
+        nl(lvl+1)
+        if (generateDaisyInput){
+          sb.append("require(")
+          fd.precondition.foreach{ prec => {
+            pp(prec, p)(lvl)
+          }}
+          sb.append(")")
+          nl(lvl+1)
+        }
         fd.body match {
           case Some(body) =>
             pp(body, p)(lvl + 1)
@@ -112,12 +140,24 @@ class ScalaPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer)
         if (ctx.resultRealRanges.get(fd.id).isDefined) {
           sb.append(s" // ${ctx.resultRealRanges(fd.id)} +/- ${ctx.resultAbsoluteErrors(fd.id)}")
         }
+        if (generateDaisyInput){
+          sb.append(" ensuring(")
+          fd.postcondition.foreach{ post => {
+            pp(post, p)(lvl)
+          }}
+          sb.append(")")
+        }
         nl(lvl - 1)
         nl(lvl - 1)
 
 
       case _ => super.pp(tree, parent)
     }
+  }
+
+  private def getLastExpression(e: Expr): Expr = e match {
+    case Let(_, _, body) => getLastExpression(body)
+    case _ => e
   }
 
 }

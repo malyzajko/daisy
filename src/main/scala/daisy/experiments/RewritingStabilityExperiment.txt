@@ -1,0 +1,378 @@
+
+
+package daisy
+package experiment
+
+import scala.collection.immutable.Seq
+import java.io.FileWriter
+import java.io.BufferedWriter
+
+import lang.Trees.{Program, Expr, Terminal}
+import search.GeneticSearch
+import tools._
+import lang.Identifiers._
+import FinitePrecision._
+
+import lang.TreeOps._
+import util.Random
+
+/**
+
+  Prerequisites:
+    -
+ */
+object RewritingStabilityExperiment extends DaisyPhase with search.GeneticSearch[Expr] with opt.RewritingOps with
+  opt.CostFunctions with RoundoffEvaluatorsApprox with DynamicEvaluators {
+
+  override val name = "rewriting-stability-exp"
+  override val description = "experiment for evaluating the stability of rewriting"
+  override val definedOptions: Set[CmdLineOptionDef[Any]] = Set(
+    ParamOptionDef("rewrite-log", "log data from rewriting phase to file, " +
+      "file will be created in rawdata/", ""),
+    // this could be just one option: rewrite-seed and allow the option 'systemmillis'
+    FlagOptionDef("rewrite-seed-system-millis", "Use the system time for random seed"),
+    ParamOptionDef("rewrite-custom-seed", "Use the given seed" ,"4781"),
+
+    FlagOptionDef("rewrite-for-accuracy", "Rewrites to improve accuracy as primary goal." +
+      "Default is performance, i.e. will choose smallest expression which has smaller error than original.")
+
+    )
+
+  implicit val debugSection = DebugSectionExperiment
+  override var reporter: Reporter = null
+
+  var seed: Long = 4781l //System.currentTimeMillis //1469010147126l
+  var rand: Random = null
+  // ridiculously high value to signify that an expression is VERY bad,
+  // e.g. due to division by zero
+  val fitnessOnFail = Rational(1000)
+
+  val uniformPrecision = Float64
+
+  val activeRules = commRules ++ assocRules ++ distRules ++ idReduceRules ++
+    fracTransRules ++ fracDistRules
+
+  var optimizeForAccuracy = false
+
+  override def run(ctx: Context, prg: Program): (Context, Program) = {
+    reporter = ctx.reporter
+    reporter.info(s"\nStarting $name")
+    val timer = ctx.timers.rewriting.start
+
+    var fitnessFunction: (Expr, Map[Identifier, Interval], Map[Identifier, Rational]) => Rational =
+      uniformRoundoffCheated_IA_AA(_, _, _, uniformPrecision)._1
+    var fitnessFunctionName = "interval-affine"
+
+    var fixedPoint = false
+
+    var logFile: BufferedWriter = null
+
+    /* Process relevant options */
+    for (opt <- ctx.options) opt match {
+      case ParamOption("rewrite-log", file) if file != "" =>
+        logFile = new BufferedWriter(new FileWriter("rawdata/" + file))
+
+      case FlagOption("rewrite-seed-system-millis") =>
+        seed = System.currentTimeMillis
+
+      case ParamOption("rewrite-custom-seed", value) =>
+        seed = value.toLong
+
+      case FlagOption("rewrite-for-accuracy") =>
+        optimizeForAccuracy = true
+
+      case _ => ;
+    }
+
+    val infoString = s"fitness function: $fitnessFunctionName, # generations: $maxGenerations, " +
+      s"population size: $populationSize, seed: $seed"
+    reporter.info(infoString)
+
+    for (fnc <- prg.defs if (!fnc.precondition.isEmpty && !fnc.body.isEmpty)) {
+
+      reporter.info(s"\nGoing to rewrite ${fnc.id}")
+      reporter.info("expr before: " + fnc.body.get)
+      countUnmodified = 0
+
+      val allIDs = fnc.params.map(_.id)
+      val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
+
+      var inputErrors = allIDs.map {
+          id => (id -> uniformPrecision.absRoundoff(inputValMap(id)))
+        }.toMap
+
+      // 'optimization' which does rewriting wrt. DoubleDouble when the target error
+      // smaller than double floats
+      // ctx.specResultErrorBounds.get(fnc.id) match {
+      //   case Some(targetError) =>
+      //     // check if we can satisfy the error bound with Float64 (the default uniform fitness function)
+      //     val bodyRoundoffDefault = fitnessFunction(fnc.body.get, inputValMap, inputErrors)
+      //     //println("roundoff default: " + bodyRoundoffDefault)
+      //     if (bodyRoundoffDefault > targetError) {  // add wiggle room?
+      //       reporter.info("** using DoubleDouble fitness function **")
+      //       // cannot satisfy, so chances are some DoubleDouble will be needed
+      //       // so perform the rewriting wrt. DoubleDouble
+      //       fitnessFunction = uniformRoundoffCheated_IA_AA(_, _, _, DoubleDouble)._1
+      //       inputErrors = allIDs.map {
+      //         id => (id -> DoubleDouble.absRoundoffCheated(inputValMap(id)))
+      //       }.toMap
+      //     }
+      //   case None => ;
+      // }
+
+      val randStabilityExperiment = new Random(System.currentTimeMillis)
+
+      // **************   FIXED-POINT  ****************
+      if (fixedPoint) {
+        val inputErrorsFixed16 = allIDs.map {
+          id => (id -> Fixed(16).absRoundoff(inputValMap(id)))
+        }.toMap
+        val newBodyFixed16 = rewriteExpression(
+          fnc.body.get, uniformRoundoffCheated_IA_AA(_, _, _, Fixed(16))._1, inputValMap, inputErrorsFixed16)
+        reporter.info("newBodyFixed16: " + newBodyFixed16)
+
+        val inputErrorsFixed32 = allIDs.map {
+          id => (id -> Fixed(32).absRoundoffCheated(inputValMap(id)))
+        }.toMap
+        val newBodyFixed32 = rewriteExpression(
+          fnc.body.get, uniformRoundoffCheated_IA_AA(_, _, _, Fixed(32))._1, inputValMap, inputErrorsFixed32)
+        reporter.info("newBodyFixed32:  " + newBodyFixed32)
+
+        val availablePrecisions = List(Fixed(16), Fixed(32))
+        val possibleTpeAssignments = getAllTypeAssignments(allVariablesOf(fnc.body.get).toList, availablePrecisions)
+        val tpeAssignments = randStabilityExperiment.shuffle(possibleTpeAssignments).take(50)
+
+        var stats = Map("f16-ident" -> 0, "f16-close5" -> 0, "f16-close10" -> 0,
+          "f32-ident" -> 0,  "f32-close5" -> 0, "f32-close10" -> 0, "worse-than-orig" -> 0 // count error getting worse
+        )
+
+        for (randomPrecMap <- tpeAssignments) {
+
+          val fitnessFunctionMixed: (Expr, Map[Identifier, Interval], Map[Identifier, Rational]) => Rational =
+            mixedRoundoff_IA_AA(_, _, _, randomPrecMap)._1
+
+          val inputErrorsMixed = allIDs.map {
+            id => (id -> randomPrecMap(id).absRoundoffCheated(inputValMap(id)))
+          }.toMap
+
+          val mixedNewBody = rewriteExpression(fnc.body.get,
+            fitnessFunctionMixed, inputValMap, inputErrorsMixed)
+
+          val fixed16ExprWithMixedError = fitnessFunctionMixed(newBodyFixed16, inputValMap, inputErrorsMixed)
+          val fixed32ExprWithMixedError = fitnessFunctionMixed(newBodyFixed32, inputValMap, inputErrorsMixed)
+          val mixedExprWithMixedError = fitnessFunctionMixed(mixedNewBody, inputValMap, inputErrorsMixed)
+
+          if(mixedExprWithMixedError == fixed16ExprWithMixedError) stats = stats + ("f16-ident" -> (stats("f16-ident") + 1))
+          else if(close(mixedExprWithMixedError, fixed16ExprWithMixedError, Rational.fromReal(0.05))) stats = stats + ("f16-close5" -> (stats("f16-close5") + 1))
+          else if(close(mixedExprWithMixedError, fixed16ExprWithMixedError, Rational.fromReal(0.1))) stats = stats + ("f16-close10" -> (stats("f16-close10") + 1))
+
+          if(mixedExprWithMixedError == fixed32ExprWithMixedError) stats = stats + ("f32-ident" -> (stats("f32-ident") + 1))
+          else if(close(mixedExprWithMixedError, fixed32ExprWithMixedError, Rational.fromReal(0.05))) stats = stats + ("f32-close5" -> (stats("f32-close5") + 1))
+          else if(close(mixedExprWithMixedError, fixed32ExprWithMixedError, Rational.fromReal(0.1))) stats = stats + ("f32-close10" -> (stats("f32-close10") + 1))
+
+
+          // find out when the errors get worse than the original
+          val originalExprWithMixedError = fitnessFunctionMixed(fnc.body.get, inputValMap, inputErrorsMixed)
+          reporter.warning("original expr mixed error: " + originalExprWithMixedError)
+          if (originalExprWithMixedError < mixedExprWithMixedError) stats = stats + ("worse-than-orig" -> (stats("worse-than-orig") + 1))
+        }
+
+        reporter.warning("stats, for total number of type assignments: " + tpeAssignments.size)
+        reporter.warning(stats.mkString("\n"))
+
+        // **************   FLOATING-POINT  ****************
+      } else {
+        // try rewriting in uniform Float32
+        val inputErrorsFloat32 = allIDs.map {
+          id => (id -> Float32.absRoundoff(inputValMap(id)))
+        }.toMap
+        val newBodyFloat32 = rewriteExpression(
+          fnc.body.get, uniformRoundoffCheated_IA_AA(_, _, _, Float32)._1, inputValMap, inputErrorsFloat32)
+        reporter.info("newBodyFloat32: " + newBodyFloat32)
+
+        // try rewriting in uniform Float64
+        val inputErrorsFloat64 = allIDs.map {
+          id => (id -> Float64.absRoundoff(inputValMap(id)))
+        }.toMap
+        val newBodyFloat64 = rewriteExpression(
+          fnc.body.get, uniformRoundoffCheated_IA_AA(_, _, _, Float64)._1, inputValMap, inputErrorsFloat64)
+        reporter.info("newBodyFloat64: " + newBodyFloat64)
+
+        // try rewriting in uniform DoubleDouble
+        val inputErrorsDblDbl = allIDs.map {
+          id => (id -> DoubleDouble.absRoundoffCheated(inputValMap(id)))
+        }.toMap
+        val newBodyDblDbl = rewriteExpression(
+          fnc.body.get, uniformRoundoffCheated_IA_AA(_, _, _, DoubleDouble)._1, inputValMap, inputErrorsDblDbl)
+        reporter.info("newBodyDblDbl:  " + newBodyDblDbl)
+
+        val availablePrecisions = List(Float32, Float64, DoubleDouble)
+        val possibleTpeAssignments = getAllTypeAssignments(allVariablesOf(fnc.body.get).toList, availablePrecisions)
+        val tpeAssignments = randStabilityExperiment.shuffle(possibleTpeAssignments).take(50)
+
+        var stats = Map("32-ident" -> 0, "32-close5" -> 0, "32-close10" -> 0,
+          "64-ident" -> 0, "64-close5" -> 0, "64-close10" -> 0, "dbl-ident"-> 0,
+          "dbl-close5"-> 0, "dbl-close10"-> 0, "worse-than-orig" -> 0 // count error getting worse
+        )
+
+        for (randomPrecMap <- tpeAssignments) {
+
+          val fitnessFunctionMixed: (Expr, Map[Identifier, Interval], Map[Identifier, Rational]) => Rational =
+            mixedRoundoff_IA_AA(_, _, _, randomPrecMap)._1
+
+          val inputErrorsMixed = allIDs.map {
+            id => (id -> randomPrecMap(id).absRoundoffCheated(inputValMap(id)))
+          }.toMap
+
+          val mixedNewBody = rewriteExpression(fnc.body.get,
+            fitnessFunctionMixed, inputValMap, inputErrorsMixed)
+
+          // compute error of Float64 rewrite with mixed-random
+          val float32ExprWithMixedError = fitnessFunctionMixed(newBodyFloat32, inputValMap, inputErrorsMixed)
+          val float64ExprWithMixedError = fitnessFunctionMixed(newBodyFloat64, inputValMap, inputErrorsMixed)
+          val dbldblExprWithMixedError = fitnessFunctionMixed(newBodyDblDbl, inputValMap, inputErrorsMixed)
+          val mixedExprWithMixedError = fitnessFunctionMixed(mixedNewBody, inputValMap, inputErrorsMixed)
+
+          reporter.warning("Float32 rewritten expr mixed error: " + float32ExprWithMixedError)
+          reporter.warning("Float64 rewritten expr mixed error: " + float64ExprWithMixedError)
+          reporter.warning("DblDbl  rewritten expr mixed error: " + dbldblExprWithMixedError)
+          reporter.warning("Mixed rewritten expr mixed error:   " + mixedExprWithMixedError)
+
+          if(mixedExprWithMixedError == float32ExprWithMixedError) stats = stats + ("32-ident" -> (stats("32-ident") + 1))
+          else if(close(mixedExprWithMixedError, float32ExprWithMixedError, Rational.fromReal(0.05))) stats = stats + ("32-close5" -> (stats("32-close5") + 1))
+          else if(close(mixedExprWithMixedError, float32ExprWithMixedError, Rational.fromReal(0.1))) stats = stats + ("32-close10" -> (stats("32-close10") + 1))
+
+          if(mixedExprWithMixedError == float64ExprWithMixedError) stats = stats + ("64-ident" -> (stats("64-ident") + 1))
+          else if(close(mixedExprWithMixedError, float64ExprWithMixedError, Rational.fromReal(0.05))) stats = stats + ("64-close5" -> (stats("64-close5") + 1))
+          else if(close(mixedExprWithMixedError, float64ExprWithMixedError, Rational.fromReal(0.1))) stats = stats + ("64-close10" -> (stats("64-close10") + 1))
+
+          if(mixedExprWithMixedError == dbldblExprWithMixedError) stats = stats + ("dbl-ident" -> (stats("dbl-ident") + 1))
+          else if(close(mixedExprWithMixedError, dbldblExprWithMixedError, Rational.fromReal(0.05))) stats = stats + ("dbl-close5" -> (stats("dbl-close5") + 1))
+          else if(close(mixedExprWithMixedError, dbldblExprWithMixedError, Rational.fromReal(0.1))) stats = stats + ("dbl-close10" -> (stats("dbl-close10") + 1))
+
+
+          // find out when the errors get worse than the original
+          val originalExprWithMixedError = fitnessFunctionMixed(fnc.body.get, inputValMap, inputErrorsMixed)
+          reporter.warning("original expr mixed error: " + originalExprWithMixedError)
+          if (originalExprWithMixedError < mixedExprWithMixedError) stats = stats + ("worse-than-orig" -> (stats("worse-than-orig") + 1))
+        }
+
+        reporter.warning("stats, for total number of type assignments: " + tpeAssignments.size)
+        reporter.warning(stats.mkString("\n"))
+
+      }
+
+      fnc
+
+    }
+
+
+    timer.stop
+    if (logFile != null) { logFile.close }
+    ctx.reporter.info(s"Finished $name")
+    (ctx, prg)
+  }
+
+  // two errors are close if they are within 1% of each other
+  def close(opt: Rational, e2: Rational, factor: Rational): Boolean = {
+    val diff = Rational.abs(opt - e2)
+    (diff / opt) <= factor
+  }
+
+  def getAllTypeAssignments(ids: Seq[Identifier], availablePrec: List[Precision]):
+    List[Map[Identifier, Precision]] = {
+      if (ids.isEmpty) {
+        List(Map[Identifier, Precision]())
+      } else {
+        val headID = ids.head
+        val remainingIDs = ids.tail
+
+        getAllTypeAssignments(remainingIDs, availablePrec).flatMap(mp =>
+          availablePrec.map(prec => mp + (headID -> prec))
+          )
+      }
+  }
+
+  // refactor as we need to call this several times
+  def rewriteExpression(initExpr: Expr,
+    roundoffFunction: (Expr, Map[Identifier, Interval], Map[Identifier, Rational]) => Rational,
+    inputValMap: Map[Identifier, Interval],
+    inputErrors: Map[Identifier, Rational]): Expr = {
+
+    val fitnessBefore = roundoffFunction(initExpr, inputValMap, inputErrors)
+    reporter.info(s"fitness before: $fitnessBefore")
+
+    val initCost = countOps(initExpr)  // number of operations, which we do not want to increase
+
+    val initError = fitnessBefore
+
+    var bestCostExpr = initExpr
+    var bestCost = initCost
+    var bestError = initError
+
+    rand = new Random(seed)  //reset generator to obtain deterministic search
+
+    // we assign a very high fitness to signal that something is wrong
+    // the offending expression should be filtered out "naturally"
+    val (bestExprFound, _) = runGenetic(initExpr,
+      (e: Expr) => e.deepCopy,
+      (e: Expr) => {
+        try {
+          val fitness = roundoffFunction(e, inputValMap, inputErrors)
+
+          //saves the expression with smallest error, which does not increase the initial cost
+          if (fitness < bestError && countOps(e) <= initCost) {
+          //if (fitness < bestError && rewritingCost(e) <= initCost) {
+            bestCostExpr = e
+            bestError = fitness
+          }
+
+          // saves the expression with smallest cost, which does not increase the error
+          // if (fitness <= initError && countOps(e) < bestCost) {
+          //   bestCostExpr = e
+          //   bestCost = countOps(e)
+          // }
+
+          fitness
+        } catch {
+          case e: daisy.tools.DivisionByZeroException =>
+            //reporter.warning("div-by-zero happily ignored")
+           fitnessOnFail
+        }
+      })
+
+    if (optimizeForAccuracy) {
+      bestExprFound
+    } else {// instead of the most accurate, choose the one with least cost
+      bestCostExpr
+    }
+  }
+
+  // for rewriting stability experiment
+  def mixedRoundoff_IA_AA(
+    expr: Expr,
+    inputValMap: Map[Identifier, Interval],
+    inputErrorMap: Map[Identifier, Rational],
+    precMap: Map[Identifier, Precision],
+    trackRoundoffErrors: Boolean = true): (Rational, Interval) = {
+
+    val (resRange, intermediateRanges) = evalRange[Interval](expr, inputValMap, Interval.apply)
+
+    val (resRoundoff, _, allErrors) = evalRoundoff[AffineForm](expr, intermediateRanges,
+        precMap,
+        inputErrorMap.map(x => (x._1 -> AffineForm.fromError(x._2))),
+        zeroError = AffineForm.zero,
+        fromError = AffineForm.fromError,
+        interval2T = AffineForm.apply,
+        constantsPrecision = uniformPrecision,
+        trackRoundoffErrors)
+
+    (Interval.maxAbs(resRoundoff.toInterval), resRange)
+  }
+
+
+  def mutate(expr: Expr) = _mutate(expr, rand.nextInt(sizeWithoutTerminals(expr)), activeRules)
+
+
+
+}

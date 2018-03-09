@@ -37,6 +37,8 @@ case class Context(
   specResultRangeBounds: Map[Identifier, PartialInterval] = Map(),
   specResultErrorBounds: Map[Identifier, Rational] = Map(),
 
+  // if Daisy chooses uniform precision, which one it chose
+  uniformPrecisions: Map[Identifier, Precision] = Map(),
   // the analysed/computed roundoff errors for each function
   resultAbsoluteErrors: Map[Identifier, Rational] = Map(),
   resultRealRanges: Map[Identifier, Interval] = Map(),
