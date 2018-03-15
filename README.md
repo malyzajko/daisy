@@ -80,16 +80,12 @@ Currently, this is
 
 * An SMT solver which can be used to improve ranges: [Z3](https://github.com/Z3Prover/z3) \[[Linux](https://github.com/Z3Prover/z3/releases)\] \[[Mac](https://github.com/Z3Prover/z3/releases)\] and/or [dReal](https://github.com/dreal/dreal3) \[[Linux](https://github.com/dreal/dreal3/releases)\]
 
-* [MPFR](http://www.mpfr.org/) for error under-approximation and transcendental calculations: \[`apt-get install libmpfr4`\]  \[`brew install mpfr`\]
+* [MPFR](http://www.mpfr.org/) for error under-approximation and sqrt/transcendental calculations: \[`apt-get install libmpfr4`\]  \[`brew install mpfr`\]. On macOS, homebrew installs libmpfr.6.dylib, even though the latest version is 4. Renaming the library to libmpfr.4.dylib fixes this issue.
 
 ## Contributors
 
 In no particular order: Saksham Sharma, Einar Horn, Debasmita Lohar, Heiko Becker, Ezequiel Postan,
 Fabian Ritter, Anastasiia Izycheva, Raphael Monat, Fariha Nasir, and Robert Bastian.
-
-## Documentation
-
-There is no formal documentation, but [the recent tool paper](https://github.com/malyzajko/daisy/blob/master/daisy_tool_paper_preprint.pdf) serves as a good starting point about the usage and the internals of Daisy.
 
 ## Intellij Idea Setup
 To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins.
