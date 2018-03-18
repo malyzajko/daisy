@@ -13,7 +13,7 @@
 ## First steps
 
 Daisy is set up to work with the [simple build tool (sbt)](http://www.scala-sbt.org/).
-Once you have sbt, type in daisy's home directory:
+Once you have sbt (version 0.13.*), type in daisy's home directory:
 ```
 $ sbt
 ```
