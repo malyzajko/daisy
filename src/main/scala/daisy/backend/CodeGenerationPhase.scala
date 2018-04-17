@@ -5,6 +5,8 @@ package backend
 
 import utils.CodePrinter
 import lang.Trees._
+import tools.FinitePrecision
+import FinitePrecision._
 import tools.FinitePrecision._
 import lang.Types._
 import lang.Extractors.ArithOperator
@@ -23,7 +25,10 @@ object CodeGenerationPhase extends DaisyPhase {
       "Language for which to generate code"),
     FlagOption(
       "genMain",
-      "Whether to generate a main method to run the code.")
+      "Whether to generate a main method to run the code."),
+    FlagOption(
+      "apfixed",
+      "Print C code for Xilinx with ap_fixed data type")
   )
 
   implicit val debugSection = DebugSectionBackend
@@ -73,37 +78,57 @@ object CodeGenerationPhase extends DaisyPhase {
           // types are changed before, since the semantics of type assignments is special
           prg
         }
-
       } else {
         uniformPrecision match {
           case FixedPrecision(b) =>
             if (mixedPrecision) {
               ctx.reporter.error("Mixed-precision code generation is currently not supported for fixed-points.")
             }
-            // if we have fixed-point code, we need to generate it first
-            // TODO handle ignored functions
-            val newDefs = transformConsideredFunctions(ctx,prg){ fnc =>
-              val newBody = fnc.body.map(toFixedPointCode(_, FixedPrecision(b),
-                ctx.intermediateRanges(fnc.id), ctx.intermediateAbsErrors(fnc.id)))
-              val valDefType = b match {
-                case 8 => Int16Type
-                case 16 => Int32Type
-                case 32 => Int64Type
-              }
-              fnc.copy(
-                params = fnc.params.map(vd => ValDef(vd.id.changeType(valDefType))),
-                body = newBody,
-                returnType = valDefType)
-            }
-            Program(prg.id, newDefs)
+            if (ctx.option[Boolean]("apfixed")) {
+              val newDefs = functionsToConsider(ctx, prg).map(fnc => {
+                val newBody = toAPFixedCode(fnc.body.get, b, ctx.intermediateRanges(fnc.id),
+                  ctx.intermediateAbsErrors(fnc.id))
+                val fncParams = fnc.params.map({
+                  case ValDef(id) =>
+                    val actualRange = ctx.intermediateRanges(fnc.id)(Variable(id)) +/- ctx.intermediateAbsErrors(fnc.id)(Variable(id))
+                    val intBits = FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRange))
+                    ValDef(id.changeType(APFixedType(b, intBits)))
+                  })
+                val actualRangeResult = ctx.resultRealRanges(fnc.id) +/- ctx.resultAbsoluteErrors(fnc.id)
+                val intBitsResult = FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRangeResult))
+                val retType = APFixedType(b, intBitsResult)
 
+                fnc.copy(
+                  params = fncParams,
+                  body = Some(newBody),
+                  returnType = retType)
+              })
+              Program(prg.id, newDefs)
+            } else {
+              // if we have fixed-point code, we need to generate it first
+              // TODO handle ignored functions
+              val newDefs = transformConsideredFunctions(ctx,prg){ fnc =>
+                val newBody = fnc.body.map(toFixedPointCode(_, FixedPrecision(b),
+                  ctx.intermediateRanges(fnc.id), ctx.intermediateAbsErrors(fnc.id)))
+                val valDefType = b match {
+                  case 8 => Int16Type
+                  case 16 => Int32Type
+                  case 32 => Int64Type
+                }
+                fnc.copy(
+                  params = fnc.params.map(vd => ValDef(vd.id.changeType(valDefType))),
+                  body = newBody,
+                  returnType = valDefType)
+              }
+              Program(prg.id, newDefs)
+            }
           case up @ FloatPrecision(_) =>
             // if we have floating-point code, we need to just change the types
             Program(prg.id, prg.defs.map { fnc =>
               assignFloatType(fnc, ctx.specInputPrecisions(fnc.id), ctx.specResultPrecisions(fnc.id), up)
             })
         }
-    }
+      }
 
     writeFile(newProgram, lang, ctx)
 
@@ -113,7 +138,12 @@ object CodeGenerationPhase extends DaisyPhase {
   private def writeFile(prg: Program, lang: String, ctx: Context): Unit = {
     import java.io.FileWriter
     import java.io.BufferedWriter
-    val filename = System.getProperty("user.dir")+"/output/" + prg.id + CodePrinter.suffix(lang)
+
+    val filename = if (ctx.hasFlag("apfixed")) {
+        System.getProperty("user.dir")+"/output/" + prg.id + ".cpp"
+      } else {
+        System.getProperty("user.dir")+"/output/" + prg.id + CodePrinter.suffix(lang)
+      }
     ctx.codegenOutput.append(prg.id)
     val fstream = new FileWriter(filename)
     val out = new BufferedWriter(fstream)
@@ -161,11 +191,10 @@ object CodeGenerationPhase extends DaisyPhase {
 
   /*
    * Expects code to be already in SSA form.
-   * @param fixed the (uniform) fixed-point precision to use
-   * TODO: we also need to adjust the types, no?
+   * @param format the (uniform) fixed-point precision to use
    */
   def toFixedPointCode(expr: Expr, format: FixedPrecision, intermRanges: Map[Expr, Interval],
-                       intermAbsErrors: Map[Expr, Rational]): Expr = {
+    intermAbsErrors: Map[Expr, Rational]): Expr = {
     val newType = format match {
       case FixedPrecision(8) => Int16Type
       case FixedPrecision(16) => Int32Type
@@ -290,6 +319,45 @@ object CodeGenerationPhase extends DaisyPhase {
 
       case Let(id, value, body) =>
         Let(id.changeType(newType), _toFPCode(value), _toFPCode(body))
+    }
+
+    _toFPCode(expr)
+  }
+
+  /*
+   * Generates code for the Vivado HLS hardware synthesis tool with the ap_fixed data type.
+   * Expects code to be already in SSA form.
+   */
+  def toAPFixedCode(expr: Expr, totalBits: Int, intermRanges: Map[Expr, Interval],
+    intermAbsErrors: Map[Expr, Rational]): Expr = {
+
+    @inline
+    def getIntegerBits(e: Expr): Int = {
+      // the overall interval is the real-valued range +/- absolute errors
+      val actualRange = intermRanges(e) +/- intermAbsErrors(e)
+      FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRange))
+    }
+
+    def _toFPCode(e: Expr): Expr = (e: @unchecked) match {
+      case x @ Variable(id) => x //Variable(id.changeType(newType))
+
+      case x @ RealLiteral(r) => x  // constants are handled automatically?
+
+      case x @ ArithOperator(Seq(t: Terminal), recons) => x
+      case x @ ArithOperator(Seq(lhs: Terminal, rhs: Terminal), recons) => x
+
+      case Let(id, value, body) =>
+        val idType = APFixedType(totalBits, getIntegerBits(value))
+
+        Let(id.changeType(idType), _toFPCode(value), _toFPCode(body))
+
+
+      // case UMinus(t) => UMinus(_toFPCode(t))
+
+      // case Sqrt(t) =>
+      //   throw new Exception("Sqrt is not supported for fixed-points!")
+      //   null
+
     }
 
     _toFPCode(expr)

@@ -34,6 +34,8 @@ object DebugSections {
     DebugSectionOptimization,
     DebugSectionExprOptimizer,
     DebugSectionFitnessEval,
+    DebugSectionSimplify,
+    DebugSectionExperiment,
     DebugSectionOptimisation,
     DebugSectionTransform
   )

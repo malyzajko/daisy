@@ -5,7 +5,7 @@ package utils
 
 import lang.TreeOps
 import lang.Trees._
-import lang.Types.{FinitePrecisionType, Int16Type, Int32Type, Int64Type}
+import lang.Types._
 import tools.FinitePrecision._
 
 // GenerateDaisyInput: If we are interested in generating a real valued program, that will later be again used as input to Daisy
@@ -52,6 +52,8 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
       case Int32Type => sb.append("int")
       case Int64Type => sb.append("long")
 
+      case APFixedType(tot, int) => sb.append(s"ap_fixed<$tot,$int>")
+
       case x @ FinitePrecisionLiteral(r, Float32, strVal) =>
         if (strVal.contains(".") || strVal.contains("e") || strVal.contains("E")) { //valid float number
           sb.append(strVal + "f")
@@ -62,6 +64,10 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
       case Program(id, defs) =>
         assert(lvl == 0)
         sb.append("#include <math.h>\n")
+        if (ctx.hasFlag("apfixed")) {
+          sb.append("#include <ap_fixed.h>\n")
+        }
+
         if (defs.flatMap(_.body).exists(
           TreeOps.exists{ case e => e.getType match {
             case FinitePrecisionType(pr) => pr >= DoubleDouble case _ => false }})) {

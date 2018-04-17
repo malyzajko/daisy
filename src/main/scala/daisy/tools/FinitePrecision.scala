@@ -172,27 +172,30 @@ object FinitePrecision {
     // override val minNormal: Rational = Rational.powerTwo(-863)
   }
 
+  object FixedPrecision {
+    // Returns the number of bits needed to represent the given integer.
+    def integerBitsNeeded(r: Rational): Int = {
+      val value = Rational.abs(r).integerPart
+
+      // Integer.num...(n) returns 0 for all negative numbers, and >= 1 for all positive numbers.
+      // Using 33 so bitsNeeded(2^a-1) = a+1, where we need the extra bit to represent -(2^a-1) (+bonus -2^a)
+      33 - Integer.numberOfLeadingZeros(value)
+    }
+  }
+
   /*
     Represents a fixed-point arithmetic precision.
     Supports a signed format with truncation as the rounding mode.
    */
   case class FixedPrecision(bitlength: Int) extends Precision {
-
+    import FixedPrecision._
     override val toString = "Fixed" + bitlength
 
     override def _absRoundoff(i: Interval): Rational = Rational.powerTwo(-fractionalBits(i))
     override def _absTranscendentalRoundoff(i: Interval): Rational = ???
 
     def fractionalBits(i: Interval): Int = fractionalBits(Interval.maxAbs(i))
-    def fractionalBits(r: Rational): Int = bitlength - bitsNeeded(Rational.abs(r).integerPart)
-
-    // Returns the number of bits needed to represent the given integer.
-    private def bitsNeeded(value: Int): Int = {
-      assert(value >= 0)
-      // Integer.num...(n) returns 0 for all negative numbers, and >= 1 for all positive numbers.
-      // Using 33 so bitsNeeded(2^a-1) = a+1, where we need the extra bit to represent -(2^a-1) (+bonus -2^a)
-      33 - Integer.numberOfLeadingZeros(value)
-    }
+    def fractionalBits(r: Rational): Int = bitlength - integerBitsNeeded(r)
 
     // Range is -2^(bitlength-1), 2^(bitlength-1) - 1
     override val range: Interval =

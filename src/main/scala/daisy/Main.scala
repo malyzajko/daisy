@@ -207,6 +207,10 @@ object Main {
 
     } else {
       // Standard static analyses
+      if (ctx.fixedPoint && ctx.hasFlag("apfixed")) {
+        pipeline >>= transform.ConstantTransformerPhase
+      }
+
       if (ctx.hasFlag("three-address") || (ctx.fixedPoint && ctx.hasFlag("codegen"))) {
         pipeline >>= transform.TACTransformerPhase
       }

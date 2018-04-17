@@ -53,6 +53,9 @@ object Types {
   case object RealType extends TypeTree
   case class FinitePrecisionType(prec: Precision) extends TypeTree
 
+  // arbitrary-precision fixed-point types for Vivado HLS
+  case class APFixedType(totalBit: Int, intBits: Int) extends TypeTree
+
   case class FunctionType(from: Seq[TypeTree], to: TypeTree) extends TypeTree
 
   object NAryType {
