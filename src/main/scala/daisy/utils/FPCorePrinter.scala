@@ -3,6 +3,7 @@
 package daisy
 package utils
 
+import daisy.tools.Rational
 import lang.Trees._
 import tools.FinitePrecision._
 
@@ -30,7 +31,8 @@ class FPCorePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
     sb.append("(" + op)
 
     exprs.foreach(ex => {
-      pp(ex, parent);
+      sb.append(" ")
+      pp(ex, parent)
     })
 
     sb.append(")")
@@ -92,7 +94,7 @@ class FPCorePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
       case FMA(l,m,r) => ppMathFun(Seq(l,m,r), "fma")
       case Division(l,r) => ppBinary(l, r, " / ")
       //case Pow(l,r) => ppBinary(l, r, " ^ ")
-      case IntPow(l,r) => ppUnary(l, "^ " + r, "")
+      case IntPow(l,r) => ppMathFun(Seq(l, RealLiteral(Rational(r))), "pow")
       case LessThan(l,r) => ppBinary(l, r, " < ")
       case GreaterThan(l,r) => ppBinary(l, r, " > ")
       case LessEquals(l,r) => ppBinary(l, r, " <= ")      // \leq

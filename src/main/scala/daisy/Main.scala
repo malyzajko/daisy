@@ -76,6 +76,14 @@ object Main {
     FlagOption(
       "noInitialErrors",
       "Do not track initial errors specified by user"),
+    FlagOption(
+      "pow-roll",
+      "Roll products, e.g. x*x*x -> pow(x, 3)"
+      ),
+    FlagOption(
+      "pow-unroll",
+      "Unroll products, e.g. pow(x, 3) => x*x*x"
+      ),
     StringOption(
       "mixed-precision",
       """File with type assignment for all variables.
@@ -91,7 +99,10 @@ object Main {
     FlagOption(
       "denormals",
       "Include parameter for denormals in the FP abstraction (for optimization-based approach only)."),
-
+    StringChoiceOption("certificate",
+      Set("coq", "hol4", "binary"),
+      "coq",
+      "Wether to certify and which theorem prover to use"),
     FlagOption("rewrite-fitness-eval", "Generate expressions and analyze errors for various fitness functions"),
     FlagOption("rewrite-stability-experiment", "Run rewriting stability experiment."),
     FlagOption("mixed-cost-eval", "Mixed-precision cost function evaluation experiment"),
@@ -110,6 +121,7 @@ object Main {
     analysis.DataflowSubdivisionPhase,
     backend.CodeGenerationPhase,
     transform.TACTransformerPhase,
+    transform.PowTransformerPhase,
     analysis.DynamicPhase,
     opt.RewritingOptimizationPhase,
     transform.ConstantTransformerPhase,
@@ -174,59 +186,80 @@ object Main {
 
     pipeline >>= analysis.SpecsProcessingPhase
 
-    if (ctx.hasFlag("rewrite")) {
-      pipeline >>= opt.RewritingOptimizationPhase
-    }
-
-    if (ctx.hasFlag("dynamic")) {
-      pipeline >>= analysis.DynamicPhase
+    (ctx.options.get("certificate")) match {
+      case x @ Some(_) =>
+      pipeline >>= ctx.option[DaisyPhase]("analysis")
+      pipeline >>= backend.CertificatePhase
       pipeline >>= backend.InfoPhase
+      case x @ _  =>
 
-    } else if (ctx.hasFlag("rewrite-fitness-eval")) {
-      pipeline >>= experiment.RewritingFitnessEvaluation
+        if (ctx.hasFlag("rewrite")) {
+          pipeline >>= opt.RewritingOptimizationPhase
+        }
 
-    // } else if (ctx.hasFlag("rewrite-stability-experiment")) {
-    //   pipeline >>= experiment.RewritingStabilityExperiment
+        if ((ctx.hasFlag("pow-roll") || ctx.hasFlag("pow-unroll")) && !ctx.fixedPoint) {
+          pipeline >>= transform.PowTransformerPhase
+        }
 
-    } else if (ctx.hasFlag("mixed-cost-eval")) {
-      pipeline >>= transform.TACTransformerPhase >>
-        transform.ConstantTransformerPhase >>
-        analysis.RangePhase >>
-        experiment.CostFunctionEvaluationExperiment
+        if (ctx.hasFlag("dynamic")) {
+          pipeline >>= analysis.DynamicPhase
+          pipeline >>= backend.InfoPhase
 
-    } else if (ctx.hasFlag("mixed-exp-gen")) {
-      pipeline >>= experiment.MixedPrecisionExperimentGenerationPhase
+        } else if (ctx.hasFlag("rewrite-fitness-eval")) {
+          pipeline >>= experiment.RewritingFitnessEvaluation
 
-    } else if (ctx.hasFlag("mixed-tuning")) {
-      pipeline >>= transform.TACTransformerPhase >>
-        transform.ConstantTransformerPhase >>
-        analysis.RangePhase >>
-        opt.MixedPrecisionOptimizationPhase >>
-        backend.InfoPhase >>
-        backend.CodeGenerationPhase
+          // } else if (ctx.hasFlag("rewrite-stability-experiment")) {
+          //   pipeline >>= experiment.RewritingStabilityExperiment
 
-    } else {
-      // Standard static analyses
-      if (ctx.fixedPoint && ctx.hasFlag("apfixed")) {
-        pipeline >>= transform.ConstantTransformerPhase
-      }
+        } else if (ctx.hasFlag("mixed-cost-eval")) {
+          pipeline >>= transform.TACTransformerPhase >>
+          transform.ConstantTransformerPhase >>
+          analysis.RangePhase >>
+          experiment.CostFunctionEvaluationExperiment
 
-      if (ctx.hasFlag("three-address") || (ctx.fixedPoint && ctx.hasFlag("codegen"))) {
-        pipeline >>= transform.TACTransformerPhase
-      }
+        } else if (ctx.hasFlag("mixed-exp-gen")) {
+          pipeline >>= experiment.MixedPrecisionExperimentGenerationPhase
 
-      // TODO: this is very ugly
-      if (ctx.hasFlag("subdiv") && ctx.option[DaisyPhase]("analysis") == analysis.DataflowPhase) {
-        pipeline >>= analysis.DataflowSubdivisionPhase
-      } else {
-        pipeline >>= ctx.option[DaisyPhase]("analysis")
-      }
+        } else if (ctx.hasFlag("mixed-tuning")) {
+          pipeline >>= transform.TACTransformerPhase >>
+          transform.ConstantTransformerPhase >>
+          analysis.RangePhase >>
+          opt.MixedPrecisionOptimizationPhase >>
+          backend.InfoPhase >>
+          backend.CodeGenerationPhase
 
-      pipeline >>= backend.InfoPhase
+        } else {
+          // Standard static analyses
+          if (ctx.fixedPoint && ctx.hasFlag("apfixed")) {
+            pipeline >>= transform.ConstantTransformerPhase
+          }
 
-      if (ctx.hasFlag("codegen")) {
-        pipeline >>= backend.CodeGenerationPhase
-      }
+          if (ctx.hasFlag("three-address") || (ctx.fixedPoint && ctx.hasFlag("codegen"))) {
+            pipeline >>= transform.TACTransformerPhase
+          }
+
+          if (ctx.hasFlag("dynamic")) {
+            pipeline >>= analysis.DynamicPhase
+            pipeline >>= backend.InfoPhase
+          } else {
+            if (ctx.hasFlag("three-address") || (ctx.fixedPoint && ctx.hasFlag("codegen"))) {
+              pipeline >>= transform.TACTransformerPhase
+            }
+
+            // TODO: this is very ugly
+            if (ctx.hasFlag("subdiv") && ctx.option[DaisyPhase]("analysis") == analysis.DataflowPhase) {
+              pipeline >>= analysis.DataflowSubdivisionPhase
+            } else {
+              pipeline >>= ctx.option[DaisyPhase]("analysis")
+            }
+          }
+
+          pipeline >>= backend.InfoPhase
+
+          if (ctx.hasFlag("codegen")) {
+            pipeline >>= backend.CodeGenerationPhase
+          }
+        }
     }
     pipeline
   }
@@ -274,7 +307,6 @@ object Main {
       case List(name, value) => name -> value
       case List(name) => name -> "yes"
     }).toMap
-
 
     argsMap.keySet.diff(allOptions.map(_.name)).foreach {
       name => initReporter.warning(s"Unknown option: $name")

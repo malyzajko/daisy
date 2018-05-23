@@ -88,7 +88,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     var z0 = this.x0 * y.x0
 
     // z0Addition is not necessarily used, depending on which fnc you use
-    val (z0Addition, delta) = multiplyQueuesOptimized(this.noise, y.noise)
+    val (z0Addition, delta) = multiplyQueuesSimple(this.noise, y.noise)
     z0 += z0Addition
     var newTerms: Seq[Deviation] = multiplyQueuesAndMerge(this.x0, this.noise, y.x0, y.noise)
     if(delta != 0) {
@@ -382,38 +382,38 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     deviation
   }
 
-  // private def multiplyQueuesSimple(xqueue: Seq[Deviation], yqueue: Seq[Deviation]): (Rational, Rational) = {
-  //   val indices = mergeIndices(getIndices(xqueue), getIndices(yqueue))
-  //   var zqueue = rzero
-  //   var z0Addition = rzero
+   private def multiplyQueuesSimple(xqueue: Seq[Deviation], yqueue: Seq[Deviation]): (Rational, Rational) = {
+     val indices = mergeIndices(getIndices(xqueue), getIndices(yqueue))
+     var zqueue = rzero
+     var z0Addition = rzero
 
-  //   var i = 0
-  //   while (i < indices.length) {
-  //     val iInd = indices(i)
-  //     // quadratic
-  //     val xi = xqueue.find((d: Deviation) => d.index == iInd) match {
-  //       case Some(d) => d.mgnt; case None => Rational(0) }
-  //     val yi = yqueue.find((d: Deviation) => d.index == iInd) match {
-  //       case Some(d) => d.mgnt; case None => Rational(0) }
-  //     val zii = xi * yi
-  //     // z0Addition += zii / Rational(2.0)
-  //     if (zii != 0) zqueue += abs(zii)
+     var i = 0
+     while (i < indices.length) {
+       val iInd = indices(i)
+       // quadratic
+       val xi = xqueue.find((d: Deviation) => d.index == iInd) match {
+         case Some(d) => d.mgnt; case None => Rational(0) }
+       val yi = yqueue.find((d: Deviation) => d.index == iInd) match {
+         case Some(d) => d.mgnt; case None => Rational(0) }
+       val zii = xi * yi
+       // z0Addition += zii / Rational(2.0)
+       if (zii != 0) zqueue += abs(zii)
 
-  //     var j = i + 1
-  //     while (j < indices.length) {
-  //       val jInd = indices(j)
-  //       val xj = xqueue.find((d: Deviation) => d.index == jInd) match {
-  //         case Some(d) => d.mgnt; case None => Rational(0) }
-  //       val yj = yqueue.find((d: Deviation) => d.index == jInd) match {
-  //       case Some(d) => d.mgnt; case None => Rational(0) }
-  //       val zij = xi * yj + xj * yi
-  //       if (zij != 0) zqueue += abs(zij)
-  //       j += 1
-  //     }
-  //     i += 1
-  //   }
-  //   (z0Addition, zqueue)
-  // }
+       var j = i + 1
+       while (j < indices.length) {
+         val jInd = indices(j)
+         val xj = xqueue.find((d: Deviation) => d.index == jInd) match {
+           case Some(d) => d.mgnt; case None => Rational(0) }
+         val yj = yqueue.find((d: Deviation) => d.index == jInd) match {
+         case Some(d) => d.mgnt; case None => Rational(0) }
+         val zij = xi * yj + xj * yi
+         if (zij != 0) zqueue += abs(zij)
+         j += 1
+       }
+       i += 1
+     }
+     (z0Addition, zqueue)
+   }
 
 
   // Does a smarter computation of the quadratic terms

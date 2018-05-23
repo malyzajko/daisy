@@ -27,6 +27,8 @@ object InfoPhase extends DaisyPhase {
       "Which file to write analysis results to. Output file is created in output/")
   )
 
+  implicit val debugSection = DebugSectionAnalysis
+
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val out = ctx.option[Option[String]]("results-csv")
       .map(new File("output", _))
@@ -38,6 +40,9 @@ object InfoPhase extends DaisyPhase {
         }
         o
       }
+
+    ctx.reporter.debug("range bounds: " + ctx.intermediateRanges)
+    ctx.reporter.debug("error bounds: " + ctx.intermediateAbsErrors)
 
     for (fnc <- functionsToConsider(ctx, prg)){
 

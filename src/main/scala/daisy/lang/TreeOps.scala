@@ -241,4 +241,5 @@ object TreeOps {
     case Operator(es, _) =>
       es.map(size).sum + 1
   }
+
 }

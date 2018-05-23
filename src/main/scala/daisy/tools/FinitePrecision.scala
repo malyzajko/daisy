@@ -32,7 +32,6 @@ object FinitePrecision {
     }
     final def absTranscendentalRoundoff(r: Rational): Rational = absTranscendentalRoundoff(Interval(r))
 
-
     override def compare(that: Precision): Int = (this,that) match {
       case (FloatPrecision(a), FloatPrecision(b)) => a - b
       case (FixedPrecision(a), FixedPrecision(b)) => a - b
@@ -124,7 +123,8 @@ object FinitePrecision {
     // PERFORMANCE: this may not be the fastest way
     // also potential error: math.ulp(float.minNormal)/2 = 0.0
     override def _absRoundoff(i: Interval): Rational =
-      Rational.fromDouble(math.ulp(Math.nextUp(Interval.maxAbs(i).floatValue))) / Rational(2)
+      Rational.fromDouble(math.ulp(1.0.floatValue)/2)*Interval.maxAbs(i)
+      //Rational.fromDouble(math.ulp(Math.nextUp(Interval.maxAbs(i).floatValue))) / Rational(2)
   }
 
   case object Float64 extends FloatPrecision(64) with DenormalCheck {
@@ -140,7 +140,8 @@ object FinitePrecision {
     override val denormalsError: Rational = Rational.powerTwo(-1075)
 
     override def _absRoundoff(i: Interval): Rational =
-      Rational.fromDouble(math.ulp(Math.nextUp(Interval.maxAbs(i).doubleValue))) / Rational(2)
+      Rational.fromDouble(math.ulp(1.0)/2)*Interval.maxAbs(i)
+      //Rational.fromDouble(math.ulp(Math.nextUp(Interval.maxAbs(i).doubleValue))) / Rational(2)
 
   }
 

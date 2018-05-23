@@ -321,4 +321,8 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
   @inline
   def includes(r: Rational): Boolean = xlo <= r && r <= xhi
 
+  def isNonNegative: Boolean = this.xlo >= Rational.zero
+
+  def isPowerOf2: Boolean = this.xlo.equals(this.xhi) && this.xhi.isPowerOf2
+
 }

@@ -13,6 +13,7 @@ import lang.Identifiers._
 import lang.Extractors._
 import lang.TreeOps.allVariablesOf
 import lang.Trees.Program
+import lang.TreeOps
 
 /**
   This phase extracts information from the specifications (requires, ensuring)
@@ -91,7 +92,11 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
     // var requiredOutputRanges: Map[Identifier, Map[Identifier, PartialInterval]] = Map()
     // var requiredOutputErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
 
+    var sizeOfFile = 0
+
     for (fnc <- functionsToConsider(ctx, prg)) {
+
+      sizeOfFile += TreeOps.size(fnc.body.get)
 
       fnc.precondition match {
         case Some(pre) =>
@@ -115,6 +120,7 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
 
               val allIDs = fnc.params.map(_.id).toSet
               val missingIDs = allIDs -- errors.keySet
+
               errors ++ missingIDs.map(id => (id -> precisionMap(id).absRoundoff(allRanges(fnc.id)(id))))
 
             } else if (trackInitialErrs) {
@@ -126,6 +132,7 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
             } else if (trackRoundoffErrs) {
 
               val allIDs = fnc.params.map(_.id)
+
               allIDs.map(id => (id -> precisionMap(id).absRoundoff(allRanges(fnc.id)(id)))).toMap
 
             } else {
@@ -196,6 +203,7 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
 
     }
 
+    ctx.reporter.debug(s"number of operations in file is: $sizeOfFile")
     ctx.reporter.debug("range bounds: " + resRanges.mkString("\n"))
     ctx.reporter.debug("error bounds: " + resErrors.mkString("\n"))
 
