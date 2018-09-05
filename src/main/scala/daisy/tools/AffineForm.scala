@@ -8,7 +8,7 @@ import utils.UniqueCounter
 
 import Rational.{zero => rzero, _}
 
-private[tools] case class Deviation(mgnt: Rational, index: Int) {
+private[tools] case class Deviation(mgnt: Rational, index: Int) extends NoiseTerm[Deviation] {
   def unary_-(): Deviation = Deviation(-mgnt, index)
   def +(y: Deviation): Deviation = {
     assert(this.index == y.index)
@@ -53,11 +53,14 @@ object AffineForm {
 }
 
 
-case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmetic[AffineForm] {
+case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmetic[AffineForm] with AffineTools[Deviation] {
 
   if (noise.size > 200) {
     System.err.println("200 noise terms")
   }
+
+  // Int.MaxValue is necessary for correctness, as we compare indices
+  val dummyDev = Deviation(rzero, Int.MaxValue)
 
   lazy val radius: Rational = sumAbsQueue(noise)
 
@@ -92,7 +95,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     // z0Addition is not necessarily used, depending on which fnc you use
     val (z0Addition, delta) = multiplyQueuesOptimized(this.noise, y.noise)
     z0 += z0Addition
-    var newTerms: Seq[Deviation] = multiplyQueuesAndMerge(this.x0, this.noise, y.x0, y.noise)
+    var newTerms: Seq[Deviation] = multiplyLinearPart(this.x0, this.noise, y.x0, y.noise)
     if(delta != 0) {
       newTerms :+= Deviation(delta, AffineIndex.nextGlobal)
     }
@@ -307,61 +310,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
 
   def detailString: String = x0.toDouble + " +/- " + radius.toDouble
 
-  private def computeZeta(dmin: Rational, dmax: Rational): Rational = {
-    dmin / two +  dmax / two
-  }
-
-  private def computeDelta(zeta: Rational, dmin: Rational, dmax: Rational): Rational = {
-    max(zeta - dmin,  dmax - zeta)
-  }
-
-  // Int.MaxValue is necessary for correctness, as we compare indices
-  private val dummyDev = Deviation(rzero, Int.MaxValue)
-
-  private def sumAbsQueue(queue: Seq[Deviation]): Rational = {
-    var sum = rzero
-    val iter = queue.iterator
-    while(iter.hasNext) {
-      sum += Rational.abs(iter.next.mgnt)
-    }
-    sum
-  }
-
-  private def addQueues(xn: Seq[Deviation], yn: Seq[Deviation]): Seq[Deviation] = {
-    var deviation: Seq[Deviation] = Seq.empty
-    val iterX = xn.iterator
-    val iterY = yn.iterator
-
-    val fx = (xi: Deviation) => deviation :+= xi
-    val fy = (yi: Deviation) => deviation :+= yi
-
-    val fCouple = (xi: Deviation, yi: Deviation) => {
-      val zi =  xi + yi
-      if (!zi.isZero) deviation :+= zi
-    }
-    DoubleQueueIterator.iterate(iterX, iterY, dummyDev, fx, fy, fCouple)
-    assert(!iterX.hasNext && !iterY.hasNext)
-    deviation
-  }
-
-  private def subtractQueues(xn: Seq[Deviation], yn: Seq[Deviation]): Seq[Deviation] = {
-    var deviation: Seq[Deviation] = Seq.empty
-    val iterX = xn.iterator
-    val iterY = yn.iterator
-
-    val fx = (xi: Deviation) => deviation :+= xi
-    val fy = (yi: Deviation) => deviation :+= -yi
-
-    val fCouple = (xi: Deviation, yi: Deviation) => {
-      val zi =  xi - yi
-      if (!zi.isZero) deviation :+= zi
-    }
-    DoubleQueueIterator.iterate(iterX, iterY, dummyDev, fx, fy, fCouple)
-    assert(!iterX.hasNext && !iterY.hasNext)
-    deviation
-  }
-
-  private def multiplyQueuesAndMerge(a: Rational, xqueue: Seq[Deviation], b: Rational,
+  private def multiplyLinearPart(a: Rational, xqueue: Seq[Deviation], b: Rational,
     yqueue: Seq[Deviation]): Seq[Deviation] = {
     var deviation = Seq[Deviation]()
     val iterX = xqueue.iterator
@@ -433,8 +382,10 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
       val yi = yqueue.find((d: Deviation) => d.index == iInd) match {
         case Some(d) => d.mgnt; case None => rzero }
       val zii = xi * yi
-      z0Addition += zii / two
-      if (zii != 0) zqueue += abs(zii / two)
+      if (zii != 0) {
+        z0Addition += zii / two
+        zqueue += abs(zii / two)
+      }
 
       var j = i + 1
       while (j < indices.length) {
@@ -450,23 +401,6 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
       i += 1
     }
     (z0Addition, zqueue)
-  }
-
-  private def mergeIndices(x: Set[Int], y: Set[Int]): Array[Int] = {
-    val set = x ++ y
-    val list = set.toList.sorted
-    list.toArray
-  }
-
-  // Do this with some functional thing?
-  private def getIndices(q: Seq[Deviation]): collection.immutable.Set[Int] = {
-    var i = 0
-    var set = new collection.immutable.HashSet[Int]()
-    while (i < q.size) {
-      set += q(i).index
-      i += 1
-    }
-    set
   }
 
   private def multiplyQueue(queue: Seq[Deviation], factor: Rational): Seq[Deviation] = {
@@ -488,50 +422,5 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
 
     if (delta != rzero) deviation :+= Deviation(delta, AffineIndex.nextGlobal)
     AffineForm(z0, deviation)
-  }
-}
-
-
-// This is probably not the most efficient way, but it's tried and tested.
-object DoubleQueueIterator {
-
-  def iterate(iterX: Iterator[Deviation], iterY: Iterator[Deviation],
-    dummy: Deviation, fx: (Deviation) => Unit, fy: (Deviation) => Unit,
-    fCouple: (Deviation, Deviation) => Unit): Unit = {
-    var xi: Deviation = if (iterX.hasNext) iterX.next else dummy
-    var yi: Deviation = if (iterY.hasNext) iterY.next else dummy
-
-    var i = 0
-    while ((iterX.hasNext || iterY.hasNext)) {
-      i = i + 1
-      if(xi.index < yi.index) {
-        fx(xi)
-        xi = if (iterX.hasNext) iterX.next else dummy
-      }
-      else if (yi.index < xi.index) {
-        fy(yi)
-        yi = if (iterY.hasNext) iterY.next else dummy
-      }
-      else {
-        fCouple(xi, yi)
-        xi = if (iterX.hasNext) iterX.next else dummy
-        yi = if (iterY.hasNext) iterY.next else dummy
-      }
-    }
-    if (xi.index == yi.index) {
-      if (xi != dummy) {
-        fCouple(xi, yi)
-        xi = dummy
-        yi = dummy
-      }
-    }
-    else if (xi.index < yi.index) {
-      if (xi != dummy) {fx(xi); xi = dummy}
-      if (yi != dummy) {fy(yi); yi = dummy}
-    }
-    else if (yi.index < xi.index) {
-      if (yi != dummy) {fy(yi); yi = dummy}
-      if (xi != dummy) {fx(xi); xi = dummy}
-    }
   }
 }

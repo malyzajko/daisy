@@ -28,9 +28,6 @@ object Main {
       "dynamic",
       "Run dynamic analysis"),
     FlagOption(
-      "bgrtdynamic",
-      "Run binary guided random testing dynamic analysis"),
-    FlagOption(
       "codegen",
       "Generate code (as opposed to just doing analysis)"),
     FlagOption(
@@ -81,6 +78,16 @@ object Main {
       "noInitialErrors",
       "Do not track initial errors specified by user"),
     FlagOption(
+      "probabilistic",
+      "Runs the probabilistic phase. Requires a file with thresholds"),
+    // StringOption(
+    //   "mfile",
+    //   """File with thresholds.
+    //     The format is the following:
+    //     function_name_1=threshold1
+    //     function_name_2 = {
+    //       threshold_i }"""),
+    FlagOption(
       "pow-roll",
       "Roll products, e.g. x*x*x -> pow(x, 3)"
       ),
@@ -120,11 +127,11 @@ object Main {
     analysis.RelativeErrorPhase,
     analysis.TaylorErrorPhase,
     analysis.DataflowSubdivisionPhase,
+    analysis.ProbabilisticBranchesPhase,
     backend.CodeGenerationPhase,
     transform.TACTransformerPhase,
     transform.PowTransformerPhase,
     analysis.DynamicPhase,
-    analysis.BGRTDynamicPhase,
     opt.RewritingOptimizationPhase,
     transform.ConstantTransformerPhase,
     opt.MixedPrecisionOptimizationPhase,
@@ -142,6 +149,8 @@ object Main {
   var ctx: Context = null
 
   def interfaceMain(args: Array[String]): Option[Context] = {
+    // TODO: only needs to be run once at compile time, maybe make this into a test
+    verifyCmdLineOptions()
     processOptions(args.toList) match {
       case Some(new_ctx) =>
         ctx = new_ctx
@@ -165,7 +174,7 @@ object Main {
             ctx.reporter.info("Something really bad happened. Cannot continue.")
           case _ : Throwable =>
             ctx.reporter.info("Something really bad happened. Cannot continue.")
-            
+
         }
         ctx.timers.get("total").stop
         ctx.reporter.info("time: \n" + ctx.timers.toString)
@@ -198,10 +207,6 @@ object Main {
       pipeline >>= analysis.DynamicPhase
       pipeline >>= backend.InfoPhase
 
-    } else if(ctx.hasFlag("bgrtdynamic")){
-      pipeline >>= analysis.BGRTDynamicPhase
-      pipeline >>= backend.InfoPhase
-
     } else if (ctx.hasFlag("rewrite-fitness-eval")) {
       pipeline >>= experiment.RewritingFitnessEvaluation
 
@@ -226,6 +231,9 @@ object Main {
         backend.InfoPhase >>
         backend.CodeGenerationPhase
 
+    } else if (ctx.hasFlag("probabilistic")) {
+      pipeline >>= analysis.ProbabilisticBranchesPhase
+    
     } else {
       // Standard static analyses
       if (ctx.fixedPoint && ctx.hasFlag("apfixed")) {
@@ -244,7 +252,7 @@ object Main {
       }
 
       pipeline >>= backend.InfoPhase
-      
+
       if (ctx.hasFlag("codegen")) {
         pipeline >>= backend.CodeGenerationPhase
       }
@@ -271,6 +279,16 @@ object Main {
     None
   }
 
+  private def verifyCmdLineOptions(): Unit = {
+    val allOpts =
+      Main.globalOptions.toList.map((_, "global")) ++
+      Main.allPhases.flatMap(c => c.definedOptions.toList.map((_, c.name)))
+    allOpts.groupBy(_._1.name).collect{
+      case (name, opts) if opts.size > 1 =>
+        Console.err.println(s"Duplicate command line option '$name' in " +
+         opts.map("'"+_._2+"'").mkString(", "))
+    }
+  }
 
   def processOptions(args: List[String]): Option[Context] = {
     val initReporter = new DefaultReporter(Set(), false)
@@ -307,6 +325,17 @@ object Main {
           } catch {
             case e: NumberFormatException =>
               initReporter.warning(s"Can't parse argument for option $name, using default")
+              name -> default
+          }
+        }
+
+        case DoubleOption(name, default, _) => argsMap.get(name) match {
+          case None => name -> default
+          case Some(s) => try {
+            name -> s.toDouble
+          } catch {
+            case e: NumberFormatException =>
+              initReporter.warning("Can't parse argument for option $name, using default")
               name -> default
           }
         }

@@ -15,6 +15,53 @@ trait Subdivision extends DeltaAbstractionUtils {
 
   var totalOpt: Int = 32
 
+  // returns carthesian product, subdividing every input variable into as many equal pieces
+  // as specified in numSubdiv
+  def getIntervalSubdivisionCustom(inputValMap: Map[Identifier, Interval],
+    numSubdiv: Map[Identifier, Int]): Seq[Map[Identifier, Interval]] = {
+
+    // set of vectors. each vector contains the maps for one var
+    val srcCartesian: Map[Identifier, Seq[Interval]] = inputValMap.map({
+      case (id, interval) =>
+        if (interval.xlo.equals(interval.xhi)) {
+          (id -> Seq(interval))
+        } else {
+          (id -> interval.divide(numSubdiv(id)))
+        }
+      })
+    cartesianProduct(srcCartesian)
+  }
+
+  // returns carthesian product, subdividing every input variable into numSubdiv equal pieces
+  def getIntervalSubdivision(inputValMap: Map[Identifier, Interval], numSubdiv: Int): Seq[Map[Identifier, Interval]] = {
+
+    // set of vectors. each vector contains the maps for one var
+    val srcCartesian: Map[Identifier, Seq[Interval]] = inputValMap.mapValues({
+      case interval =>
+        if (interval.xlo.equals(interval.xhi)) {
+          Seq(interval)
+        } else {
+          interval.divide(numSubdiv)
+        }
+      })
+    cartesianProduct(srcCartesian)
+  }
+
+
+  def getIntervalNormalSubdivision(inputValMap: Map[Identifier, Interval], numSubdiv: Int): Seq[Map[Identifier, (Interval, Rational)]] = {
+    val normalCartesian: Map[Identifier, Seq[(Interval, Rational)]] = inputValMap.mapValues({
+      case interval =>
+        if (interval.xlo.equals(interval.xhi)) {
+          Seq((interval, Rational.one))
+        } else {
+          val x = DistributionGenerators.generateStandardNormalCase1(interval.xlo, interval.xhi, numSubdiv)
+          x.dsi
+        }
+      })
+    normalCartesianProduct(normalCartesian)
+  }
+
+
   // TODO: the divParameter can go I think
   def getEqualSubintervals(inputValMap: Map[Identifier, Interval], divLimit: Int,
     divParameter: Int = -1): Seq[Map[Identifier, Interval]] = {
@@ -65,7 +112,6 @@ trait Subdivision extends DeltaAbstractionUtils {
       result
     }
   }
-
   def cartesianProduct(a: Map[Identifier, Seq[Interval]]): Seq[Map[Identifier, Interval]] = {
     def product(a: List[(Identifier, Seq[Interval])]): Seq[Map[Identifier, Interval]] =
       a match {
@@ -80,6 +126,21 @@ trait Subdivision extends DeltaAbstractionUtils {
 
     product(a.toList)
   }
+
+  def normalCartesianProduct(a: Map[Identifier, Seq[(Interval, Rational)]]): Seq[Map[Identifier, (Interval, Rational)]] = {
+    def product(a: List[(Identifier, Seq[(Interval, Rational)])]): Seq[Map[Identifier, (Interval, Rational)]] =
+      a match {
+        case (name, values) :: tail =>
+          for {
+            result <- product(tail)
+            value <- values
+          } yield Map(name -> value).++(result)
+        case Nil => Seq(Map.empty)
+      }
+
+    product(a.toList)
+  }
+
 
   // TODO: this function is probably not needed
   /* def getSubintervals(inputValMap: Map[Identifier, Interval], bodyReal: Expr,
