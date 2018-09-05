@@ -1,5 +1,4 @@
 
-
 package daisy
 package opt
 
@@ -219,7 +218,7 @@ trait CostFunctions {
 
     def eval(e: Expr): Rational = (e: @unchecked) match {
 
-       // constant declarations
+      // constant declarations
       case Let(id, RealLiteral(_), body) =>
         eval(body)
 
@@ -479,6 +478,148 @@ trait CostFunctions {
     eval(expr)
   }
 
+
+  /*
+    An area based cost function, essentially counting the number of double,
+    single operations as well as casts.
+    Assumes that given expreesion is in fixed point.
+    Returns a rational for compatibility reasons.
+    The cost values represent the area of circuit needed to implement the operations.
+   */
+
+
+  def areaBasedCostFunction(expr: Expr, typeConfig: Map[Identifier, Precision]): Rational = {
+
+    // Gives the number of bits of Fixed Precision Type
+    def extractBits(prec: Precision): Int = (prec: @unchecked) match {
+      case FixedPrecision(a) => a
+    }
+
+    // from -> to
+    // TODO: cast cost function need to be updated. This is a naive cost
+    def castCost(from: Precision, to: Precision): Int = extractBits(to)
+
+    // TODO : Unary cost is just en estimate it needs to be refined according to the way unary operation works
+    def uminusCost(prec: Precision) = extractBits(prec)
+    def transCost(prec: Precision) = extractBits(prec) * 10
+
+    def timesCost(lPrec: Precision, rPrec: Precision) = {
+      val (lCost,rCost) = (lPrec: @unchecked, rPrec: @unchecked) match {
+        case (FixedPrecision(a),FixedPrecision(b)) => (a,b)
+      }
+      lCost*rCost
+    }
+
+    def eval(e: Expr): Rational = (e: @unchecked) match {
+
+      // constant declarations
+      case Let(id, RealLiteral(_), body) =>
+        eval(body)
+
+      // cost of arithmetic operations
+      case Let(id, UMinus(Variable(t)), body) =>
+        val tPrec = typeConfig(t)
+        val idPrec = typeConfig(id)
+
+        val _varCost = extractBits(tPrec)
+        val _opCost = uminusCost(tPrec)
+
+        val _castCost = if (idPrec < tPrec) {
+          castCost(tPrec, idPrec)
+        } else { 0 }
+
+        (_varCost + _opCost + _castCost + eval(body))
+
+      case Let(id, Sqrt(Variable(t)), body) =>
+        val tPrec = typeConfig(t)
+        val idPrec = typeConfig(id)
+
+        val _varCost = extractBits(tPrec)
+        val _opCost = transCost(tPrec)
+
+        val _castCost = if (idPrec < tPrec) {
+          castCost(tPrec, idPrec)
+        } else { 0 }
+
+        (_varCost + _opCost + _castCost + eval(body))
+
+      // must be a transcendental function
+      case Let(id, ArithOperator(Seq(y @ Variable(t)), recons), body) =>
+        val tPrec = typeConfig(t)
+        val idPrec = typeConfig(id)
+
+        val _varCost = extractBits(tPrec)
+        val _opCost = transCost(tPrec)
+
+        val _castCost = if (idPrec < tPrec) {
+          castCost(tPrec, idPrec)
+        } else { 0 }
+
+        (_varCost + _opCost + _castCost + eval(body))
+
+      case Let(id, ArithOperator(Seq(y @ Variable(l), z @ Variable(r)), recons), body) =>
+        val lPrec = typeConfig(l)
+        val rPrec = typeConfig(r)
+        val idPrec = typeConfig(id)
+
+        val _varCost = extractBits(lPrec) + extractBits(rPrec)
+        val opPrec = getUpperBound(getUpperBound(lPrec, rPrec), idPrec)
+
+        // TODO: this is probably not the best way of doing it
+        val _opCost = (recons(Seq(y, z)): @unchecked) match {
+          case _: Plus => extractBits(opPrec)
+          case _: Minus => extractBits(opPrec)
+          case _: Times => timesCost(lPrec,rPrec)
+          case _: Division => extractBits(opPrec)
+        }
+        var _castCost = zero
+        // upcasts
+        if (lPrec != opPrec) {
+          _castCost = _castCost + castCost(lPrec, opPrec)
+        }
+        if (rPrec != opPrec) {
+          _castCost = _castCost + castCost(rPrec, opPrec)
+        }
+        // downcast
+        if (idPrec < opPrec) {
+          _castCost = _castCost + castCost(opPrec, idPrec)
+        }
+
+        (_varCost + _opCost + _castCost + eval(body))
+
+      case ArithOperator(Seq(y @ Variable(l), z @ Variable(r)), recons) =>
+        val lPrec = typeConfig(l)
+        val rPrec = typeConfig(r)
+        val opPrec = getUpperBound(lPrec, rPrec)
+
+        val _varCost = extractBits(lPrec) + extractBits(rPrec)
+        val _opCost = (recons(Seq(y, z)): @unchecked) match {
+          case _: Plus => extractBits(opPrec)
+          case _: Minus => extractBits(opPrec)
+          case _: Times => timesCost(lPrec,rPrec)
+          case _: Division => extractBits(opPrec)
+        }
+        var _castCost = zero
+        // upcasts
+        if (lPrec != opPrec) {
+          _castCost = _castCost + castCost(lPrec, opPrec)
+        }
+        if (rPrec != opPrec) {
+          _castCost = _castCost + castCost(rPrec, opPrec)
+        }
+        (_varCost + _opCost + _castCost)
+
+      case UMinus(Variable(t)) =>
+        val tPrec = typeConfig(t)
+        (uminusCost(tPrec) + extractBits(tPrec))
+
+      case Sqrt(Variable(t)) =>
+        val tPrec = typeConfig(t)
+        (transCost(tPrec) + extractBits(tPrec))
+
+    }
+    eval(expr)
+  }
 
 
   /*def maximizeDoubleVars(expr: Expr, typeConfig: Map[Identifier, Precision],

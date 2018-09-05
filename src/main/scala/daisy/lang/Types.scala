@@ -58,6 +58,8 @@ object Types {
 
   case class FunctionType(from: Seq[TypeTree], to: TypeTree) extends TypeTree
 
+  case class TupleType(args: Seq[TypeTree]) extends TypeTree
+
   object NAryType {
     def unapply(t: TypeTree): Option[(Seq[TypeTree], Seq[TypeTree] => TypeTree)] = t match {
       case t => Some(Nil, _ => t)

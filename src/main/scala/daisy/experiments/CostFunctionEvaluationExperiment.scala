@@ -117,7 +117,9 @@ object CostFunctionEvaluationExperiment extends DaisyPhase with opt.CostFunction
 
             val newId = FreshIdentifier(fnc.id.toString + "_" + index)
 
-            val naiveCost = simpleMixedPrecisionCost(fnc.body.get, typeConfig)
+            // val naiveCost = simpleMixedPrecisionCost(fnc.body.get, typeConfig)
+            val naiveCost = areaBasedCostFunction(fnc.body.get, typeConfig)
+
             val benchmarkedCost = benchmarkedMixedPrecisionCost(fnc.body.get, typeConfig)
 
             // val maxDblVarsCost = maximizeDoubleVars(fnc.body.get, typeConfig, goodPrecision=Float32)

@@ -76,6 +76,8 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
   // for compatibility with RangeArithmetic
   def +/-(r: Rational): AffineForm = this :+ r
 
+  def addConstraint(e: Set[lang.Trees.Expr]): AffineForm = this
+
   def unary_-(): AffineForm = AffineForm(-x0, noise.map(-_))
 
   def +(y: AffineForm): AffineForm =

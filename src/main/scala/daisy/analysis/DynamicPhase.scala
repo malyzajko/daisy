@@ -7,7 +7,7 @@ import java.io.FileWriter
 import java.io.BufferedWriter
 
 import lang.Trees._
-import tools.{Rational, Interval, MPFRFloat, DynamicEvaluators}
+import tools.{Rational, Interval, DynamicEvaluators}
 import lang.Identifiers._
 import Sampler._
 
@@ -60,23 +60,15 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val numSamples = ctx.option[Long]("sampleSize")
     inputRangeFactor = Rational.fromString(ctx.option[Option[String]]("inputRangeFactor").getOrElse("1"))
-
     val useRationals = false //!ctx.hasFlag("mpfr")
     val logToFile = ctx.hasFlag("dynamic-log")
     val useRoundoff = !ctx.hasFlag("noRoundoff")
-    val seed = if (ctx.option[Long]("dynamic-custom-seed") == 0) {
+    val initSeed = if (ctx.option[Long]("dynamic-custom-seed") == 0) {
       System.currentTimeMillis()
     } else {
       ctx.option[Long]("dynamic-custom-seed")
     }
 
-    if (useRationals) { ctx.reporter.info("using Rational")
-    } else { ctx.reporter.info("using MPFR") }
-
-    ctx.reporter.info("seed: " + seed)
-
-    // val timestamp: Long = System.currentTimeMillis / 1000
-    // val fstream = new FileWriter(s"rawdata/${filePrefix}_${prg.id}_$timestamp.txt")
     val logFile = if (logToFile) {
       val fstream = new FileWriter(s"rawdata/dynamic_${prg.id}.txt", true) // append
       val out = new BufferedWriter(fstream)
@@ -97,24 +89,22 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
     }
 
     // returns max absolute and max relative error found
-    val res: Map[Identifier, (Rational, Rational)] = analyzeConsideredFunctions(ctx, prg){ fnc =>
+    val res: Map[Identifier, (Rational, Rational, Long)] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       val id = fnc.id
       val body = fnc.body.get
       ctx.reporter.info("evaluating " + id + "...")
       //ctx.reporter.info(s"expression is $body")
-
       val inputRanges: Map[Identifier, Interval] = ctx.specInputRanges(id).map({
         case (id, i) =>
           (id, Interval(i.mid - inputRangeFactor * i.radius,
             i.mid + inputRangeFactor * i.radius))
         })
-
+      
       if (useRationals) {
-
-        val sampler = new Uniform(inputRanges, seed)
         val measurer = new ErrorMeasurerRational()
-
+        val sampler = new Uniform(inputRanges, initSeed)
+      
         var i = 0
         while (i < numSamples) {
           i = i + 1
@@ -153,57 +143,10 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
         ctx.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError}" +
           s" maxRelError: ${measurer.maxRelError}")
 
-        (measurer.maxAbsError, measurer.maxRelError)
+        (measurer.maxAbsError, measurer.maxRelError, numSamples)
 
       } else {
-
-        // this functionality is duplicated in ErrorFunctions.errorDynamic,
-        // but we are printing here all sorts of stats...
-        val sampler = new Uniform(inputRanges, seed)  // no seed = System millis 485793
-        val measurer = new ErrorMeasurerMPFR()
-        var currentMaxAbsMPFR = measurer.maxAbsError
-        var currentMaxAbs: Double = measurer.maxAbsError.doubleValue
-
-        var i = 0
-        while (i < numSamples) {
-          i = i + 1
-          // if (i % 10000 == 0) ctx.reporter.info(s"i: $i")
-
-          // WITH input errors
-
-          val strInputs: Map[Identifier, String] = sampler.nextString
-          val dblInputs: Map[Identifier, Double] = strInputs.map({
-            case (x, s) => (x -> s.toDouble)
-          })
-          val mpfrInputs: Map[Identifier, MPFRFloat] =
-            if (useRoundoff) {
-              // WITH input errors
-              strInputs.map({
-              case (x, s) => (x -> MPFRFloat.fromString(s))
-              })
-            } else {
-              // no input errors
-              dblInputs.map({
-                case (x, d) => (x -> MPFRFloat.fromDouble(d))
-              })
-            }
-          val dblOutput: Double = evalDouble(body, dblInputs)
-          val mpfrOutput: MPFRFloat = evalMPFR(body, mpfrInputs)
-
-          measurer.nextValues(dblOutput, mpfrOutput)
-
-          // Invariant that absolute errors have to grow monotonically
-          assert(currentMaxAbsMPFR <= measurer.maxAbsError)
-          currentMaxAbsMPFR = measurer.maxAbsError
-
-          assert(currentMaxAbs <= measurer.maxAbsError.doubleValue)
-          currentMaxAbs = measurer.maxAbsError.doubleValue
-          //if (abs(dblOutput) <= java.lang.Double.MIN_NORMAL) {
-          //  ctx.reporter.warning(s"THE SUBNORMAL")
-          //  i = i - 1
-          //}
-        }
-
+        val measurer = dynamicErrorEvaluation(body,inputRanges, initSeed, numSamples, useRoundoff)
         if (logToFile) {
           logFile.write(s"${prg.id}-$id" +
             s" ${measurer.maxAbsError.toDoubleString}" +
@@ -219,10 +162,9 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
         ctx.reporter.info(s"$id maxAbsError: ${measurer.maxAbsError.toDoubleString}" +
           s" maxRelError: ${measurer.maxRelError.toDoubleString}")
         (Rational.fromString(measurer.maxAbsError.toString),
-          Rational.fromString(measurer.maxRelError.toString))
+          Rational.fromString(measurer.maxRelError.toString),
+          numSamples)
       }
-
-
     }
 
     if (logToFile) {
@@ -232,7 +174,9 @@ object DynamicPhase extends DaisyPhase with DynamicEvaluators {
 
     (ctx.copy(
       resultAbsoluteErrors = res.mapValues(_._1),
-      resultRelativeErrors = res.mapValues((x: (Rational, Rational)) => Some(x._2))),
+      resultRelativeErrors = res.mapValues((x: (Rational, Rational,Long)) => Some(x._2)),
+      resultNumberSamples = res.mapValues(_._3),
+      seed = initSeed),
       prg)
   }
 

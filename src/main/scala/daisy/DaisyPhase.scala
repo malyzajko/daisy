@@ -49,8 +49,9 @@ trait DaisyPhase extends Pipeline[Program, Program] {
   }
 
   def transformConsideredFunctions(ctx: Context, prg: Program)(f: FunDef => FunDef): Seq[FunDef] = {
-    prg.defs.map{ fnc =>
-      if (functionsToConsider(ctx, prg).contains(fnc)) f(fnc) else fnc
-    }
+    functionsToConsider(ctx, prg).map(fnc => f(fnc))
+    // prg.defs.map{ fnc =>
+    //   if (functionsToConsider(ctx, prg).contains(fnc)) f(fnc) else fnc
+    // }
   }
 }

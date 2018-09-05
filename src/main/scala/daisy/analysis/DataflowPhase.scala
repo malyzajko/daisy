@@ -7,6 +7,7 @@ import lang.Trees._
 import lang.Identifiers._
 import tools._
 import FinitePrecision._
+import lang.TreeOps.allVariablesOf
 
 /**
   Computes and stores intermediate ranges.
@@ -25,7 +26,11 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
       Set("affine", "interval"),
       "affine",
       "Method for error analysis"),
-    FlagOption("choosePrecision", "choose the precision which satisfies error bound")
+    StringChoiceOption(
+      "choosePrecision",
+      Set("no", "fixed", "float"),
+      "no",
+      "choose the fixed/floating-point precision which satisfies error bound")
   )
 
   implicit val debugSection = DebugSectionAnalysis
@@ -39,48 +44,62 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
     errorMethod = ctx.option[String]("errorMethod")
     trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
 
-    val choosePrecision = ctx.hasFlag("choosePrecision")
+    val choosePrecision = ctx.option[String]("choosePrecision")
 
     val mixedPrecision = ctx.option[Option[String]]("mixed-precision").isDefined
     val uniformPrecision = ctx.option[Precision]("precision")
     val reporter = ctx.reporter
 
     ctx.reporter.info(s"using $rangeMethod for ranges, $errorMethod for errors")
-    if (!mixedPrecision) {
-      ctx.reporter.info(s"error analysis for uniform $uniformPrecision precision")
-    }
 
     var uniformPrecisions = Map[Identifier, Precision]()
 
     // returns (abs error, result range, interm. errors, interm. ranges)
-    val res: Map[Identifier, (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval])] =
+    val res: Map[Identifier, (Rational, Interval, Map[(Expr, PathCond), Rational], Map[(Expr, PathCond), Interval])] =
       analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
       val fncBody = fnc.body.get
 
-      if (choosePrecision) {
+      if (choosePrecision != "no") {
         reporter.info("analyzing fnc: " + fnc.id)
 
         // the max tolerated error
         val targetError = ctx.specResultErrorBounds(fnc.id)
 
-        val availablePrecisions = List(Float32, Float64, DoubleDouble)
+        val availablePrecisions = choosePrecision match {
+          case "fixed" =>
+            // the max available amount of bits
+            val maxBits = uniformPrecision match {
+              case FixedPrecision(b) => b
+              case _ => 32 // TODO put default elsewhere
+            }
+            (1 to maxBits).map(x => FixedPrecision(x))
+          case "float" => List(Float16, Float32, Float64, DoubleDouble, QuadDouble)
+          case s => throw new Exception(s"Unknown choice value for choosePrecision: $s. Stopping now")
+        }
+
+        reporter.info(s"choosing among $choosePrecision precisions")
+
         // save the intermediate result
-        var res: (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval]) = null
+        var res: (Rational, Interval, Map[(Expr, PathCond), Rational], Map[(Expr, PathCond), Interval]) = null
 
         // find precision which is sufficient
         availablePrecisions.find( prec => {
-          reporter.info(s"trying precision $prec")
-          val allIDs = fnc.params.map(_.id)
-          val inputErrorMap = allIDs.map(id => (id -> prec.absRoundoff(inputValMap(id)))).toMap
-          val precisionMap = fnc.params.map(param => (param.id -> prec)).toMap
+          try {
+            reporter.info(s"trying precision $prec")
+            val allIDs = fnc.params.map(_.id)
+            val inputErrorMap = allIDs.map(id => (id -> prec.absRoundoff(inputValMap(id)))).toMap
+            val precisionMap: Map[Identifier, Precision] = allVariablesOf(fnc.body.get).map(id => (id -> prec)).toMap
 
-          res = computeRoundoff(inputValMap, inputErrorMap, precisionMap, fncBody,
-            prec, ctx.specAdditionalConstraints(fnc.id))
+            res = computeRoundoff(inputValMap, inputErrorMap, precisionMap, fncBody,
+              prec, ctx.specAdditionalConstraints(fnc.id))
 
-          res._1 <= targetError
+            res._1 <= targetError
+          } catch {
+            case OverflowException(_) => false
+          }
         }) match {
 
           case None =>
@@ -97,9 +116,13 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
       } else {
         ctx.reporter.info("analyzing fnc: " + fnc.id)
 
+        if (!mixedPrecision) {
+          ctx.reporter.info(s"error analysis for uniform $uniformPrecision precision")
+        }
         val inputErrorMap: Map[Identifier, Rational] = ctx.specInputErrors(fnc.id)
 
         val precisionMap: Map[Identifier, Precision] = ctx.specInputPrecisions(fnc.id)
+        uniformPrecisions = uniformPrecisions + (fnc.id -> uniformPrecision) // so that this info is available in codegen
 
         computeRoundoff(inputValMap, inputErrorMap, precisionMap, fncBody,
           uniformPrecision, ctx.specAdditionalConstraints(fnc.id))
@@ -116,7 +139,7 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
   def computeRoundoff(inputValMap: Map[Identifier, Interval], inputErrorMap: Map[Identifier, Rational],
     precisionMap: Map[Identifier, Precision], expr: Expr,
     constPrecision: Precision, additionalConstr: Expr = BooleanLiteral(true)):
-    (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval]) = {
+    (Rational, Interval, Map[(Expr, PathCond), Rational], Map[(Expr, PathCond), Interval]) = {
 
     val (resRange, intermediateRanges) = (rangeMethod: @unchecked) match {
       case "interval" =>

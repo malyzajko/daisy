@@ -60,6 +60,17 @@ object TACTransformerPhase extends DaisyPhase {
 
       tmp
 
+    case IfExpr(cond, thenn, elze) =>
+      // TODO: do something with the condition
+      val ssaThen = toSSA(thenn)
+      val ssaElse = toSSA(elze)
+
+      IfExpr(cond, ssaThen, ssaElse)
+
+    case x @ GreaterThan(_, _) => x
+    case x @ GreaterEquals(_, _) => x
+    case x @ LessThan(_, _) => x
+    case x @ LessEquals(_, _) => x
   }
 
   private def replaceBody(expr: Expr, nextId: Identifier, nextBody: Expr): Expr = (expr: @unchecked) match {

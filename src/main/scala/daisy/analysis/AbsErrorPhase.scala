@@ -36,15 +36,16 @@ object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
     val trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
     val uniformPrecision = ctx.option[Precision]("precision")
 
-    val res: Map[Identifier, (Rational, Map[Expr, Rational])] = analyzeConsideredFunctions(ctx, prg){ fnc =>
+    val res: Map[Identifier, (Rational, Map[(Expr, PathCond), Rational])] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       val inputErrorMap: Map[Identifier, Rational] = ctx.specInputErrors(fnc.id)
 
       val fncBody = fnc.body.get
       val intermediateRanges = ctx.intermediateRanges(fnc.id)
+      val precisionMap: Map[Identifier, Precision] = ctx.specInputPrecisions(fnc.id)
 
       val (resRoundoff, allErrors) = evalRoundoff[AffineForm](fncBody, intermediateRanges,
-        Map.empty.withDefaultValue(uniformPrecision),
+        precisionMap,
         inputErrorMap.mapValues(AffineForm.+/-),
         zeroError = AffineForm.zero,
         fromError = AffineForm.+/-,

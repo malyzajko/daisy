@@ -28,6 +28,9 @@ object Main {
       "dynamic",
       "Run dynamic analysis"),
     FlagOption(
+      "bgrtdynamic",
+      "Run binary guided random testing dynamic analysis"),
+    FlagOption(
       "codegen",
       "Generate code (as opposed to just doing analysis)"),
     FlagOption(
@@ -60,9 +63,10 @@ object Main {
     ),
     ChoiceOption(
       "precision",
-      Map("Float16" -> Float16, "Float32" -> Float32, "Float64" -> Float64, "Quad" -> DoubleDouble,
-            "QuadDouble" -> QuadDouble,
-          "Fixed8" -> FixedPrecision(8), "Fixed16" -> FixedPrecision(16), "Fixed32" -> FixedPrecision(32)),
+      Map("Float16" -> Float16, "Float32" -> Float32, "Float64" -> Float64,
+        "Quad" -> DoubleDouble, "QuadDouble" -> QuadDouble,
+        "Fixed8" -> FixedPrecision(8), "Fixed16" -> FixedPrecision(16),
+        "Fixed32" -> FixedPrecision(32), "Fixed64" -> FixedPrecision(64)),
       "Float64",
       "(Default, uniform) precision to use"),
     StringChoiceOption(
@@ -76,6 +80,14 @@ object Main {
     FlagOption(
       "noInitialErrors",
       "Do not track initial errors specified by user"),
+    FlagOption(
+      "pow-roll",
+      "Roll products, e.g. x*x*x -> pow(x, 3)"
+      ),
+    FlagOption(
+      "pow-unroll",
+      "Unroll products, e.g. pow(x, 3) => x*x*x"
+      ),
     StringOption(
       "mixed-precision",
       """File with type assignment for all variables.
@@ -110,7 +122,9 @@ object Main {
     analysis.DataflowSubdivisionPhase,
     backend.CodeGenerationPhase,
     transform.TACTransformerPhase,
+    transform.PowTransformerPhase,
     analysis.DynamicPhase,
+    analysis.BGRTDynamicPhase,
     opt.RewritingOptimizationPhase,
     transform.ConstantTransformerPhase,
     opt.MixedPrecisionOptimizationPhase,
@@ -128,8 +142,6 @@ object Main {
   var ctx: Context = null
 
   def interfaceMain(args: Array[String]): Option[Context] = {
-    // TODO: only needs to be run once at compile time, maybe make this into a test
-    verifyCmdLineOptions()
     processOptions(args.toList) match {
       case Some(new_ctx) =>
         ctx = new_ctx
@@ -153,7 +165,7 @@ object Main {
             ctx.reporter.info("Something really bad happened. Cannot continue.")
           case _ : Throwable =>
             ctx.reporter.info("Something really bad happened. Cannot continue.")
-
+            
         }
         ctx.timers.get("total").stop
         ctx.reporter.info("time: \n" + ctx.timers.toString)
@@ -178,8 +190,16 @@ object Main {
       pipeline >>= opt.RewritingOptimizationPhase
     }
 
+    if ((ctx.hasFlag("pow-roll") || ctx.hasFlag("pow-unroll")) && !ctx.fixedPoint) {
+      pipeline >>= transform.PowTransformerPhase
+    }
+
     if (ctx.hasFlag("dynamic")) {
       pipeline >>= analysis.DynamicPhase
+      pipeline >>= backend.InfoPhase
+
+    } else if(ctx.hasFlag("bgrtdynamic")){
+      pipeline >>= analysis.BGRTDynamicPhase
       pipeline >>= backend.InfoPhase
 
     } else if (ctx.hasFlag("rewrite-fitness-eval")) {
@@ -202,6 +222,7 @@ object Main {
         transform.ConstantTransformerPhase >>
         analysis.RangePhase >>
         opt.MixedPrecisionOptimizationPhase >>
+        analysis.AbsErrorPhase >>
         backend.InfoPhase >>
         backend.CodeGenerationPhase
 
@@ -223,7 +244,7 @@ object Main {
       }
 
       pipeline >>= backend.InfoPhase
-
+      
       if (ctx.hasFlag("codegen")) {
         pipeline >>= backend.CodeGenerationPhase
       }
@@ -250,16 +271,6 @@ object Main {
     None
   }
 
-  private def verifyCmdLineOptions(): Unit = {
-    val allOpts =
-      Main.globalOptions.toList.map((_, "global")) ++
-      Main.allPhases.flatMap(c => c.definedOptions.toList.map((_, c.name)))
-    allOpts.groupBy(_._1.name).collect{
-      case (name, opts) if opts.size > 1 =>
-        Console.err.println(s"Duplicate command line option '$name' in " +
-         opts.map("'"+_._2+"'").mkString(", "))
-    }
-  }
 
   def processOptions(args: List[String]): Option[Context] = {
     val initReporter = new DefaultReporter(Set(), false)

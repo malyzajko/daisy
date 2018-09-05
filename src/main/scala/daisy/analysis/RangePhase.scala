@@ -37,7 +37,7 @@ object RangePhase extends DaisyPhase with tools.RangeEvaluators {
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val rangeMethod = ctx.option[String]("rangeMethod")
 
-    val res: Map[Identifier, (Interval, Map[Expr, Interval])] = analyzeConsideredFunctions(ctx, prg){ fnc =>
+    val res: Map[Identifier, (Interval, Map[(Expr, PathCond), Interval])] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 

@@ -27,6 +27,7 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
         nl(lvl)
         e match {
           case x: Let => ;
+          case IfExpr(_, _, _) => ;
           case _ => sb.append("return ")
         }
         pp(e, p)(lvl)
@@ -36,11 +37,14 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
         }
 
       case Cast(expr, t) =>
-        sb.append("(")
-        pp(t,p)
-        sb.append(") (")
-        pp(expr,p)
-        sb.append(")")
+        // TODO: check this
+        if (!(ctx.hasFlag("mixed-tuning") && ctx.fixedPoint)) {
+          sb.append("(")
+          pp(t,p)
+          sb.append(") (")
+          pp(expr,p)
+          sb.append(")")
+        }
 
       case FinitePrecisionType(Float16) => sb.append("half")
       case FinitePrecisionType(Float32) => sb.append("float")
@@ -64,13 +68,15 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
       case Program(id, defs) =>
         assert(lvl == 0)
         sb.append("#include <math.h>\n")
-        if (ctx.hasFlag("apfixed")) {
+        if (ctx.hasFlag("apfixed") || (ctx.hasFlag("mixed-tuning") && ctx.fixedPoint)) {
           sb.append("#include <ap_fixed.h>\n")
         }
 
         if (defs.flatMap(_.body).exists(
           TreeOps.exists{ case e => e.getType match {
-            case FinitePrecisionType(pr) => pr >= DoubleDouble case _ => false }})) {
+            case FinitePrecisionType(FloatPrecision(a)) => a >= 128
+            case FinitePrecisionType(FixedPrecision(a)) => a >= 64
+            case _ => false }})) {
           sb.append("#include <qd/dd_real.h>\n")
         }
         nl
@@ -143,6 +149,8 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
         nl(lvl+1)
         fd.body match {
           case Some(body@Let(_,_,_)) =>
+            pp(body, p)(lvl+1)
+          case Some(body@IfExpr(_, _, _)) =>
             pp(body, p)(lvl+1)
           case Some(body) =>
             sb.append("return ")

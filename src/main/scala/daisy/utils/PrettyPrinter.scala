@@ -4,6 +4,7 @@
 package daisy
 package utils
 
+import daisy.tools.Rational
 import lang.Identifiers.Identifier
 import lang.Trees._
 import lang.Types._
@@ -189,7 +190,7 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case FMA(l,m,r) => ppMathFun(Seq(l,m,r), "fma")
       case Division(l,r) => ppBinary(l, r, " / ")
 //      case Pow(l,r) => ppBinary(l, r, " ^ ")
-      case IntPow(l,r) => ppUnary(l, "", "^" + r)
+      case IntPow(l,r) => ppMathFun(Seq(l, RealLiteral(Rational(r))), "pow")
       case AbsError(l, r) => ppBinary(l, r, " +/- ")
       case LessThan(l,r) => ppBinary(l, r, " < ")
       case GreaterThan(l,r) => ppBinary(l, r, " > ")
@@ -202,13 +203,16 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case IfExpr(c, t, e) =>
         sb.append("if (")
         pp(c, p)
-        sb.append(")")
+        sb.append(") {")
         nl(lvl + 1)
         pp(t, p)(lvl + 1)
         nl
-        sb.append("else")
+        sb.append("} else {")
         nl(lvl + 1)
         pp(e, p)(lvl + 1)
+        sb.append("}")
+
+      case Tuple(args) => ppNary(args, "(", ", ", ")")
 
       case Error(tpe, desc) =>
         sb.append(s"""error[$tpe]("$desc""")
@@ -235,6 +239,7 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
         }
         sb.append(" => ")
         pp(tt, p)
+      case TupleType(args) => ppNary(args, "(", ", ", ")")
 
       // Definitions
       case Program(id, defs) =>

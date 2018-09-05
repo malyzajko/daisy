@@ -9,7 +9,7 @@ import org.scalatest.FunSuite
 */
 class FixedpointCodegenRegressionTest extends FunSuite {
 
-  val inputFile: String = "src/test/resources/AbsErrorRegressionFunctions.scala"
+  val inputFile: String = "src/test/resources/RegressionFunctions.scala"
   val context : Context = Main.processOptions(List(inputFile)).get
   val (_, inputPrg) = frontend.ExtractionPhase.run(context, null)
 

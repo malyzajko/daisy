@@ -8,7 +8,6 @@ import java.io.BufferedWriter
 import scala.collection.immutable.HashMap
 
 import lang.Trees._
-import lang.Types._
 
 object CodePrinter {
   val suffix: Map[String, String] = HashMap(
@@ -18,7 +17,7 @@ object CodePrinter {
 
   def apply(t: Program, ctx: Context, lang: String, out: BufferedWriter): Unit = {
     val printer = lang match {
-      case "C" => new CPrinter(out, ctx)
+      case "apfixed" | "C" => new CPrinter(out, ctx)
       case "Scala" => new ScalaPrinter(out, ctx)
       case "FPCore" => new FPCorePrinter(out, ctx)
     }
@@ -40,8 +39,6 @@ abstract class CodePrinter(buffer: Appendable) extends PrettyPrinter(buffer) {
       case Or(exprs) => ppNary(exprs, "(", " || ", ")")
       case Not(Equals(l, r)) => ppBinary(l, r, " != ")
       case Not(expr) => ppUnary(expr, "!(", ")")
-
-      case IntPow(_, _) => throw new Exception("IntPow in CodePrinter")
 
       // this should never be called by this printer, i.e. all RealTypes
       // should have been transformed before

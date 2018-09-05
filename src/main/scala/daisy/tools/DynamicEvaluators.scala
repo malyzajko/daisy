@@ -145,6 +145,37 @@ trait DynamicEvaluators {
 
   }
 
+  def dynamicErrorEvaluation(expr: Expr, inputConfig: Map[Identifier, Interval], 
+    seed: Long, numSamples: Long, useRoundoff: Boolean): ErrorMeasurerMPFR = {
+
+    val sampler = new Uniform(inputConfig, seed)
+    val measurer = new ErrorMeasurerMPFR()
+    var i = 0
+    while (i < numSamples) {
+      i = i + 1
+      val strInputs: Map[Identifier, String] = sampler.nextString
+      val dblInputs: Map[Identifier, Double] = strInputs.map({
+        case (x, s) => (x -> s.toDouble)
+      })
+      val mpfrInputs: Map[Identifier, MPFRFloat] =
+      if (useRoundoff) {
+        // WITH input errors
+        strInputs.map({
+          case (x, s) => (x -> MPFRFloat.fromString(s))
+        })
+      } else {
+        // no input errors
+        dblInputs.map({
+          case (x, d) => (x -> MPFRFloat.fromDouble(d))
+        })
+      }
+      val dblOutput: Double = evalDouble(expr, dblInputs)
+      val mpfrOutput: MPFRFloat = evalMPFR(expr, mpfrInputs)
+      measurer.nextValues(dblOutput, mpfrOutput)
+    }
+    measurer
+  }
+
   /**
     * Estimates the (roundoff) error of an expression dynamically
     * by executing the finite-precision computation side-by-side with a higher-

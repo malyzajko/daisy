@@ -223,7 +223,12 @@ trait CodeExtraction extends ASTExtractors {
       case TypeRef(_, sym, _) if isRealSym(sym) =>
         RealType
 
-
+      case TypeRef(_, sym, args) if sym.toString == "class Tuple2" =>
+        TupleType(args map { x => extractType(x) })
+      
+      case TypeRef(_, sym, args) if sym.toString == "class Tuple3" =>
+        TupleType(args map { x => extractType(x) })
+      
       case _ =>
         if (tpt ne null) {
           outOfSubsetError(tpt.typeSymbol.pos, "Could not extract type as PureScala: " +
@@ -559,6 +564,9 @@ trait CodeExtraction extends ASTExtractors {
             outOfSubsetError(tr, "Both branches of ifthenelse have incompatible types (" +
               r2.getType + " and " + r3.getType + ")")
           }
+
+        case ExTuple(args) => 
+          Tuple(args map {x => extractTree(x)})
 
         // default behaviour is to complain :)
         case _ =>

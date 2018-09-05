@@ -125,6 +125,7 @@ object Extractors {
       case Or(args) => Some((args, or))
       case IfExpr(cond, thenn, elze) => Some(Seq(cond, thenn, elze), (es: Seq[Expr]) => IfExpr(es(0), es(1), es(2)))
 
+      case Tuple(args) => Some(args, (es: Seq[Expr]) => Tuple(es))
       /* Terminals */
       case t: Terminal => Some(Seq[Expr](), (_: Seq[Expr]) => t)
 

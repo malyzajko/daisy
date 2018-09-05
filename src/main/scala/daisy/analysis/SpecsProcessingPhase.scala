@@ -88,11 +88,11 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
     var resRanges: Map[Identifier, PartialInterval] = Map()
     var resErrors: Map[Identifier, Rational] = Map()
     var additionalConst: Map[Identifier, Expr] = Map()
+    var resIds: Map[Identifier, Seq[Identifier]] = Map()
     // var requiredOutputRanges: Map[Identifier, Map[Identifier, PartialInterval]] = Map()
     // var requiredOutputErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
 
-    for (fnc <- functionsToConsider(ctx, prg)) {
-
+    val newDefs = transformConsideredFunctions(ctx, prg){ fnc =>
       fnc.precondition match {
         case Some(pre) =>
           // TODO: additional constraints
@@ -194,6 +194,18 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
 
       }
 
+
+      // if the function returns a tuple, untuple it
+      fnc.returnType match {
+        case lang.Types.TupleType(_) =>
+          fnc.copy(body = Some(lang.TreeOps.replace { 
+            case Tuple(args) => 
+              val (newBody, resIdsTmp) = untuple(args)
+              resIds += (fnc.id -> resIdsTmp)
+              newBody 
+          } (fnc.body.get)))
+        case _ => fnc
+      }
     }
 
     ctx.reporter.debug("range bounds: " + resRanges.mkString("\n"))
@@ -206,8 +218,21 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       specResultErrorBounds = resErrors,
       specInputPrecisions = inputPrecision,
       specResultPrecisions = resultPrecisions,
-      specAdditionalConstraints = additionalConst),
-      prg)
+      specAdditionalConstraints = additionalConst,
+      resultTupleIds = resIds),  
+      Program(prg.id, newDefs))
+  }
+
+  // turns a tuple into a Let statement with fresh variables
+  private def untuple(args: Seq[Expr]): (Expr, Seq[Identifier]) = {
+    if (args.size == 1) {
+      val fresh = FreshIdentifier("#res1", args.head.getType)
+      (Let(fresh, args.head, Variable(fresh)), Seq(fresh))
+    } else {
+      val fresh = FreshIdentifier("#res" + args.size, args.last.getType)
+      val (tmp, list) = untuple(args.init) 
+      (Let(fresh, args.last, tmp), list :+ fresh)
+    }
   }
 
   def extractPreCondition(expr: Expr): (Map[Identifier, (Rational, Rational)],

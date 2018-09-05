@@ -5,8 +5,9 @@ package daisy
 package backend
 
 import java.io.{BufferedWriter, File, FileWriter}
+import scala.collection.immutable.Seq
 
-import lang.Trees.Program
+import lang.Trees.{Program, Variable, Expr}
 import tools.{Interval, Rational}
 import Rational._
 
@@ -34,7 +35,11 @@ object InfoPhase extends DaisyPhase {
         val append = f.exists
         val o = new BufferedWriter(new FileWriter(f, append))
         if (!append) {
-          o.write("Function name, Absolute error, Relative error, Real range low, Real range high, \n")
+          if(ctx.hasFlag("dynamic") || ctx.hasFlag("bgrtdynamic")){
+            o.write("Function name, Absolute error, Relative error, Real range low, Real range high, Seed, numSamples, \n")
+          } else {
+            o.write("Function name, Absolute error, Relative error, Real range low, Real range high, \n")
+          }
         }
         o
       }
@@ -42,34 +47,57 @@ object InfoPhase extends DaisyPhase {
     for (fnc <- functionsToConsider(ctx, prg)){
 
       ctx.reporter.result(fnc.id)
+      fnc.returnType match {
+        case lang.Types.TupleType(args) =>
+          val errors = ctx.intermediateAbsErrors(fnc.id)
+          ctx.reporter.result("Absolute errors:")
+          for(resId <- ctx.resultTupleIds(fnc.id)) {
+            ctx.reporter.result(s"${resId}: ${errors((Variable(resId), Seq[Expr]()))}")
+          }
 
-      val absError = ctx.resultAbsoluteErrors.get(fnc.id)
-      val range = ctx.resultRealRanges.get(fnc.id)
-      val relError = ctx.resultRelativeErrors.getOrElse(fnc.id, (absError, range) match {
-        case (Some(e), Some(r)) if !r.includes(zero) => Some(e / Interval.minAbs(r))
-        case _ => None
-      })
-
-      (absError, ctx.specResultErrorBounds.get(fnc.id)) match {
-        case (Some(x), Some(spec)) if x > spec =>
-          ctx.reporter.warning(s"  Absolute error: $x. Error bound is not satisfied!")
-        case (Some(x), _) =>
-          ctx.reporter.result(s"  Absolute error: $x")
         case _ =>
-      }
+          val absError = ctx.resultAbsoluteErrors.get(fnc.id)
+          val range = ctx.resultRealRanges.get(fnc.id)
+          val relError = ctx.resultRelativeErrors.getOrElse(fnc.id, (absError, range) match {
+            case (Some(e), Some(r)) if !r.includes(zero) => Some(e / Interval.minAbs(r))
+            case _ => None
+          })
 
-      range.foreach(r => ctx.reporter.result(s"  Real range:     $r"))
+          (absError, ctx.specResultErrorBounds.get(fnc.id)) match {
+            case (Some(x), Some(spec)) if x > spec =>
+              ctx.reporter.warning(s"  Absolute error: $x. Error bound is not satisfied!")
+            case (Some(x), _) =>
+              ctx.reporter.result(s"  Absolute error: $x")
+            case _ =>
+          }
 
-      relError.foreach(re => ctx.reporter.result(s"  Relative error: $re"))
+          range.foreach(r => ctx.reporter.result(s"  Real range:     $r"))
 
-      if (out.isDefined) {
-        out.get.write(
-          fnc.id + ","+
-          absError.map(_.toString).getOrElse("") + "," +
-          relError.map(_.toString).getOrElse("") + "," +
-          range.map(_.xlo.toString).getOrElse("") + "," +
-          range.map(_.xhi.toString).getOrElse("") + "\n"
-        )
+          relError.foreach(re => ctx.reporter.result(s"  Relative error: $re"))
+          
+          val numSamples = ctx.resultNumberSamples.get(fnc.id)
+
+          if (out.isDefined) {
+            if(ctx.hasFlag("dynamic") || ctx.hasFlag("bgrtdynamic")){
+              out.get.write(
+                fnc.id + ","+
+                absError.map(_.toString).getOrElse("") + "," +
+                relError.map(_.toString).getOrElse("") + "," +
+                range.map(_.xlo.toString).getOrElse("") + "," +
+                range.map(_.xhi.toString).getOrElse("") + "," +
+                ctx.seed.toString + "," + 
+                numSamples.map(_.toString).getOrElse("") + "\n"
+              )
+            } else {
+              out.get.write(
+                fnc.id + ","+
+                absError.map(_.toString).getOrElse("") + "," +
+                relError.map(_.toString).getOrElse("") + "," +
+                range.map(_.xlo.toString).getOrElse("") + "," +
+                range.map(_.xhi.toString).getOrElse("") + "\n"
+              )
+            }
+          }
       }
     }
 

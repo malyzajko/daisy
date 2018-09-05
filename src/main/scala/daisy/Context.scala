@@ -10,6 +10,7 @@ import lang.Identifiers._
 import tools.{Interval, PartialInterval, Rational, FinitePrecision}
 import FinitePrecision.{Precision, FixedPrecision}
 import scala.collection.mutable.ArrayBuffer
+import scala.collection.immutable.Seq
 
 case class Context(
   file: String,
@@ -37,18 +38,28 @@ case class Context(
   specResultRangeBounds: Map[Identifier, PartialInterval] = Map(),
   specResultErrorBounds: Map[Identifier, Rational] = Map(),
 
+  // stored IDs which were used during untyping
+  resultTupleIds: Map[Identifier, Seq[Identifier]] = Map(),
+
   // if Daisy chooses uniform precision, which one it chose
   uniformPrecisions: Map[Identifier, Precision] = Map(),
   // the analysed/computed roundoff errors for each function
   resultAbsoluteErrors: Map[Identifier, Rational] = Map(),
   resultRealRanges: Map[Identifier, Interval] = Map(),
+  resultNumberSamples: Map[Identifier, Long] = Map(),
   // a None value indicates no relative error could be computed
   resultRelativeErrors: Map[Identifier, Option[Rational]] = Map(),
 
+  // PathCond (same as Seq[Boolean]) captures the path to the expression in (possibly nested) if-the-else statements
+  // true denotes (part of the) path to expressions in then branch, false - in else branch,
+  // empty Seq() means that expression is not inside if-then-else branches
+
   // intermediate ranges and errors, which are needed e.g. for fixed-point codegen
-  intermediateAbsErrors: Map[Identifier, Map[Expr, Rational]] = Map(),
+  intermediateAbsErrors: Map[Identifier, Map[(Expr, Seq[Expr]), Rational]] = Map(),
   // real-valued ranges
-  intermediateRanges: Map[Identifier, Map[Expr, Interval]] = Map()
+  intermediateRanges: Map[Identifier, Map[(Expr, Seq[Expr]), Interval]] = Map(),
+  
+  seed:  Long = -1
 ) {
 
   val reporter = new DefaultReporter(
@@ -59,7 +70,7 @@ case class Context(
 
   val fixedPoint: Boolean = option[Precision]("precision") match {
     case FixedPrecision(_) => true
-    case _ => false
+    case _ => option[String]("choosePrecision") == "fixed"
   }
 
   def option[T: ClassTag](name: String): T = options.get(name) map {

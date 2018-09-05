@@ -301,5 +301,13 @@ trait ASTExtractors {
       }
     }
 
+    object ExTuple {
+      def unapply(tree: Apply): Option[Seq[Tree]] = tree match {
+        case Apply(select, args) if (select.toString.startsWith("new")) => Some(args)
+        case _ => None
+      }
+    }
+
+
   } // end StructuralExtractors
 }

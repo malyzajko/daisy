@@ -38,6 +38,11 @@ object SMTRange {
 
   }
 
+  def apply(i: Interval): SMTRange = {
+    // to make the range evaluation work in presence of if-else stmts
+    SMTRange(Variable(FreshIdentifier("tmp"+System.currentTimeMillis, RealType)), i)
+  }
+
   def apply(v: Variable, i: Interval, precondition: Expr): SMTRange = {
     val constrs: Set[Expr] = precondition match {
       case And(exprs) => exprs.toSet
@@ -271,6 +276,10 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
   }
 
   def +/-(r: Rational): SMTRange = ???
+
+  def addConstraint(e: Set[Expr]): SMTRange = {
+    SMTRange(interval, tree, constraints ++ e)
+  }
 
   def unary_-(): SMTRange = {
     // negation does not affect tightness

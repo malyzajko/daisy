@@ -44,10 +44,14 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
   val radius: Rational = width / two
 
   def isPointRange: Boolean = xlo == xhi
+
   // for compatibility with RangeArithmetic
   def toInterval: Interval = this
+
   /* Adds an error of magnitude r */
   def +/-(r: Rational): Interval = this + Interval(-r, r)
+
+  def addConstraint(e: Set[lang.Trees.Expr]): Interval = this
 
   def unary_-(): Interval = Interval(-xhi, -xlo)
 
@@ -320,5 +324,9 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
 
   @inline
   def includes(r: Rational): Boolean = xlo <= r && r <= xhi
+
+  def isNonNegative: Boolean = this.xlo >= Rational.zero
+
+  def isPowerOf2: Boolean = this.xlo.equals(this.xhi) && this.xhi.isPowerOf2
 
 }

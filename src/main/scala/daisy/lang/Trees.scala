@@ -210,6 +210,10 @@ object Trees {
     val getType = leastUpperBound(thenn.getType, elze.getType).getOrElse(Untyped).unveilUntyped
   }
 
+  case class Tuple(args: Seq[Expr]) extends Expr {
+    val getType = TupleType(args map (_.getType))
+  }
+
   /** $encodingof `(args) => body` */
   case class Lambda(args: Seq[ValDef], body: Expr) extends Expr {
     val getType = FunctionType(args.map(_.getType), body.getType).unveilUntyped
@@ -317,6 +321,12 @@ object Trees {
 
   object And {
     def apply(a: Expr, b: Expr): Expr = And(Seq(a, b))
+
+    def make(exprs: Seq[Expr]): Expr = exprs match {
+      case Seq() => BooleanLiteral(true)
+      case Seq(e) => e
+      case _ => new And(exprs)
+    }
   }
 
   /** $encodingof `... || ...`

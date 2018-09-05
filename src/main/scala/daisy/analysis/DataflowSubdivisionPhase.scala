@@ -69,8 +69,8 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
       DataflowPhase.rangeMethod = ctx.option[String]("rangeMethod")
       DataflowPhase.errorMethod = ctx.option[String]("errorMethod")
 
-      var intermRanges: Seq[Map[Expr, Interval]] = Seq()
-      var intermErrors: Seq[Map[Expr, Rational]] = Seq()
+      var intermRanges: Seq[Map[(Expr, PathCond), Interval]] = Seq()
+      var intermErrors: Seq[Map[(Expr, PathCond), Rational]] = Seq()
 
       // Evaluate each input range
       val errors = subIntervals.par.map(subInt => {

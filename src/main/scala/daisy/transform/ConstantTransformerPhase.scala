@@ -72,6 +72,14 @@ object ConstantTransformerPhase extends DaisyPhase {
       case ArithOperator(es, recons) =>
         recons(es.map(mapConstants(_)))
 
+      case IfExpr(cond, thenn, elze) =>
+        IfExpr(mapConstants(cond), mapConstants(thenn), mapConstants(elze))
+
+      case GreaterThan(l, r) => GreaterThan(mapConstants(l), mapConstants(r))
+      case GreaterEquals(l, r) => GreaterEquals(mapConstants(l), mapConstants(r))
+      case LessThan(l, r) => LessThan(mapConstants(l), mapConstants(r))
+      case LessEquals(l, r) => LessEquals(mapConstants(l), mapConstants(r))
+
       case Let(id, r @ RealLiteral(_), b) => Let(id, r, mapConstants(b))
       case Let(id, v, b) => Let(id, mapConstants(v), mapConstants(b))
     }

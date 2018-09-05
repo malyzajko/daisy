@@ -541,6 +541,23 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
     n / d
   }
 
+  lazy val isPowerOf2: Boolean = {
+    if (n != 1 && d != 1) {
+      false
+    } else {
+      var intPart = if (n == 1) d else n
+      var divisibleByTwo = true
+      while (divisibleByTwo && intPart != 1) {
+        if (intPart % 2 != 0) {
+          divisibleByTwo = false
+        } else {
+          intPart = intPart / 2
+        }
+      }
+      divisibleByTwo
+    }
+  }
+
   override def equals(other: Any): Boolean = other match {
     case x: Rational => this.compare(x) == 0
     case x: Double => this.toDouble == x  // TODO: not ideal

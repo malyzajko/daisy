@@ -42,7 +42,7 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
   val activeRules = COMMUTATIVITY ++ ASSOCIATIVITY ++ DISTRIBUTIVITY ++ List(IDENTITIES) ++
     FRACTIONS_TRANSFORM ++ FRACTIONS_DISTRIBUTE
 
-  var seed: Long = 0l
+  var initSeed: Long = 0l
   var rand: Random = null
 
   var optimizeForAccuracy = true
@@ -51,7 +51,7 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
     reporter = ctx.reporter
     maxGenerations = ctx.option[Long]("rewrite-generations").toInt
     populationSize = ctx.option[Long]("rewrite-population").toInt
-    seed = if (ctx.option[Long]("rewrite-seed") == 0) {
+    initSeed = if (ctx.option[Long]("rewrite-seed") == 0) {
       System.currentTimeMillis()
     } else {
       ctx.option[Long]("rewrite-seed")
@@ -74,7 +74,7 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
     }
 
     val infoString = s"fitness function: $fitnessFunctionName, # generations: $maxGenerations, " +
-      s"population size: $populationSize, seed: $seed"
+      s"population size: $populationSize, seed: $initSeed"
     ctx.reporter.info(infoString)
 
 
@@ -92,7 +92,7 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
       fnc.copy(body = Some(newBody))
     }
 
-    (ctx, Program(prg.id, newDefs))
+    (ctx.copy(seed = initSeed), Program(prg.id, newDefs))
   }
 
   // refactor as we need to call this several times
@@ -107,7 +107,7 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
     var bestCostExpr = initExpr
     var bestError = fitnessBefore
 
-    rand = new Random(seed)  // reset generator to obtain deterministic search
+    rand = new Random(initSeed)  // reset generator to obtain deterministic search
 
     // we assign a very high fitness to signal that something is wrong
     // the offending expression should be filtered out "naturally"
