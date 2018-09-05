@@ -163,4 +163,3 @@ trait Subdivision extends DeltaAbstractionUtils {
   } */
 }
 
-

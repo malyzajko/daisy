@@ -17,6 +17,10 @@ object Interval {
   def apply(r: Rational): Interval = Interval(r, r)
   def apply(i: Interval): Interval = i
 
+  // for convenience of testing
+  def apply(l: Int, h: Int): Interval =
+    Interval(Rational(l), Rational(h))
+
   def +/-(r: Rational) = Interval(-r,r)
 
   val zero: Interval = Interval(0)
@@ -142,6 +146,20 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
       // odd powers, and even powers over + / + monotonically rising
       Interval(xlo ^ n, xhi ^ n)
     }
+  }
+
+  def square(): Interval = {
+    if (xhi < zero) {
+      Interval(xhi square, xlo square)
+    }
+    else if (includes(zero)) {
+      Interval(zero, Interval.maxAbs(this) square)
+    }
+    else {
+      Interval(xlo square, xhi square)
+
+    }
+
   }
 
   /**

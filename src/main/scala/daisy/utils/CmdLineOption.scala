@@ -45,6 +45,16 @@ case class NumOption(name: String, default: Long, description: String = "")
 }
 
 /*
+  Option which sets some double parameter. Default value is given in default.
+ */
+case class DoubleOption(name: String, default: Double, description: String = "")
+  extends CmdLineOption[Double] {
+
+  override def helpLine: String =
+      "--%-30s %s".format(s"$name=$default", description)
+}
+
+/*
   Option for making a choice from several fixed alternatives.
  */
 case class ChoiceOption[T: ClassTag](name: String, choices: Map[String, T], default: String, description: String = "")
