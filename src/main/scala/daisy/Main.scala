@@ -83,13 +83,6 @@ object Main {
     FlagOption(
       "probabilistic",
       "Runs the probabilistic phase. Requires a file with thresholds"),
-    // StringOption(
-    //   "mfile",
-    //   """File with thresholds.
-    //     The format is the following:
-    //     function_name_1=threshold1
-    //     function_name_2 = {
-    //       threshold_i }"""),
     FlagOption(
       "pow-roll",
       "Roll products, e.g. x*x*x -> pow(x, 3)"
