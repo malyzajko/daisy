@@ -3,14 +3,19 @@ package tools
 
 
 import scala.collection.mutable.ListBuffer
+import scala.language.postfixOps
+import scala.math.{ScalaNumber}
 
 import org.gnu.glpk.GLPK
 import org.gnu.glpk.GLPKConstants
+import org.gnu.glpk.GlpkException
 import org.gnu.glpk.SWIGTYPE_p_double
 import org.gnu.glpk.SWIGTYPE_p_int
+import org.gnu.glpk.glp_prob
 import org.gnu.glpk.glp_smcp
 
 import Rational._
+import Interval._
 import Rational.{zero => rzero, _}
 
 
@@ -429,14 +434,9 @@ case class DSInterval(dsi: List[(Interval, Rational)]) {
   import DSInterval._
   dsi.foreach(x => assert(x._2 >= 0, "weights are smaller than 0"))
   val (intervals, weights) = dsi.unzip
-  val sumOfWeights = sum(weights)
+  val sumOfWeights = weights.foldLeft(Rational.zero)(_+_)
   assert(sumOfWeights <= 1, "sum of weights is greater than 1")
-  def sum(xs: List[Rational]): Rational = {
-    xs match {
-      case x :: tail => x + sum(tail) // if there is an element, add it to the sum of the tail
-      case Nil => rzero // if there are no elements, then the sum is 0
-    }
-  }
+
 
   def toInterval() = {
     var lo = dsi.head._1.xlo
