@@ -4,7 +4,7 @@
 
 # 'Standard' benchmark set
 declare -a files=("testcases/rosa/Bsplines.scala" \
-  "testcases/rosa/Doppler.scala" \
+  "testcases/rosa/Doppler.scala"\
   "testcases/real2float/Himmilbeau.scala" \
   "testcases/control/InvertedPendulum.scala" \
   "testcases/real2float/Kepler.scala" \
@@ -29,5 +29,5 @@ fi
 # Run daisy on each testfile
 for file in "${files[@]}"
 do
-  ./daisy --dynamic --mpfr ${file}
+  ./daisy --dynamic --mpfr ${file} --results-csv=test_dynamic_results.csv
 done

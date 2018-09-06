@@ -5,7 +5,7 @@ package daisy
 
 import scala.reflect.ClassTag
 
-import lang.Trees.Expr
+import lang.Trees.{Expr, Program}
 import lang.Identifiers._
 import tools.{Interval, PartialInterval, Rational, FinitePrecision}
 import FinitePrecision.{Precision, FixedPrecision}
@@ -20,6 +20,9 @@ case class Context(
   timers: TimerStorage = new TimerStorage,
 
   libFiles: List[String] = List(System.getProperty("user.dir")+"/library/Real.scala"),
+
+  // needed to generate PSI files in fixed-point arithmetic without the three-address form
+  originalProgram: Program = null,
 
   // Information we want to persist through phases,
   // but don't want to pollute the nice and clean trees.
