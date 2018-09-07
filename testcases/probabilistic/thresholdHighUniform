@@ -1,0 +1,17 @@
+doppler=-20
+sine="0.95"
+sineOrder3=0.95
+sqroot=-1.0
+bspline0=0.001
+bspline1=0.64
+bspline2=0.64
+bspline3=-0.01
+rigidBody1=0.0
+rigidBody2=0.0
+verhulst=0.9
+predatorPrey=0.045
+carbonGas=0.5
+turbine1=-4
+turbine2=-4
+turbine3=3.5
+himmilbeau=90

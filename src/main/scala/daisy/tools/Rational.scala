@@ -485,6 +485,8 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
   def *(other: Rational): Rational = Rational(n * other.n, d * other.d)
   def /(other: Rational): Rational = Rational(n * other.d, d* other.n)
   def ^(exp: Int): Rational = Rational(n.pow(exp), d.pow(exp))
+  def square(): Rational = Rational(n.pow(2), d.pow(2))
+
 
   override def toString: String = niceDoubleString(this.toDouble)
 

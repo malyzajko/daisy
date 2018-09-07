@@ -1,0 +1,16 @@
+bspline2=0.2
+rigidBody1=300
+rigidBody2=5000
+outTraincar1=-2000.0
+outTraincar2=-3000.0
+outTraincar3=-6000.0
+outTraincar4=-400000.0
+neuron=0.5
+classIDX2=-3.38110323014
+classIDX1=1.56177676623
+classIDX0=-1.8193264639
+filterIteration1=0.0
+filterIteration2=1.13
+filterIteration3=2.0
+filterIteration4=3.0
+solveCubic=50.0

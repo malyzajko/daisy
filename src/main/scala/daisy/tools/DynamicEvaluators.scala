@@ -252,6 +252,43 @@ trait DynamicEvaluators {
 
   }
 
+  def evalDSAffine(expr: Expr, _valMap: Map[Identifier, DSAffineForm]): DSAffineForm = {
+
+    var valMap: Map[Identifier, DSAffineForm] = _valMap
+
+    def eval(e: Expr): DSAffineForm = (e: @unchecked) match {
+
+      case Variable(id) => valMap(id)
+      case RealLiteral(r) => DSAffineForm(r)
+      case Plus(x, y) => {
+        //println(s"\n Adding $x and $y")
+        eval(x) + eval(y) }
+      case Minus(x, y) => {
+        //println(s"\n Subtracting $y from $x")
+        eval(x) - eval(y) }
+      case Times(x, y) => {
+        //println(s"\n Multiplying $x with $y")
+        eval(x) * eval(y) }
+      case Division(x, y) => {
+        //println(s"\n Dividing $x by $y")
+        eval(x) / eval(y) }
+//      case Pow(x, n) => eval(x) ^ eval(n)
+//      case IntPow(x, n) => eval(x) ^ n
+      case UMinus(x) => {
+        //println(s"\n Unary minus of $x")
+        - eval(x)}
+      case Exp(x) => eval(x).exp
+
+      case Let(id, v, b) =>
+        val dsAForm = eval(v)
+        valMap += (id -> dsAForm)
+        eval(b)
+
+    }
+    eval(expr)
+
+  }
+
   def evalDouble(expr: Expr, _valMap: Map[Identifier, Double]): Double = {
     var valMap = _valMap
 
@@ -272,6 +309,27 @@ trait DynamicEvaluators {
       case Tan(x) => math.tan(eval(x))
       case Exp(x) => math.exp(eval(x))
       case Log(x) => math.log(eval(x))
+      case Let(id, v, b) =>
+        valMap += (id -> eval(v))
+        eval(b)
+
+    }
+    eval(expr)
+
+  }
+
+  def evalFloat(expr: Expr, _valMap: Map[Identifier, Float]): Float = {
+    var valMap = _valMap
+
+    def eval(e: Expr): Float = (e: @unchecked) match {
+
+      case Variable(id) => valMap(id)
+      case RealLiteral(r) => r.toFloat
+      case Plus(x, y) => eval(x) + eval(y)
+      case Minus(x, y) => eval(x) - eval(y)
+      case Times(x, y) => eval(x) * eval(y)
+      case Division(x, y) => eval(x) / eval(y)
+      case UMinus(x) => - eval(x)
       case Let(id, v, b) =>
         valMap += (id -> eval(v))
         eval(b)
@@ -308,4 +366,59 @@ trait DynamicEvaluators {
     }
     eval(expr)
   }
+
+  def evalLong(expr: Expr, _valMap: Map[Identifier, Long]): Long = {
+    var valMap = _valMap
+
+    def eval(e: Expr): Long = (e: @unchecked) match {
+
+      case Variable(id) => valMap(id)
+      //case RealLiteral(r) => r.toFloat
+      case Int64Literal(v) => v
+      case Plus(x, y) => eval(x) + eval(y)
+      case Minus(x, y) => eval(x) - eval(y)
+      case Times(x, y) => eval(x) * eval(y)
+      case Division(x, y) => eval(x) / eval(y)
+      case UMinus(x) => - eval(x)
+      case RightShift(t, by) =>
+        eval(t) >> by
+      case LeftShift(t, by) =>
+        eval(t) << by
+
+      case Let(id, v, b) =>
+        valMap += (id -> eval(v))
+        eval(b)
+
+    }
+    eval(expr)
+
+  }
+
+  def evalInt(expr: Expr, _valMap: Map[Identifier, Int]): Int = {
+    var valMap = _valMap
+
+    def eval(e: Expr): Int = (e: @unchecked) match {
+
+      case Variable(id) => valMap(id)
+      //case RealLiteral(r) => r.toFloat
+      case Int32Literal(v) => v
+      case Plus(x, y) => eval(x) + eval(y)
+      case Minus(x, y) => eval(x) - eval(y)
+      case Times(x, y) => eval(x) * eval(y)
+      case Division(x, y) => eval(x) / eval(y)
+      case UMinus(x) => - eval(x)
+      case RightShift(t, by) =>
+        eval(t) >> by
+      case LeftShift(t, by) =>
+        eval(t) << by
+
+      case Let(id, v, b) =>
+        valMap += (id -> eval(v))
+        eval(b)
+
+    }
+    eval(expr)
+
+  }
+
 }
