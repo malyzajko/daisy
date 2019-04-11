@@ -6,6 +6,7 @@ package analysis
 import lang.Trees._
 import tools.Rational.max
 import lang.Identifiers.Identifier
+import lang.Constructors.and
 import tools._
 import tools.FinitePrecision._
 
@@ -44,10 +45,8 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
   implicit val debugSection = DebugSectionAnalysis
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
-    val errorMethod = ctx.option[String]("errorMethod")
-    require(errorMethod == "affine", s"$name only supports error method 'affine'")
-
     val divLimit = ctx.option[Long]("divLimit").toInt
+    val totalOpt = ctx.option[Long]("totalOpt").toInt
     //  val subdiv: String = ctx.option("subdiv")
 
     // for each function, returns (abs error, rel error, result interval)
@@ -60,7 +59,7 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
 
       //  Subdivide input ranges
       val subIntervals: Seq[Map[Identifier, Interval]] =
-        getEqualSubintervals(inputValMap, divLimit)
+        getEqualSubintervals(inputValMap, divLimit, totalOpt)
 
       val precisionMap: Map[Identifier, Precision] = ctx.specInputPrecisions(fnc.id)
       val uniformPrecision = ctx.option[Precision]("precision")
@@ -69,11 +68,8 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
       DataflowPhase.rangeMethod = ctx.option[String]("rangeMethod")
       DataflowPhase.errorMethod = ctx.option[String]("errorMethod")
 
-      var intermRanges: Seq[Map[Expr, Interval]] = Seq()
-      var intermErrors: Seq[Map[Expr, Rational]] = Seq()
-
       // Evaluate each input range
-      val errors = subIntervals.par.map(subInt => {
+      val results = subIntervals.par.map(subInt => {
 
         val inputErrorMap: Map[Identifier, Rational] = ctx.specInputErrors(fnc.id)
 
@@ -81,9 +77,15 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
         //   ctx.option[String]("rangeMethod"), ctx.option[String]("errorMethod"),
         //   ctx.option[Precision]("precision"))
 
-        val (absError, realRange, _intermErrors, _intermRanges) = DataflowPhase.computeRoundoff(
-          subInt, inputErrorMap, precisionMap, bodyReal, uniformPrecision,
-          ctx.specAdditionalConstraints(fnc.id))
+        // TODO fix ugly hack
+        val (rangesPrecond, errorsPrecond, addCond) = SpecsProcessingPhase.extractPreCondition(fnc.precondition.get)
+        val subIntExpr = subInt.foldLeft(Seq[Expr]())({ case (pre, (id, intv)) =>
+          pre :+ LessEquals(RealLiteral(intv.xlo), Variable(id)) :+ LessEquals(Variable(id), RealLiteral(intv.xhi)) })
+        val errorsExpr = errorsPrecond.foldLeft(Seq[Expr]())({ case (errs, (id, error)) =>
+          errs :+ AbsError(Variable(id), RealLiteral(error)) })
+        val precond = and(subIntExpr ++ errorsExpr ++ addCond: _*)
+        val (absError, realRange, intermErrors, intermRanges, intermQueries) = DataflowPhase.computeRoundoff(
+          subInt, inputErrorMap, precisionMap, bodyReal, uniformPrecision, precond)
 
         // var failIntervals: List[(Map[Identifier, Interval], Rational)] = List.empty
 
@@ -94,14 +96,15 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
           Some(absError / Interval.minAbs(realRange))
         }
 
-        intermRanges = intermRanges :+ _intermRanges
-        intermErrors = intermErrors :+ _intermErrors
-        (absError, relError, realRange)
+        // We return the corresponding subdivision 'subInt' here because we need it for the certificate generation.
+        ((absError, relError, realRange), (intermErrors, intermRanges, intermQueries), subInt)
       }) // end subIntervals.map
 
-      // Merge results
-      val (absErrors, relErrors, ranges) = errors.toSeq.unzip3
+      val (endResults, intermResults, subIntvs) = results.seq.unzip3
+      val (absErrors, relErrors, ranges) = endResults.unzip3
+      val (intermErrors, intermRanges, intermQueries) = intermResults.unzip3
 
+      // Merge results
       val totalAbsError = absErrors.tail.fold(absErrors.head)({
         case (x, y) => max(x, y)
         })
@@ -124,7 +127,7 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
           acc.keys.map(key => (key -> max(acc(key), m(key)))).toMap
       })
 
-      (totalAbsError, totalRelError, totalRange, totalIntermRanges, totalIntermErrors)
+      (totalAbsError, totalRelError, totalRange, totalIntermRanges, totalIntermErrors, intermResults, subIntvs)
       // val relError = errors.max(optionAbsOrdering).getOrElse("NaN")
 
       // if (failIntervals.nonEmpty)
@@ -142,12 +145,14 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
       resultRelativeErrors = res.mapValues(_._2),
       resultRealRanges = res.mapValues(_._3),
       intermediateRanges = res.mapValues(_._4),
-      intermediateAbsErrors = res.mapValues(_._5)),
+      intermediateAbsErrors = res.mapValues(_._5),
+      subdivResults = res.mapValues(_._6),
+      subdivIntervals = res.mapValues(_._7)),
     prg)
   }
 
   def evalError(expr: Expr, inputValMap: Map[Identifier, Interval],
-    inputErrorMap: Map[Identifier, Rational], rangeMethod: String, errorMethod: String,
+    inputErrorMap: Map[Identifier, Rational], precondition: Expr, rangeMethod: String, errorMethod: String,
     precision: Precision): (Rational, Interval) = {
 
     (rangeMethod, errorMethod) match {
@@ -160,7 +165,7 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
           trackRoundoffErrors = true)
 
       case ("smt", "affine") =>
-        uniformRoundoff_SMT_AA(expr, inputValMap, inputErrorMap, precision,
+        uniformRoundoff_SMT_AA(expr, inputValMap, inputErrorMap, precondition, precision,
           trackRoundoffErrors = true)
     }
   }

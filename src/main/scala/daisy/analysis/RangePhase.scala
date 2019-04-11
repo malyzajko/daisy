@@ -37,40 +37,44 @@ object RangePhase extends DaisyPhase with tools.RangeEvaluators {
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val rangeMethod = ctx.option[String]("rangeMethod")
 
-    val res: Map[Identifier, (Interval, Map[Expr, Interval])] = analyzeConsideredFunctions(ctx, prg){ fnc =>
+    val res: Map[Identifier, (Interval, Map[Expr, Interval], Map[Expr, (Expr, Expr)])] =
+      analyzeConsideredFunctions(ctx, prg){ fnc =>
 
-      val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
+        val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
-      rangeMethod match {
-        case "interval" =>
-          val (resRange, intermediateRanges) =
-            evalRange[Interval](fnc.body.get, inputValMap, Interval.apply)
+        rangeMethod match {
+          case "interval" =>
+            val (resRange, intermediateRanges) =
+              evalRange[Interval](fnc.body.get, inputValMap, Interval.apply)
 
-          (resRange, intermediateRanges)
+            (resRange, intermediateRanges, Map())
 
-        case "affine" =>
-          val (resRange, intermediateRanges) = evalRange[AffineForm](fnc.body.get,
-            inputValMap.map(x => (x._1 -> AffineForm(x._2))), AffineForm.apply)
+          case "affine" =>
+            val (resRange, intermediateRanges) = evalRange[AffineForm](fnc.body.get,
+              inputValMap.map(x => (x._1 -> AffineForm(x._2))), AffineForm.apply)
 
-          (resRange.toInterval, intermediateRanges.mapValues(_.toInterval))
+            (resRange.toInterval, intermediateRanges.mapValues(_.toInterval), Map())
 
-        case "smt" =>
-          val (resRange, intermediateRanges) = evalRange[SMTRange](fnc.body.get,
-            inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }),
-            SMTRange.apply)
+          case "smt" =>
+            val precond = fnc.precondition.get
+            val (resRange, intermediateRanges) = evalRange[SMTRange](fnc.body.get,
+              inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, precond)) }),
+              SMTRange.apply(_, precond))
 
-          (resRange.toInterval, intermediateRanges.mapValues(_.toInterval))
+            (resRange.toInterval, intermediateRanges.mapValues(_.toInterval),
+              intermediateRanges.mapValues(_.getQueries))
 
 
-        // case "subdiv" =>
-        //   evaluateSubdiv(fnc.body.get, ctx.specInputRanges(fnc.id), Map.empty)
+          // case "subdiv" =>
+          //   evaluateSubdiv(fnc.body.get, ctx.specInputRanges(fnc.id), Map.empty)
+
+        }
 
       }
 
-    }
-
     (ctx.copy(resultRealRanges = res.mapValues(_._1),
-      intermediateRanges = res.mapValues(_._2)),
+      intermediateRanges = res.mapValues(_._2),
+      intermediateQueries = res.mapValues(_._3)),
       prg)
   }
 

@@ -48,7 +48,15 @@ case class Context(
   // intermediate ranges and errors, which are needed e.g. for fixed-point codegen
   intermediateAbsErrors: Map[Identifier, Map[Expr, Rational]] = Map(),
   // real-valued ranges
-  intermediateRanges: Map[Identifier, Map[Expr, Interval]] = Map()
+  intermediateRanges: Map[Identifier, Map[Expr, Interval]] = Map(),
+  // SMT queries
+  intermediateQueries: Map[Identifier, Map[Expr, (Expr, Expr)]] = Map(),
+
+  // subdivided intervals and the errors, ranges and queries for them
+  subdivResults: Map[Identifier, Seq[(Map[Expr, Rational], Map[Expr, Interval], Map[Expr, (Expr, Expr)])]] = Map(),
+  subdivIntervals: Map[Identifier, Seq[Map[Identifier, Interval]]] = Map()
+  // subdivAbsErrors: Map[Identifier, Seq[Map[Expr, Rational]]] = Map(),
+  // subdivRanges: Map[Identifier, Seq[Map[Expr, Interval]]] = Map()
 ) {
 
   val reporter = new DefaultReporter(
