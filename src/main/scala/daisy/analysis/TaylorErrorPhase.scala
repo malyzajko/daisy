@@ -39,7 +39,7 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
            getEqualSubintervals(ctx.specInputRanges(fnc.id), 3)
 
         val errors = subIntervals.par.map(subInt =>
-          evalTaylor(ctx, fnc.body.get, subInt, rangeMethod)._1
+          evalTaylor(ctx, fnc.body.get, subInt, fnc.precondition.get, rangeMethod)._1
         )
         val totalAbsError = errors.tail.fold(errors.head)({
           case (x, y) => max(x, y)
@@ -47,7 +47,7 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
         // TODO: also do this for ranges
         (totalAbsError, Interval(Rational.zero))
       } else {
-        val (error, interval) = evalTaylor(ctx, fnc.body.get, ctx.specInputRanges(fnc.id), rangeMethod)
+        val (error, interval) = evalTaylor(ctx, fnc.body.get, ctx.specInputRanges(fnc.id), fnc.precondition.get, rangeMethod)
         ctx.reporter.debug("absError: " + error.toString + ", time: " +
           (System.currentTimeMillis - startTime))
 
@@ -62,7 +62,7 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
 
 
   def evalTaylor(ctx: Context, bodyReal: Expr, inputRanges: Map[Identifier, Interval],
-    rangeMethod: String): (Rational, Interval) = {
+                 precondition: Expr, rangeMethod: String): (Rational, Interval) = {
     val containsLet = lang.TreeOps.exists { case Let(_,_,_) => true }(bodyReal)
     if (containsLet) {
       ctx.reporter.error("The Taylor approach currently does not support Let definitions.")
@@ -132,14 +132,14 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
           // maxAbs(Evaluators.evalSMT(tmp, inputValMap.map({
           //   case (id, int) => (id -> SMTRange(Variable(id), int)) })).toInterval)
           maxAbs(evalRange[SMTRange](tmp, inputValMap.map({
-            case (id, int) => (id -> SMTRange(Variable(id), int)) }), SMTRange.apply)._1.toInterval)
+            case (id, int) => (id -> SMTRange(Variable(id), int, precondition)) }), SMTRange.apply(_, precondition))._1.toInterval)
         })
         val finalErr = err.fold(Rational.zero)({case (x, y) => x + y})
         // (finalErr, Evaluators.evalSMT(
         //   bodyReal, inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) })).toInterval)
         (finalErr, evalRange[SMTRange](
-          bodyReal, inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }),
-          SMTRange.apply)._1.toInterval)
+          bodyReal, inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, precondition)) }),
+          SMTRange.apply(_, precondition))._1.toInterval)
 
       case _ =>
         ctx.reporter.fatalError(s"$rangeMethod is not supported.")

@@ -22,6 +22,9 @@ object CertificatePhase extends DaisyPhase {
   var expressionNames :Map [Expr, String] = Map[Expr, String] ()
   var reporter:Reporter = null
 
+  var fixedPointGeneration = false
+
+  var constPrecision:Precision = null
   val shortName:String = "Certificate generation"
 
   def runPhase(ctx: Context, prg: Program): (Context, Program) = {
@@ -30,12 +33,9 @@ object CertificatePhase extends DaisyPhase {
     //must be set when entering this phase --> should not crash
     val prover = ctx.option[String]("certificate")
 
-    //val errorMap = ctx.resultAbsoluteErrors
-    //val rangeMap = ctx.resultRealRanges
-    //val precisions = ctx.specMixedPrecisions
-    val constPrecision = ctx.option[Precision]("precision")
+    constPrecision = ctx.option[Precision]("precision")
     val mixedPrecision: Boolean = ctx.option[Option[String]]("mixed-precision") != None
-    val fixedPointGeneration = constPrecision match {
+    fixedPointGeneration = constPrecision match {
       case x @ FixedPrecision(b) => true
       case _ => false
     }
@@ -69,7 +69,7 @@ object CertificatePhase extends DaisyPhase {
     fullCertificate ++= getPrelude(prover, "certificate_" + prg.id)
 
     //Add some spacing for readability
-   fullCertificate ++= "\n";
+   fullCertificate ++= "\n"
     var num_of_functions = 0
 
     for (fnc <- prg.defs) if (!fnc.precondition.isEmpty && !fnc.body.isEmpty){
@@ -88,39 +88,44 @@ object CertificatePhase extends DaisyPhase {
       val theBody = (changeType (fnc.body.get,constPrecision, precisionMap))._1
       val errorMap = ctx.intermediateAbsErrors.get(fnc.id).get
       val rangeMap = ctx.intermediateRanges.get(fnc.id).get
+      val queryMap = ctx.intermediateQueries.getOrElse(fnc.id, Map())
 
-      //the definitions for the whole expression
+      val subdivIntvs = ctx.subdivIntervals.getOrElse(fnc.id, Seq())
+      val subdivResults = ctx.subdivResults.getOrElse(fnc. id, Seq())
+
+      // the definitions for the whole expression
       val (theDefinitions, lastGenName) =
-        getCmd(theBody, precisionMap,
+        getValues(theBody, precisionMap,
           constPrecision,
           rangeMap,
           errorMap,
           prover)
 
       val (defVars, defVarsName) = getDefVars(fnc, precisionMap, rangeMap, errorMap, prover)
-      //generate the precondition
+
+      // generate results for subdivisions
+      val (subdivText, subdivName) = getSubdivs(fnc, theBody, thePrecondition, subdivIntvs, subdivResults,
+        precisionMap, prover)
+
+      // generate the precondition
       val (thePreconditionFunction, functionName) = getPrecondFunction(thePrecondition, fnc.id.toString, prover)
-      //the analysis result function
+      // the analysis result function
       val (analysisResultText, analysisResultName) =
         getAbsEnvDef(theBody, errorMap, rangeMap, precisionMap, fnc.id.toString, prover)
-      // generate a fractional bits map if needed
-      val (fBitMap, fBitMapName) = {
-        val emptyFixedEnv = getEmptyFixedEnv (prover)
-        val (content, p) =
-          if (fixedPointGeneration)
-            getFBitMap(theBody, precisionMap, constPrecision, rangeMap, errorMap, emptyFixedEnv, prover)
-          else
-            (emptyFixedEnv, constPrecision)
-        wrapFixedEnv(content,s"fBits${fnc.id.toString}", prover)
-      }
-      //generate the final evaluation statement
-      val functionCall = getComputeExpr(lastGenName, analysisResultName, functionName, defVarsName, fnc.id.toString, fBitMapName, prover)
-      //compose the strings and append to certificate
+      // generate queries
+      val adjustedQueryMap = queryMap.mapValues({ case (loQ, hiQ) => (adjustQuery(loQ), adjustQuery(hiQ)) })
+      val (queriesText, queriesName) = getQueriesDef(theBody, adjustedQueryMap, fnc.id.toString, prover)
+      // generate the final evaluation statement
+      val functionCall = getComputeExpr(lastGenName, analysisResultName, functionName, queriesName, subdivName,
+        defVarsName, fnc.id.toString, prover)
+
+      // compose the strings and append to certificate
       fullCertificate ++= theDefinitions + "\n\n" +
-      defVars + "\n\n" +
-      thePreconditionFunction + "\n\n" +
-      analysisResultText + "\n\n" +
-      fBitMap + "\n\n"
+        defVars + "\n\n" +
+        subdivText + "\n\n" +
+        thePreconditionFunction + "\n\n" +
+        analysisResultText + "\n\n" +
+        queriesText + "\n\n"
 
       fullCertificate ++= functionCall
 
@@ -276,12 +281,12 @@ object CertificatePhase extends DaisyPhase {
       s"UMin${nameOp}")
 
   private def coqFma (e1Name:String, e2Name:String, e3Name:String) :(String, String) = {
-    val theName = s"FMA${e1Name}${e2Name}${e3Name}"
+    val theName = s"FMA${nextConstantId()}"
     (s"Definition $theName :expr Q := Fma $e1Name $e2Name $e3Name.\n",theName)
   }
 
   private def hol4Fma (e1Name:String, e2Name:String, e3Name:String) :(String, String) = {
-    val theName = s"FMA${e1Name}${e2Name}${e3Name}"
+    val theName = s"FMA${nextConstantId()}"
     (s"val ${theName}_def = Define `\n $theName = Fma $e1Name $e2Name $e3Name`;\n",theName)
   }
 
@@ -443,7 +448,7 @@ object CertificatePhase extends DaisyPhase {
           expressionNames += (e -> name)
           (definition, name)
 
-      case x @ FMA (e1,e2,e3) =>
+        case x @ FMA (e1,e2,e3) =>
           val (e1Text, e1Name) = getValues(e1, precisions, constPrecision,
             rangeMap, errorMap, prv)
           val (e2Text, e2Name) = getValues(e2, precisions, constPrecision,
@@ -453,22 +458,67 @@ object CertificatePhase extends DaisyPhase {
           val (definition, name) =
             if (prv == "coq"){
               val (fmaDef, fmaName) = coqFma(e1Name, e2Name, e3Name)
-              (e1Text + e2Text + e3Text + fmaDef, fmaName)
+              // TODO: see for [[daisy.tools.RangeEvaluators.evalRange]] (the case for FMA).
+              //  The multiplaction might use some SMT queries.
+              val multName = s"${fmaName}mult"
+              val multDef = s"Definition $multName :expr Q := Binop Mult $e1Name $e2Name.\n"
+              expressionNames += (Times(e1, e2) -> multName)
+              (e1Text + e2Text + e3Text + multDef + fmaDef, fmaName)
             } else if (prv == "hol4") {
               val (fmaDef, fmaName) = hol4Fma(e1Name, e2Name, e3Name)
               (e1Text + e2Text + e3Text + fmaDef, fmaName)
             } else {
-              val text = s"FMA $e1Name $e2Name"
+              val text = s"FMA $e1Name $e2Name $e3Name"
               (text, text)
             }
           expressionNames += (e -> name)
           (definition, name)
+
+        case _ @ Let(x, e1, e2) =>
+          val fprange = rangeMap(Variable(x))+/-(errorMap(Variable(x)))
+          // first compute e1 AST
+          val (e1Def, e1Name) = getValues(e1, precisions, constPrecision, rangeMap, errorMap, prv)
+          // now allocate a new variable
+          val varId = x.globalId
+          identifierNums += (x -> varId)
+          val (varDef, varName) =
+            if (prv == "coq"){
+              coqVariable (x)
+            } else if (prv == "hol4"){
+              hol4Variable (x)
+            } else {
+              val text = s"Var ${varId.toString}"
+              val textWithType = s"$text MTYPE ${precisionToBinaryString(precisions(x),fprange)}"
+              (textWithType, text)
+            }
+          expressionNames += (Variable(x) -> varName)
+          // now recursively compute e2
+          val (e2Def, e2Name) = getValues(e2, precisions, constPrecision, rangeMap, errorMap, prv)
+          val prec_x = precisionToString(precisions(x), fprange)
+          val (letDef, letName) =
+            if (prv == "coq"){
+              val letName = s"Let${nextConstantId()}"
+              (s"Definition $letName := Let $prec_x $varId $e1Name $e2Name.\n", letName)
+            } else if (prv == "hol4") {
+              val letName = s"Let${nextConstantId()}"
+              (s"val ${letName}_def = Define `$letName = Let $prec_x $varId $e1Name $e2Name`;\n", letName)
+            } else {
+              val text = s"Let $varDef $e1Name $e2Def"
+              (text, text)
+            }
+          expressionNames += (e -> letName)
+          if (prv == "binary")
+            (letDef, letDef)
+          else
+            (e1Def + varDef + e2Def + letDef, letName)
+
         case x @ _ =>
           reporter.fatalError(s"Unsupported operation $e while generating expression")
       }
     }
   }
 
+  // TODO: remove if really not needed
   private def getCmd(e: Expr, precisions: Map[Identifier, Precision],
     constPrecision: Precision,
     rangeMap: Map[Expr, Interval],
@@ -528,7 +578,7 @@ object CertificatePhase extends DaisyPhase {
       case (lowerBound, upperBound) =>
         val lowerBoundCoq = lowerBound.toFractionString.replace('/', '#')
         val upperBoundCoq = upperBound.toFractionString.replace('/', '#')
-        "( " + lowerBoundCoq + ", " + upperBoundCoq + ")"
+        "(" + lowerBoundCoq + ", " + upperBoundCoq + ")"
     }
 
   private def hol4Interval(intv: (Rational, Rational)): String =
@@ -547,17 +597,20 @@ object CertificatePhase extends DaisyPhase {
         s"$lo $hi"
     }
 
-  private def coqPrecondition (ranges: Map[Identifier, (Rational, Rational)], fName: String): (String, String) =
-  {
-    var theFunction = s"Definition thePrecondition_${fName}:precond := fun (n:nat) =>\n"
-    for ((id,intv) <- ranges) {
-      val ivCoq = coqInterval (intv)
+  private def coqPrecondition (ranges: Map[Identifier, (Rational, Rational)], addCond: Seq[Expr], fName: String):
+  (String, String) = {
+    var theIntervals = "FloverMap.empty intv"
+    for ((id, intv) <- ranges) {
+      val ivCoq = coqInterval(intv)
       //variable must already have a binder here!
       //TODO: assert it?
-      theFunction += "if n =? " + identifierNums(id) + " then "+ ivCoq +  " else "
+      val (_, varName) = coqVariable(id)
+      theIntervals = s"FloverMap.add $varName $ivCoq ($theIntervals)"
     }
-    theFunction += "(0#1,0#1)."
-    (theFunction, s"thePrecondition_${fName}")
+    val addCondStr = addCond.foldRight("TrueQ")((q, str) => s"(AndQ ${coqQuery(q)} $str)")
+    val precondName = s"thePrecondition_$fName"
+    val thePrecond = s"Definition $precondName :=\n($theIntervals,\n$addCondStr)."
+    (thePrecond, precondName)
   }
 
   private def hol4Precondition (ranges: Map[Identifier, (Rational, Rational)], fName: String): (String, String) =
@@ -581,20 +634,24 @@ object CertificatePhase extends DaisyPhase {
     (theFunction, "")
   }
 
-  private def getPrecondFunction(pre: Expr, fName: String, prv: String): (String, String) =
-  {
-    val (ranges, errors, _) = daisy.analysis.SpecsProcessingPhase.extractPreCondition(pre)
+  private def getPrecondFunction(pre: Expr, rangeMap: Option[Map[Identifier, Interval]], fName: String, prv: String):
+  (String, String) = {
+    val (rangesPrecond, errors, addCond) = daisy.analysis.SpecsProcessingPhase.extractPreCondition(pre)
     if (! errors.isEmpty){
       reporter.fatalError("Errors on inputs are currently unsupported")
     }
+    val ranges = if (rangeMap.isEmpty) rangesPrecond else rangeMap.get.mapValues({ intv => (intv.xlo, intv.xhi)})
     if (prv == "coq"){
-      coqPrecondition(ranges, fName)
+      coqPrecondition(ranges, addCond, fName)
     }else if (prv == "hol4"){
       hol4Precondition(ranges,fName)
     } else {
       binaryPrecondition(ranges,fName)
     }
   }
+
+  private def getPrecondFunction(pre: Expr, fName: String, prv: String): (String, String) =
+    getPrecondFunction(pre, None, fName, prv)
 
   private def getDefVars(fnc: FunDef, precMap: Map[Identifier, Precision],
     rangeMap:Map[Expr, Interval],
@@ -610,19 +667,24 @@ object CertificatePhase extends DaisyPhase {
       reporter.fatalError("Unknown theorem prover in getDefVars call)")
   }
 
-
     private def coqDefVars (fnc: FunDef, precMap: Map[Identifier, Precision],
       rangeMap:Map[Expr, Interval],
     errorMap:Map[Expr, Rational]): (String, String) =
   {
     val fName = fnc.id.toString
-    var theFunction = s"Definition defVars_$fName :(nat -> option mType) := fun n =>\n"
-    for (variable <- allVariablesOf(fnc.body.get)) {
-      val fpRange=rangeMap(Variable(variable))+/-(errorMap(Variable(variable)))
-      theFunction += s"if n =? ${identifierNums(variable)} then Some ${precisionToString(precMap(variable), fpRange)} else "
+    val theFunction = s"Definition defVars_$fName: FloverMap.t mType :=\n"
+    if (! fixedPointGeneration) {
+      var akk = "(FloverMap.empty mType)"
+      for (variable <- allVariablesOf(fnc.body.get)) {
+        val fpRange=rangeMap(Variable(variable))+/-(errorMap(Variable(variable)))
+        akk = s"(FloverMap.add (Var Q ${identifierNums(variable)}) (${precisionToString(precMap(variable), fpRange)}) $akk)"
+      }
+      (theFunction + akk + ".\n", s"defVars_$fName")
+    } else {
+      val (resText, p) = getFBitMap(fnc.body.get, precMap, constPrecision, rangeMap, errorMap,
+        getEmptyFixedEnv("coq"), "coq")
+      (theFunction + resText + ".", s"defVars_$fName")
     }
-    theFunction += "None."
-    (theFunction, s"defVars_$fName")
   }
 
   private def hol4DefVars (fnc: FunDef, precMap: Map[Identifier, Precision],
@@ -630,13 +692,19 @@ object CertificatePhase extends DaisyPhase {
     errorMap:Map[Expr, Rational]): (String, String) =
   {
     val fName = fnc.id.toString
-    var theFunction = s"val defVars_${fName}_def = Define `\n defVars_$fName (n:num) : mType option = \n"
-    for (variable <- allVariablesOf(fnc.body.get)) {
-      val fpRange=rangeMap(Variable(variable))+/-(errorMap(Variable(variable)))
-      theFunction += s"if (n = ${identifierNums(variable)}) then SOME ${precisionToString(precMap(variable), fpRange)} else "
+    val theFunction = s"val defVars_${fName}_def = Define `\n defVars_$fName : typeMap = \n"
+    if (! fixedPointGeneration) {
+      var akk = "(FloverMapTree_empty)"
+      for (variable <- allVariablesOf(fnc.body.get)) {
+        val fpRange=rangeMap(Variable(variable))+/-(errorMap(Variable(variable)))
+        akk = s"(FloverMapTree_insert (Var ${identifierNums(variable)}) (${precisionToString(precMap(variable), fpRange)}) $akk)"
+      }
+      (theFunction + akk + "`;\n", s"defVars_$fName")
+    } else {
+      val (resText, p) = getFBitMap(fnc.body.get, precMap, constPrecision, rangeMap, errorMap,
+        getEmptyFixedEnv("hol4"), "hol4")
+      (theFunction + resText, s"defVars_$fName")
     }
-    theFunction += "NONE`;"
-    (theFunction, s"defVars_$fName")
   }
 
   private def binaryDefVars (fnc: FunDef, precMap: Map[Identifier, Precision],
@@ -644,75 +712,107 @@ object CertificatePhase extends DaisyPhase {
     errorMap:Map[Expr, Rational]): (String, String) =
   {
     var theFunction = "GAMMA "
-    for (variable <- allVariablesOf(fnc.body.get)) {
-      val fpRange=rangeMap(Variable(variable))+/-(errorMap(Variable(variable)))
-      //DVAR :: DCONST n :: MTYPE m
-      theFunction += s"Var ${identifierNums(variable)} MTYPE ${precisionToBinaryString(precMap(variable), fpRange)} "
+    if (! fixedPointGeneration) {
+      for (variable <- allVariablesOf(fnc.body.get)) {
+        val fpRange=rangeMap(Variable(variable))+/-(errorMap(Variable(variable)))
+        //DVAR :: DCONST n :: MTYPE m
+        theFunction += s"Var ${identifierNums(variable)} MTYPE ${precisionToBinaryString(precMap(variable), fpRange)} "
+      }
+      theFunction += "\n"
+      (theFunction, s"")
+    } else {
+      val (resText, p) = getFBitMap(fnc.body.get, precMap, constPrecision, rangeMap, errorMap,
+        getEmptyFixedEnv("binary"), "binary")
+      (theFunction + resText, s"")
     }
-    theFunction += "\n"
-    (theFunction, s"")
+  }
+
+  private def getSubdivs(fnc: FunDef, e: Expr, precond: Expr, subdivIntvs: scala.Seq[Map[Identifier, Interval]],
+    subdivResults: scala.Seq[(Map[Expr, Rational], Map[Expr, Interval], Map[Expr, (Expr, Expr)])],
+    precMap: Map[Identifier, Precision], prover: String): (String, String) = {
+    var subdivPreconds = ""
+    var subdivQueries = ""
+    var subdivText = ""
+    var subdivs: Seq[String] = Seq()
+    var subdivCtr = 0
+    (subdivIntvs, subdivResults).zipped.map({ case (subdivIntv, (subdivErrorMap, subdivRangeMap, subdivQueryMap)) =>
+      val (thePreconditionFunction, thePrecondName) =
+        getPrecondFunction(precond, Some(subdivIntv), s"${fnc.id}_sub$subdivCtr", prover)
+      // the analysis result function
+      val (analysisResultText, analysisResultName) = getAbsEnvDef(e, subdivErrorMap, subdivRangeMap,
+        precMap, s"${fnc.id}_sub$subdivCtr", prover)
+      // generate queries
+      val adjustedQueryMap = subdivQueryMap.mapValues({ case (loQ, hiQ) => (adjustQuery(loQ), adjustQuery(hiQ)) })
+      val (queriesText, queriesName) = getQueriesDef(e, adjustedQueryMap, s"${fnc.id}_sub$subdivCtr", prover)
+      // TODO queries
+      subdivPreconds += thePreconditionFunction + "\n\n"
+      subdivQueries += queriesText + "\n\n"
+      subdivText += analysisResultText + "\n\n"
+      subdivs = subdivs :+ s"($thePrecondName, $analysisResultName, $queriesName)"
+      subdivCtr += 1
+    })
+    val (subdivDef, subdivName) =
+      if (prover == "coq") {
+        val name = s"subdivs_${fnc.id}"
+        (subdivs.mkString(s"Definition $name: list (precond * analysisResult * usedQueries) := [\n", ";", "]."), name)
+      } else ("", "") // TODO: include other provers
+
+    subdivText += subdivDef
+    (subdivPreconds + subdivQueries + subdivText, subdivName)
   }
 
   private def coqAbsEnv (e: Expr, errorMap: Map[Expr, Rational], rangeMap: Map[Expr, Interval], precisions: Map[Identifier, Precision], cont: String): String =
   {
-    // Let bindings do not have names, so these are a special case here:
-    e match {
-      case x @ Let (y, exp, g) =>
-        val expFun = coqAbsEnv (exp, errorMap, rangeMap, precisions, cont)
-        val gFun = coqAbsEnv (g, errorMap, rangeMap, precisions, expFun)
-        val intvY = coqInterval((rangeMap(Variable(y)).xlo, rangeMap(Variable(y)).xhi))
-        val errY = errorMap(Variable(y)).toFractionString.replace("/", "#")
-        //val nameY = expressionNames(Variable(y))
-        s"FloverMap.add (Var Q ${identifierNums(y)}) ($intvY, $errY ) ($gFun)"
+    val nameE = expressionNames(e)
 
-      case x @ _ =>
+    val intvE = e match{ case x @Cast (e,t) => coqInterval((rangeMap(e).xlo, rangeMap(e).xhi))
+      case x @ _ => coqInterval ((rangeMap(x).xlo, rangeMap(x).xhi))}
 
-        val nameE = expressionNames(e)
+    val errE = errorMap(e).toFractionString.replace("/", "#")
 
-        val intvE = e match{ case x @Cast (e,t) => coqInterval((rangeMap(e).xlo, rangeMap(e).xhi))
-          case x @ _ => coqInterval ((rangeMap(x).xlo, rangeMap(x).xhi))}
+    val continuation =
+      e match {
 
-        val errE = errorMap(x).toFractionString.replace("/", "#")
+        case x @ Variable(id) => cont
 
-        val continuation =
-          e match {
+        case x @ RealLiteral(r) => cont
 
-            case x @ Variable(id) => cont
+        case x @ Plus(lhs, rhs) =>
+          val lFun = coqAbsEnv (lhs, errorMap, rangeMap, precisions, cont)
+          coqAbsEnv (rhs, errorMap, rangeMap, precisions, lFun)
 
-            case x @ RealLiteral(r) => cont
+        case x @ Minus(lhs, rhs) =>
+          val lFun = coqAbsEnv (lhs, errorMap, rangeMap, precisions, cont)
+          coqAbsEnv (rhs, errorMap, rangeMap, precisions, lFun)
 
-            case x @ Plus(lhs, rhs) =>
-              val lFun = coqAbsEnv (lhs, errorMap, rangeMap, precisions, cont)
-              coqAbsEnv (rhs, errorMap, rangeMap, precisions, lFun)
+        case x @ Times(lhs, rhs) =>
+          val lFun = coqAbsEnv (lhs, errorMap, rangeMap, precisions, cont)
+          coqAbsEnv (rhs, errorMap, rangeMap, precisions, lFun)
 
-            case x @ Minus(lhs, rhs) =>
-              val lFun = coqAbsEnv (lhs, errorMap, rangeMap, precisions, cont)
-              coqAbsEnv (rhs, errorMap, rangeMap, precisions, lFun)
+        case x @ Division(lhs, rhs) =>
+          val lFun = coqAbsEnv (lhs, errorMap, rangeMap, precisions, cont)
+          coqAbsEnv (rhs, errorMap, rangeMap, precisions, lFun)
 
-            case x @ Times(lhs, rhs) =>
-              val lFun = coqAbsEnv (lhs, errorMap, rangeMap, precisions, cont)
-              coqAbsEnv (rhs, errorMap, rangeMap, precisions, lFun)
+        case x @ UMinus(e) =>
+          coqAbsEnv (e, errorMap, rangeMap, precisions, cont)
 
-            case x @ Division(lhs, rhs) =>
-              val lFun = coqAbsEnv (lhs, errorMap, rangeMap, precisions, cont)
-              coqAbsEnv (rhs, errorMap, rangeMap, precisions, lFun)
+        case x @ Cast(e, t) =>
+          coqAbsEnv (e, errorMap, rangeMap, precisions, cont)
 
-            case x @ UMinus(e) =>
-              coqAbsEnv (e, errorMap, rangeMap, precisions, cont)
+        case x @ FMA (e1,e2,e3) =>
+          val e1Fun = coqAbsEnv (e1, errorMap, rangeMap, precisions, cont)
+          val e2Fun = coqAbsEnv (e2, errorMap, rangeMap, precisions, e1Fun)
+          coqAbsEnv (e3, errorMap, rangeMap, precisions, e2Fun)
 
-            case x @ Cast(e, t) =>
-              coqAbsEnv (e, errorMap, rangeMap, precisions, cont)
+        case x @ Let (y, e1, e2) =>
+          val e1Fun = coqAbsEnv(e1, errorMap, rangeMap, precisions, cont)
+          val yFun = coqAbsEnv(Variable(y), errorMap, rangeMap, precisions, e1Fun)
+          coqAbsEnv(e2, errorMap, rangeMap, precisions, yFun)
 
-            case x @ FMA (e1,e2,e3) =>
-              val e1Fun = coqAbsEnv (e1, errorMap, rangeMap, precisions, cont)
-              val e2Fun = coqAbsEnv (e2, errorMap, rangeMap, precisions, e1Fun)
-              coqAbsEnv (e3, errorMap, rangeMap, precisions, e2Fun)
-
-            case x @ _ =>
-              reporter.fatalError(s"Unsupported operation $e while generating absenv")
-        }
-        s"FloverMap.add $nameE ($intvE, $errE) ($continuation)"
-    }
+        case x @ _ =>
+          reporter.fatalError(s"Unsupported operation $e while generating absenv")
+      }
+    s"FloverMap.add $nameE ($intvE, $errE) ($continuation)"
   }
 
   private def hol4AbsEnv (e: Expr, errorMap: Map[Expr, Rational], rangeMap: Map[Expr, Interval], precisions: Map[Identifier, Precision], cont: String): String =
@@ -838,9 +938,163 @@ object CertificatePhase extends DaisyPhase {
     }
   }
 
+  def queryLt(l: Expr, r: Expr): Boolean = {
+    (l, r) match {
+      case (LessEquals(_, Variable(idl)), LessEquals(_, Variable(idr))) => idl.globalId < idr.globalId
+      case (LessEquals(Variable(idl), _), LessEquals(Variable(idr), _)) => idl.globalId < idr.globalId
+      case (LessEquals(Variable(idl), _), LessEquals(_, Variable(idr))) => idl.globalId < idr.globalId
+      case (LessEquals(_, Variable(idl)), LessEquals(Variable(idr), _)) => idl.globalId <= idr.globalId
+      case (LessEquals(_, Variable(idl)), _) => true
+      case (LessEquals(Variable(idl), _), _) => true
+      case (_, _) => false
+    }
+  }
+
+  def adjustQuery(q: Expr): Expr = {
+    q match {
+      case And(seq) =>
+        val preQuery = seq.head match {
+          case And(pre) =>
+            val canonicalPre = Seq.newBuilder[Expr]
+            canonicalPre.sizeHint(pre)
+            for (query <- pre) {
+              query match {
+                case GreaterEquals(lhs, rhs) => canonicalPre += LessEquals(rhs, lhs)
+                case _ => canonicalPre += query
+              }
+            }
+            And(canonicalPre.result.sortWith(queryLt))
+          case pre => pre
+        }
+        And(preQuery +: seq.tail)
+      case _ => q
+    }
+  }
+
+  private def coqQuery(query: Expr): String = {
+    query match {
+      case x @ Variable(id) => "(VarQ " + id.globalId + ")"
+
+      case x @ RealLiteral(r) => "(ConstQ (" + r.toFractionString.replace('/', '#') + "))"
+
+      case x @ Plus(lhs, rhs) =>
+        "(PlusQ " + coqQuery(lhs) + " " + coqQuery(rhs) + ")"
+
+      case x @ Minus(lhs, rhs) =>
+        "(MinusQ " + coqQuery(lhs) + " " + coqQuery(rhs) + ")"
+
+      case x @ Times(lhs, rhs) =>
+        "(TimesQ " + coqQuery(lhs) + " " + coqQuery(rhs) + ")"
+
+      case x @ Division(lhs, rhs) =>
+        "(DivQ " + coqQuery(lhs) + " " + coqQuery(rhs) + ")"
+
+      case x @ UMinus(e) =>
+        "(UMinusQ " + coqQuery(e) + ")"
+
+      case x @ BooleanLiteral(true) =>
+        "TrueQ"
+
+      case x @ BooleanLiteral(false) =>
+        "FalseQ"
+
+      case x @ And(seq) =>
+        seq.foldRight("TrueQ")((q, str) => s"(AndQ ${coqQuery(q)} $str)")
+
+      case x @ Or(seq) =>
+        seq.foldRight("FalseQ")((q, str) => s"(OrQ ${coqQuery(q)} $str)")
+
+      case x @ LessThan(lhs, rhs) =>
+        "(LessQ " + coqQuery(lhs) + " " + coqQuery(rhs) + ")"
+
+      case x @ GreaterThan(lhs, rhs) =>
+        "(LessQ " + coqQuery(rhs) + " " + coqQuery(lhs) + ")"
+
+      case x @ LessEquals(lhs, rhs) =>
+        "(LessEqQ " + coqQuery(lhs) + " " + coqQuery(rhs) + ")"
+
+      case x @ GreaterEquals(lhs, rhs) =>
+        "(LessEqQ " + coqQuery(rhs) + " " + coqQuery(lhs) + ")"
+
+      case x @Equals(lhs, rhs) =>
+        "(EqualsQ " + coqQuery(lhs) + " " + coqQuery(rhs) + ")"
+
+      case x @ _ =>
+        reporter.fatalError(s"Unsupported operation $query while generating coq query")
+    }
+  }
+
+  private def coqQueryMap(e: Expr, queryMap: Map[Expr, (Expr, Expr)], cont: String): String = {
+    val nameE = expressionNames(e)
+
+    val continuation =
+      e match {
+        case x@Variable(id) => cont
+
+        case x@RealLiteral(r) => cont
+
+        case x@Plus(lhs, rhs) =>
+          val lFun = coqQueryMap(lhs, queryMap, cont)
+          coqQueryMap(rhs, queryMap, lFun)
+
+        case x@Minus(lhs, rhs) =>
+          val lFun = coqQueryMap(lhs, queryMap, cont)
+          coqQueryMap(rhs, queryMap, lFun)
+
+        case x@Times(lhs, rhs) =>
+          val lFun = coqQueryMap(lhs, queryMap, cont)
+          coqQueryMap(rhs, queryMap, lFun)
+
+        case x@Division(lhs, rhs) =>
+          val lFun = coqQueryMap(lhs, queryMap, cont)
+          coqQueryMap(rhs, queryMap, lFun)
+
+        case x@UMinus(e) =>
+          coqQueryMap(e, queryMap, cont)
+
+        case x@Cast(e, t) =>
+          coqQueryMap(e, queryMap, cont)
+
+        case x@FMA(e1, e2, e3) =>
+//          val e1Fun = coqQueryMap(e1, queryMap, cont)
+//          val e2Fun = coqQueryMap(e2, queryMap, e1Fun)
+          val mult = coqQueryMap(Times(e1, e2), queryMap, cont)
+          coqQueryMap(e3, queryMap, mult)
+
+        case x@Let(y, e1, e2) =>
+          val e1Fun = coqQueryMap(e1, queryMap, cont)
+          val yFun = coqQueryMap(Variable(y), queryMap, e1Fun)
+          coqQueryMap(e2, queryMap, yFun)
+
+        case x@_ =>
+          reporter.fatalError(s"Unsupported operation $e while generating querymap")
+      }
+
+    queryMap(e) match {
+      case (BooleanLiteral(false), BooleanLiteral(false)) => continuation
+      case (loQ, hiQ) =>
+        s"FloverMap.add $nameE (${coqQuery(loQ)}, ${coqQuery(hiQ)}) ($continuation)"
+    }
+  }
+
+
+  private def getQueriesDef(e: Expr, queryMap: Map[Expr, (Expr, Expr)], fName: String, prv: String):
+  (String, String) = {
+    if (prv == "coq") {
+      val qmapName = s"querymap_$fName"
+      val emptyCoqMap = "FloverMap.empty (SMTLogic * SMTLogic)"
+      val qmapText =
+        if (queryMap.isEmpty) emptyCoqMap else coqQueryMap(e, queryMap, emptyCoqMap)
+      (s"Definition $qmapName :=\n$qmapText.", qmapName)
+    } else {
+      // TODO take other provers into account
+      reporter.fatalError(s"Unsupported prover: $prv")
+    }
+  }
+
   private def getAbsEnvDef(e: Expr, errorMap: Map[Expr, Rational], rangeMap: Map[Expr, Interval], precision: Map[Identifier, Precision], fName: String, prv: String): (String, String)=
     if (prv == "coq")
-      (s"Definition absenv_${fName} :analysisResult := Eval compute in\n" +
+      (s"Definition absenv_${fName}: analysisResult :=\n" +
         coqAbsEnv(e, errorMap, rangeMap, precision, "FloverMap.empty (intv * error)") + ".",
         s"absenv_${fName}")
     else if (prv == "hol4")
@@ -850,14 +1104,15 @@ object CertificatePhase extends DaisyPhase {
     else
       ("ABS " + binaryAbsEnv(e, errorMap, rangeMap, reporter), "")
 
-  private def getComputeExpr (lastGenName: String, analysisResultName: String, precondName: String, defVarsName: String, fName: String, fBitMapName:String, prover: String): String=
-    if (prover == "coq"){
-      s"Theorem ErrorBound_${fName}_Sound :\n"+
-      s"CertificateCheckerCmd $lastGenName $analysisResultName $precondName $defVarsName $fBitMapName = true.\n" +
-      "Proof.\n  vm_compute; auto.\nQed.\n"
+  private def getComputeExpr(lastGenName: String, analysisResultName: String, precondName: String, queriesName: String,
+    subdivName: String, defVarsName: String, fName: String, prover: String): String =
+    if (prover == "coq") {
+      s"Theorem ErrorBound_${fName}_sound :\n" +
+        s"CertificateChecker $lastGenName $analysisResultName $precondName $queriesName $subdivName $defVarsName" +
+        "= true.\nProof. vm_compute; auto. Qed.\n"
     } else if (prover == "hol4"){
       "val _ = store_thm (\""+s"ErrorBound_${fName}_Sound"+"\",\n" +
-      s"``CertificateCheckerCmd $lastGenName $analysisResultName $precondName $defVarsName $fBitMapName``,\n flover_eval_tac \\\\ fs[REAL_INV_1OVER]);\n"
+      s"``CertificateCheckerCmd $lastGenName $analysisResultName $precondName $defVarsName``,\n flover_eval_tac \\\\ fs[REAL_INV_1OVER]);\n"
     } else
       ""
 
@@ -905,20 +1160,20 @@ object CertificatePhase extends DaisyPhase {
 
   private def getEmptyFixedEnv (prover:String) :String = {
     if (prover == "coq")
-      "FloverMap.empty N"
+      "FloverMap.empty mType"
     else if (prover == "hol4")
       "FloverMapTree_empty"
     else
-      "FBITS"
+      "GAMMA"
   }
 
-  private def extendFBitMap (name:String, fBits:Int, akk:String, prover:String) :String = {
+  private def extendFBitMap (name:String, mType:String, akk:String, prover:String) :String = {
     if (prover == "coq")
-      s"FloverMap.add $name $fBits%N ($akk)"
+      s"FloverMap.add $name $mType ($akk)"
     else if (prover == "hol4")
-      s"FloverMapTree_insert $name $fBits ($akk)"
+      s"FloverMapTree_insert $name $mType ($akk)"
     else
-      s"$akk $name $fBits"
+      s"$akk $name $mType"
   }
 
   private def getFBitMap (e:Expr, precisionMap: Map[Identifier,Precision],
@@ -931,9 +1186,32 @@ object CertificatePhase extends DaisyPhase {
       case x @ Let (y,exp, g) =>
         val (expRes, p) = getFBitMap (exp, precisionMap, constPrecision,
           rangeMap, errorMap, akk, prover)
-        getFBitMap (g, precisionMap, constPrecision, rangeMap, errorMap, expRes, prover)
+        val (a,b) = getFBitMap (g, precisionMap, constPrecision, rangeMap, errorMap, expRes, prover)
+        val intvE = rangeMap(e)
 
-      case x @ Variable(id) => (akk, precisionMap(id))
+        val errE = errorMap(e)
+
+        val errIv = intvE +/- errE
+        val name = expressionNames(e)
+
+        val theText = extendFBitMap (name, precisionToString(b, errIv), a, prover)
+
+        (theText, b)
+
+      case x @ Variable(id) =>
+        val intvE = rangeMap(e)
+
+        val errE = errorMap(e)
+
+        val errIv = intvE +/- errE
+        val name = expressionNames(e)
+
+        val prec = precisionMap(id)
+
+        val theText = extendFBitMap (name, precisionToString(prec, errIv), akk, prover)
+
+        (theText, prec)
+
       case x @ RealLiteral(r) => (akk, constPrecision)
 
       case x @ ArithOperator(Seq(lhs, rhs), recons) =>
@@ -952,12 +1230,23 @@ object CertificatePhase extends DaisyPhase {
         val errIv = intvE +/- errE
         val name = expressionNames(e)
 
-        val theText = extendFBitMap (name, p_join.fractionalBits(errIv), rhsText, prover)
+        val theText = extendFBitMap (name, precisionToString (p_join, errIv), rhsText, prover)
 
         (theText, p_join)
 
-      case x @ UMinus(e) =>
-        getFBitMap (e, precisionMap, constPrecision, rangeMap, errorMap, akk, prover)
+      case x @ UMinus(e1) =>
+        val (opText, prec) = getFBitMap (e1, precisionMap, constPrecision, rangeMap, errorMap, akk, prover)
+
+        val intvE = rangeMap(e)
+
+        val errE = errorMap(e)
+
+        val errIv = intvE +/- errE
+        val name = expressionNames(e)
+
+        val theText = extendFBitMap (name, precisionToString (prec, errIv), opText, prover)
+
+        (theText, prec)
 
       case x @ Cast(e, t) =>
         val (text, p) = getFBitMap (e, precisionMap, constPrecision, rangeMap, errorMap, akk, prover)
@@ -981,7 +1270,7 @@ object CertificatePhase extends DaisyPhase {
         val errIv = intvE +/- errE
         val name = expressionNames(e)
 
-        val theText = extendFBitMap (name, p_join.fractionalBits(errIv), e3Text, prover)
+        val theText = extendFBitMap (name, precisionToString (p_join, errIv), e3Text, prover)
 
         (theText, p_join)
 

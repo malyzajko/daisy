@@ -261,16 +261,24 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       case AbsError(Variable(id), RealLiteral(r)) => absError += (id -> r)
 
       case And(es) => es.foreach(extract(_))
-      case GreaterThan(Variable(id), RealLiteral(r)) => lowerBound += (id -> r)
+      case GreaterThan(Variable(id), RealLiteral(r)) =>
+        lowerBound += (id -> r)
+        additionalCond = additionalCond :+ e
       case GreaterEquals(Variable(id), RealLiteral(r)) => lowerBound += (id -> r)
 
-      case LessThan(RealLiteral(r), Variable(id)) => lowerBound += (id -> r)
+      case LessThan(RealLiteral(r), Variable(id)) =>
+        lowerBound += (id -> r)
+        additionalCond = additionalCond :+ e
       case LessEquals(RealLiteral(r), Variable(id)) => lowerBound += (id -> r)
 
-      case LessThan(Variable(id), RealLiteral(r)) => upperBound += (id -> r)
+      case LessThan(Variable(id), RealLiteral(r)) =>
+        upperBound += (id -> r)
+        additionalCond = additionalCond :+ e
       case LessEquals(Variable(id), RealLiteral(r)) => upperBound += (id -> r)
 
-      case GreaterThan(RealLiteral(r), Variable(id)) => upperBound += (id -> r)
+      case GreaterThan(RealLiteral(r), Variable(id)) =>
+        upperBound += (id -> r)
+        additionalCond = additionalCond :+ e
       case GreaterEquals(RealLiteral(r), Variable(id)) => upperBound += (id -> r)
 
       case _ => ;

@@ -13,10 +13,8 @@ import scala.collection.immutable.Map
  */
 trait Subdivision extends DeltaAbstractionUtils {
 
-  var totalOpt: Int = 32
-
   // TODO: the divParameter can go I think
-  def getEqualSubintervals(inputValMap: Map[Identifier, Interval], divLimit: Int,
+  def getEqualSubintervals(inputValMap: Map[Identifier, Interval], divLimit: Int, totalOpt: Int = 32,
     divParameter: Int = -1): Seq[Map[Identifier, Interval]] = {
 
     if (divLimit == 0 || divParameter == 0){

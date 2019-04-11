@@ -52,8 +52,8 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
 
     var uniformPrecisions = Map[Identifier, Precision]()
 
-    // returns (abs error, result range, interm. errors, interm. ranges)
-    val res: Map[Identifier, (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval])] =
+    // returns (abs error, result range, interm. errors, interm. ranges, interm. queries)
+    val res: Map[Identifier, (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval], Map[Expr, (Expr, Expr)])] =
       analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
@@ -68,7 +68,7 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
 
         val availablePrecisions = List(Float32, Float64, DoubleDouble)
         // save the intermediate result
-        var res: (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval]) = null
+        var res: (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval], Map[Expr, (Expr, Expr)]) = null
 
         // find precision which is sufficient
         availablePrecisions.find( prec => {
@@ -76,9 +76,9 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
           val allIDs = fnc.params.map(_.id)
           val inputErrorMap = allIDs.map(id => (id -> prec.absRoundoff(inputValMap(id)))).toMap
           val precisionMap = fnc.params.map(param => (param.id -> prec)).toMap
+          val precond = fnc.precondition.get
 
-          res = computeRoundoff(inputValMap, inputErrorMap, precisionMap, fncBody,
-            prec, ctx.specAdditionalConstraints(fnc.id))
+          res = computeRoundoff(inputValMap, inputErrorMap, precisionMap, fncBody, prec, precond)
 
           res._1 <= targetError
         }) match {
@@ -101,8 +101,10 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
 
         val precisionMap: Map[Identifier, Precision] = ctx.specInputPrecisions(fnc.id)
 
+        val precond = fnc.precondition.get
+
         computeRoundoff(inputValMap, inputErrorMap, precisionMap, fncBody,
-          uniformPrecision, ctx.specAdditionalConstraints(fnc.id))
+          uniformPrecision, precond)
       }
     }
 
@@ -110,29 +112,31 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
       resultAbsoluteErrors = res.mapValues(_._1),
       resultRealRanges = res.mapValues(_._2),
       intermediateAbsErrors = res.mapValues(_._3),
-      intermediateRanges = res.mapValues(_._4)), prg)
+      intermediateRanges = res.mapValues(_._4),
+      intermediateQueries = res.mapValues(_._5)), prg)
   }
 
   def computeRoundoff(inputValMap: Map[Identifier, Interval], inputErrorMap: Map[Identifier, Rational],
     precisionMap: Map[Identifier, Precision], expr: Expr,
-    constPrecision: Precision, additionalConstr: Expr = BooleanLiteral(true)):
-    (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval]) = {
+    constPrecision: Precision, precond: Expr):
+    (Rational, Interval, Map[Expr, Rational], Map[Expr, Interval], Map[Expr, (Expr, Expr)]) = {
 
-    val (resRange, intermediateRanges) = (rangeMethod: @unchecked) match {
+    val (resRange, intermediateRanges, intermediateQueries: Map[Expr, (Expr, Expr)]) = (rangeMethod: @unchecked) match {
       case "interval" =>
-        evalRange[Interval](expr, inputValMap, Interval.apply)
+        val (rng, intrmdRange) = evalRange[Interval](expr, inputValMap, Interval.apply)
+        (rng, intrmdRange, Map())
 
       case "affine" =>
         val (rng, intrmdRange) = evalRange[AffineForm](expr,
           inputValMap.mapValues(AffineForm(_)), AffineForm.apply)
-        (rng.toInterval, intrmdRange.mapValues(_.toInterval))
+        (rng.toInterval, intrmdRange.mapValues(_.toInterval), Map())
 
       case "smt" =>
         // SMT can take into account additional constraints
         val (rng, intrmdRange) = evalRange[SMTRange](expr,
-          inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, additionalConstr)) }),
-          SMTRange.apply)
-        (rng.toInterval, intrmdRange.mapValues(_.toInterval))
+          inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, precond)) }),
+          SMTRange.apply(_, precond))
+        (rng.toInterval, intrmdRange.mapValues(_.toInterval), intrmdRange.mapValues(_.getQueries))
     }
 
     val (resError, intermediateErrors) = (errorMethod: @unchecked) match {
@@ -161,6 +165,6 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
 
       (Interval.maxAbs(resRoundoff.toInterval), allErrors.mapValues(e => Interval.maxAbs(e.toInterval)))
     }
-    (resError, resRange, intermediateErrors, intermediateRanges)
+    (resError, resRange, intermediateErrors, intermediateRanges, intermediateQueries)
   }
 }

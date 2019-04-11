@@ -39,7 +39,11 @@ trait RangeEvaluators {
 
       case Times(lhs, rhs) => eval(lhs) * eval(rhs)
 
-      case FMA(fac1, fac2, sum) => eval(fac1) * eval(fac2) + eval(sum)
+      case FMA(fac1, fac2, sum) =>
+        // TODO: this is ugly.
+        //  The multiplication could be tightened using SMT queries, which we need for the certificate generation.
+        val mult = eval(Times(fac1, fac2))
+        mult + eval(sum)
 
       case Division(lhs, rhs) => eval(lhs) / eval(rhs)
 

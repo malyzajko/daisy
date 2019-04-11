@@ -127,13 +127,14 @@ trait RoundoffEvaluators extends RangeEvaluators {
     expr: Expr,
     inputValMap: Map[Identifier, Interval],
     inputErrorMap: Map[Identifier, Rational],
+    precondition: Expr,
     uniformPrecision: Precision,
     trackRoundoffErrors: Boolean = true,
     approxRoundoff: Boolean = false): (Rational, Interval) = {
 
     val (resRange, intermediateRanges) = evalRange[SMTRange](expr,
-      inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }),
-      SMTRange.apply)
+      inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, precondition)) }),
+      SMTRange.apply(_, precondition))
 
     val (resRoundoff, _) = evalRoundoff[AffineForm](expr,
       intermediateRanges.mapValues(_.toInterval),
@@ -293,16 +294,31 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val (errorFac2, precFac2) = eval(fac2)
         val (errorSum, precSum) = eval(sum)
 
-        val rangeFac1 = interval2T(range(fac1))
-        val rangeFac2 = interval2T(range(fac2))
+        val rangeFac1 = range(fac1)
+        val rangeFac2 = range(fac2)
+        val rangeSum = range(sum)
+
+        val abstractRangeFac1 = interval2T(range(fac1))
+        val abstractRangeFac2 = interval2T(range(fac2))
+        // val abstractRangeSum = interval2T(range(sum))
+
+        val errIVFac1 = rangeFac1 +/- Interval.maxAbs(errorFac1.toInterval)
+        val errIVFac2 = rangeFac2 +/- Interval.maxAbs(errorFac2.toInterval)
+        val errIVSum = rangeSum +/- Interval.maxAbs(errorSum.toInterval)
+        val actualRange = errIVFac1 * errIVFac2 + errIVSum
 
         val propagatedError =
-          rangeFac1 * errorFac2 +
-          rangeFac2 * errorFac1 +
+          abstractRangeFac1 * errorFac2 +
+          abstractRangeFac2 * errorFac1 +
           errorFac1 * errorFac2 +
           errorSum
 
-        computeNewError(range(x), propagatedError, getUpperBound(precFac1, precFac2, precSum))
+        val precision = getUpperBound(precFac1, precFac2, precSum)
+
+        val rndoff = precision.absRoundoff(actualRange)
+
+        (propagatedError +/- rndoff, precision)
+        // computeNewError(range(x), propagatedError, getUpperBound(precFac1, precFac2, precSum))
 
       case x @ Division(lhs, rhs) =>
         val (errorLhs, precLhs) = eval(lhs)

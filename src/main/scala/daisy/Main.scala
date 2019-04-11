@@ -161,10 +161,10 @@ object Main {
             ctx.reporter.warning("A library could not be loaded: " + e)
           case tools.NegativeSqrtException(msg) =>
             ctx.reporter.warning(msg)
-          case e: DaisyFatalError =>
-            ctx.reporter.info("Something really bad happened. Cannot continue.")
-          case _ : Throwable =>
-            ctx.reporter.info("Something really bad happened. Cannot continue.")
+//          case e: DaisyFatalError =>
+//            ctx.reporter.info("Something really bad happened. Cannot continue.")
+//          case _ : Throwable =>
+//            ctx.reporter.info("Something really bad happened. Cannot continue.")
 
         }
         ctx.timers.get("total").stop
@@ -188,9 +188,15 @@ object Main {
 
     (ctx.options.get("certificate")) match {
       case x @ Some(_) =>
-      pipeline >>= ctx.option[DaisyPhase]("analysis")
-      pipeline >>= backend.CertificatePhase
-      pipeline >>= backend.InfoPhase
+        // TODO: this is very ugly
+        if (ctx.hasFlag("subdiv") && ctx.option[DaisyPhase]("analysis") == analysis.DataflowPhase) {
+          pipeline >>= analysis.DataflowSubdivisionPhase
+        } else {
+          pipeline >>= ctx.option[DaisyPhase]("analysis")
+        }
+        pipeline >>= backend.CertificatePhase
+        pipeline >>= backend.InfoPhase
+
       case x @ _  =>
 
         if (ctx.hasFlag("rewrite")) {
