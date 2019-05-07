@@ -90,11 +90,11 @@ object InfoPhase extends DaisyPhase {
               )
             } else {
               out.get.write(
-                fnc.id + ","+
-                absError.map(_.toString).getOrElse("") + "," +
-                relError.map(_.toString).getOrElse("") + "," +
-                range.map(_.xlo.toString).getOrElse("") + "," +
-                range.map(_.xhi.toString).getOrElse("") + "\n"
+                //fnc.id + ","+
+                absError.map(_.toString).getOrElse("") //+ "," +
+                //relError.map(_.toString).getOrElse("") + "," //+
+                //range.map(_.xlo.toString).getOrElse("") + "," +
+                //range.map(_.xhi.toString).getOrElse("") + "\n"
               )
             }
           }

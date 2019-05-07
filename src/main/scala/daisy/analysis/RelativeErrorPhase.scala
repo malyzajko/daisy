@@ -114,8 +114,8 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
 
       try {
         val (relError, tmpList) = approach match {
-          case "taylor" => getRelErrorTaylorApprox(relErrorExpr, inputValMap, bodyReal)
-          case "naive" => getRelErrorNaive(relErrorExpr, inputValMap, bodyReal)
+          case "taylor" => getRelErrorTaylorApprox(relErrorExpr, inputValMap, fnc.precondition.get, bodyReal)
+          case "naive" => getRelErrorNaive(relErrorExpr, inputValMap, fnc.precondition.get, bodyReal)
         }
         if (tmpList.distinct.size > 0) {
           ctx.reporter.warning("Failed on " + tmpList.distinct.size + " sub-domain(s)")
@@ -133,7 +133,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
             ctx.reporter.info("Computing absolute error on these sub-intervals.")
             for (mapEntry <- list) {
               // here we compute the abs error for intervals where rel error is not possible
-              val absError = getAbsError(bodyReal, mapEntry, inputErrorMap, uniformPrecision)
+              val absError = getAbsError(bodyReal, mapEntry, inputErrorMap, fnc.precondition.get, uniformPrecision)
               ctx.reporter.info(s"For intervals $mapEntry, absError: $absError, time: " +
                 (System.currentTimeMillis - time))
             }
@@ -144,7 +144,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
             (System.currentTimeMillis - startTime))
           val time = System.currentTimeMillis
           // fixme for JetEngine DivByZeroException is thrown
-          val absError = getAbsError(bodyReal, inputValMap, inputErrorMap, uniformPrecision)
+          val absError = getAbsError(bodyReal, inputValMap, inputErrorMap, fnc.precondition.get, uniformPrecision)
           ctx.reporter.info(s"absError: $absError, time: " +
             (System.currentTimeMillis - time))
           None
@@ -168,7 +168,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
    * @return
    */
   private def getRelErrorTaylorApprox(relErrorExpr: Expr, inputValMap: Map[Identifier, Interval],
-    bodyReal: Expr): (Option[Rational], Seq[Map[Identifier, Interval]]) = {
+    precondition: Expr, bodyReal: Expr): (Option[Rational], Seq[Map[Identifier, Interval]]) = {
 
     var listFailInterval: Seq[Map[Identifier, Interval]] = Seq.empty
     var finalErr: Option[Rational] = None
@@ -213,10 +213,10 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
         // do not call evaluation function on all subintervals
         // if simplified expression is delta or RealLiteral
         val tmpForMax = tmpExpr match {
-          case x @ Variable(id) => List(evaluateOpt(tmpExpr, inputValMap, rangeMethod))
-          case x @ RealLiteral(r) => List(evaluateOpt(tmpExpr, inputValMap, rangeMethod))
+          case x @ Variable(id) => List(evaluateOpt(tmpExpr, inputValMap, precondition, rangeMethod))
+          case x @ RealLiteral(r) => List(evaluateOpt(tmpExpr, inputValMap, precondition, rangeMethod))
           case _ => newSet.map(interval => {
-            val tmp = evaluateOpt(tmpExpr, interval, rangeMethod)
+            val tmp = evaluateOpt(tmpExpr, interval, precondition, rangeMethod)
             ctx.reporter.debug("err on " + removeDeltasFromMap(interval) + s" is $tmp")
             if (tmp.isEmpty && !listFailInterval.contains(interval) && !listFailed.contains(interval)) {
               listFailInterval = listFailInterval :+ interval
@@ -254,7 +254,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
    * @return
    */
   private def getRelErrorNaive(relErrorExpr: Expr, inputValMap: Map[Identifier, Interval],
-    bodyReal: Expr): (Option[Rational], Seq[Map[Identifier, Interval]]) = {
+    precondition: Expr, bodyReal: Expr): (Option[Rational], Seq[Map[Identifier, Interval]]) = {
 
     var listFailInterval: Seq[Map[Identifier, Interval]] = Seq.empty
 
@@ -272,7 +272,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
 
     ctx.reporter.info("Computing the error ...")
     val errors = newSet.map(x => {
-      val tmp = evaluateOpt(relErrorExpr, x, rangeMethod)
+      val tmp = evaluateOpt(relErrorExpr, x, precondition, rangeMethod)
       if (tmp.isEmpty) listFailInterval = listFailInterval :+ x
       tmp
     })
@@ -281,7 +281,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
   }
 
   private def evaluateOpt(relErrorExpr: Expr, inputValMap: Map[Identifier, Interval],
-    rangeMethod: String): Option[Rational] = {
+    precondition: Expr, rangeMethod: String): Option[Rational] = {
     try {
       rangeMethod match {
         case ("interval") =>
@@ -293,11 +293,12 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
 
         case ("smtreuse") =>
           Some(maxAbs(evalRange[SMTRange](relErrorExpr,
-            inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }), SMTRange.apply)._1.toInterval))
+            inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, precondition)) }),
+            SMTRange.apply(_, precondition))._1.toInterval))
 
         case ("smtredo") =>
-          Some(maxAbs(evaluateSMTRedo(relErrorExpr,
-            inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) })).toInterval))
+          Some(maxAbs(evaluateSMTRedo(relErrorExpr, precondition,
+            inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, precondition)) })).toInterval))
 
         case("smtcomplete") =>
           Some(maxAbs(evaluateSMTComplete(relErrorExpr, inputValMap).toInterval))
@@ -311,7 +312,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
   }
 
   private def getAbsError(bodyReal: Expr, inputValMap: Map[Identifier, Interval],
-    inputErrorMap: Map[Identifier, Rational], uniformPrecision: Precision): Rational = rangeMethod match {
+    inputErrorMap: Map[Identifier, Rational], precondition: Expr, uniformPrecision: Precision): Rational = rangeMethod match {
     case "interval" =>
       uniformRoundoff_IA_AA(bodyReal, inputValMap, inputErrorMap, uniformPrecision,
         trackRoundoffErrors = true)._1
@@ -321,7 +322,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
         trackRoundoffErrors = true)._1
 
     case "smtreuse" | "smtredo" | "smtcomplete" =>
-      uniformRoundoff_SMT_AA(bodyReal, inputValMap, inputErrorMap, uniformPrecision,
+      uniformRoundoff_SMT_AA(bodyReal, inputValMap, inputErrorMap, precondition, uniformPrecision,
         trackRoundoffErrors = true)._1
 
     case _ =>
@@ -355,14 +356,14 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
    * This version does not record the already seen intervals (from identical, repeated subtrees)
    * and does recompute the range.
    */
-  def evaluateSMTRedo(expr: Expr, _intMap: Map[Identifier, SMTRange] = Map.empty): SMTRange = {
+  def evaluateSMTRedo(expr: Expr, precondition: Expr, _intMap: Map[Identifier, SMTRange] = Map.empty): SMTRange = {
 
     var valMap: Map[Identifier, SMTRange] = _intMap
 
     def eval(e: Expr): SMTRange = (e: @unchecked) match {
 
       case Variable(id) => valMap(id)
-      case RealLiteral(r) => SMTRange(r)
+      case RealLiteral(r) => SMTRange(r, precondition)
       case Plus(x, y) => eval(x) + eval(y)
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)

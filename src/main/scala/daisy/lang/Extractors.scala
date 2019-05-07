@@ -38,10 +38,18 @@ object Extractors {
         Some((Seq(t), (es: Seq[Expr]) => Cos(es.head)))
       case Tan(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Tan(es.head)))
+      case Asin(t) =>
+        Some((Seq(t), (es: Seq[Expr]) => Asin(es.head)))
+      case Acos(t) =>
+        Some((Seq(t), (es: Seq[Expr]) => Acos(es.head)))
+      case Atan(t) =>
+        Some((Seq(t), (es: Seq[Expr]) => Atan(es.head)))
       case Exp(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Exp(es.head)))
       case Log(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Log(es.head)))
+      case Approx(org, t, errorBound, errorMultiplier, functionName, dd) =>
+        Some((Seq(t), (es: Seq[Expr]) => Approx(org, es.head, errorBound, errorMultiplier, functionName, dd)))
 
       case _ =>
         None
@@ -81,6 +89,12 @@ object Extractors {
         Some((Seq(t), (es: Seq[Expr]) => Cos(es.head)))
       case Tan(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Tan(es.head)))
+      case Asin(t) =>
+        Some((Seq(t), (es: Seq[Expr]) => Asin(es.head)))
+      case Acos(t) =>
+        Some((Seq(t), (es: Seq[Expr]) => Acos(es.head)))
+      case Atan(t) =>
+        Some((Seq(t), (es: Seq[Expr]) => Atan(es.head)))
       case Exp(t) =>
         Some((Seq(t), (es: Seq[Expr]) => Exp(es.head)))
       case Log(t) =>
@@ -124,6 +138,9 @@ object Extractors {
       case And(args) => Some((args, and))
       case Or(args) => Some((args, or))
       case IfExpr(cond, thenn, elze) => Some(Seq(cond, thenn, elze), (es: Seq[Expr]) => IfExpr(es(0), es(1), es(2)))
+
+      case Approx(org, t, errorBound, errorMultiplier, functionName, dd) =>
+        Some((Seq(t), (es: Seq[Expr]) => Approx(org, es.head, errorBound, errorMultiplier, functionName, dd)))
 
       case Tuple(args) => Some(args, (es: Seq[Expr]) => Tuple(es))
       /* Terminals */

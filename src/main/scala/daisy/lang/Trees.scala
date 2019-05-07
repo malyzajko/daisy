@@ -448,6 +448,18 @@ object Trees {
     val getType = t.getType
   }
 
+  case class Asin(t: Expr) extends Expr {
+    val getType = t.getType
+  }
+
+  case class Acos(t: Expr) extends Expr {
+    val getType = t.getType
+  }
+
+  case class Atan(t: Expr) extends Expr {
+    val getType = t.getType
+  }
+
   case class Exp(t: Expr) extends Expr {
     val getType = t.getType
   }
@@ -455,6 +467,12 @@ object Trees {
   case class Log(t: Expr) extends Expr {
     val getType = t.getType
   }
+
+  case class Approx(original: Expr, t: Expr, relImplError: Rational, 
+    errorMultiplier: Rational, implName: String, dblDbl: Boolean = false) extends Expr {
+    val getType = t.getType
+  }
+
 
   /*  Comparisons */
 

@@ -58,9 +58,17 @@ trait RangeEvaluators {
 
       case (Tan(t), path) => eval(t, path).tangent
 
+      case (Asin(t), path) => eval(t, path).arcsine
+
+      case (Acos(t), path) => eval(t, path).arccosine
+
+      case (Atan(t), path) => eval(t, path).arctangent
+
       case (Exp(t), path) => eval(t, path).exp
 
       case (Log(t), path) => eval(t, path).log
+
+      case (Approx(original, t, _, _, _, _), path) => eval(original, path)
 
       case x @ (Let(id, value, body), path) =>
         // TODO: shouldn't the variables be added with empty path?

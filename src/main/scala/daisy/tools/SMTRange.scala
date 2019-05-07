@@ -26,47 +26,35 @@ object SMTRange {
       )
   }
 
-  def apply(v: Variable, i: Interval): SMTRange = {
-    // no tightening necessary here as there are no additional constraints
-    SMTRange(i, v, toConstraints(v, i))
-
+  def apply(r: Rational, precondition: Expr): SMTRange = {
+    // no tightening necessary here as the bounds are already tight
+    SMTRange(Interval(r, r), RealLiteral(r), precondition, Set[Expr]())
   }
 
-  def apply(r: Rational): SMTRange = {
-    // no tightening necessary here as there are no additional constraints
-    SMTRange(Interval(r, r), RealLiteral(r), Set[Expr]())
-
-  }
-
-  def apply(i: Interval): SMTRange = {
+  def apply(i: Interval, precondition: Expr): SMTRange = {
     // to make the range evaluation work in presence of if-else stmts
-    SMTRange(Variable(FreshIdentifier("tmp"+System.currentTimeMillis, RealType)), i)
+    SMTRange(Variable(FreshIdentifier("tmp" + System.currentTimeMillis, RealType)), i, precondition)
   }
 
   def apply(v: Variable, i: Interval, precondition: Expr): SMTRange = {
-    val constrs: Set[Expr] = precondition match {
-      case And(exprs) => exprs.toSet
-      case x if isBooleanTerm(x) => Set(x)
-      case _ =>
-        System.err.println("Calling SMTRange with a non-term constraint." +
-          "It will be ignored.")
-        Set[Expr]()
-    }
-
-    val allConstraints = constrs ++ toConstraints(v, i)
-    val tightRange = tightenBounds(i, v, allConstraints, lowPrecision, lowLoopThreshold)
-    SMTRange(tightRange, v, allConstraints)
+    val tightRange = tightenBounds(i, v, precondition, Set.empty, lowPrecision, lowLoopThreshold)
+    SMTRange(tightRange, v, precondition, Set.empty)
   }
 
-  def apply(v: Expr, i: Interval, precondition: Set[Expr]): SMTRange = {
-    val extra = Set(
+  /**
+    The constraints are not used to generate a precondition. Instead, the
+    trivial precondition 'true' is used.
+    This constructor is used in [[daisy.analysis.RelativeErrorPhase.evaluateSMTComplete]].
+   */
+  def apply(v: Expr, i: Interval, constraints: Set[Expr]): SMTRange = {
+    val extra: Set[Expr] = Set(
       LessEquals(RealLiteral(i.xlo), v), LessEquals(v, RealLiteral(i.xhi))
     )
 
     reporter.debug("evaluate complete expression")
-    val allConstraints = precondition ++ extra
-    val tightRange = tightenBounds(i, v, allConstraints, highPrecision, highLoopThreshold)
-    SMTRange(tightRange, v, allConstraints)
+    val allConstraints = constraints ++ extra
+    val tightRange = tightenBounds(i, v, BooleanLiteral(true), allConstraints, highPrecision, highLoopThreshold)
+    SMTRange(tightRange, v, BooleanLiteral(true), allConstraints)
   }
 
   // This needs to be populated before we can use SMTRange
@@ -96,13 +84,14 @@ object SMTRange {
     @param t arithmetic expression to be evaluated
     @param constrs constraints on t
    */
-  def tightenBounds(i: Interval, t: Expr, constrs: Set[Expr], precisionThreshold: Rational,
+  def tightenBounds(i: Interval, t: Expr, precond: Expr, constrs: Set[Expr], precisionThreshold: Rational,
     loopThreshold: Int): Interval = {
     //    reporter.warning(s"Tighten the bounds on $t")
     // TODO: massage arithmetic
 
-    //    reporter.info(s"Calling tighten range with $constrs on $t ")
-    val condition = and(constrs.toSeq: _*)
+    val constrsSeq = precond +: constrs.toSeq
+    // reporter.info(s"tightening with $constrsSeq of $t")
+    val condition = and(constrsSeq: _*)
     // val precisionThreshold = Rational.fromReal(0.01)
     // val loopThreshold = 10
 
@@ -264,9 +253,11 @@ object SMTRange {
 
   @param interval the tight(!) interval of the tree
   @param tree computation history, i.e. arithmetic expression
-  @param constraints additional constraints on the range
+  @param precond the precondition of the function enclosing the expression
+  @param constraints additional constraints on the range, e.g. if-conditions
  */
-case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Expr]) extends RangeArithmetic[SMTRange] {
+case class SMTRange private(interval: Interval, tree: Expr, precond: Expr, constraints: Set[Expr])
+  extends RangeArithmetic[SMTRange] {
   import SMTRange._
 
   assert(constraints.forall(isBooleanTerm(_)))
@@ -278,12 +269,12 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
   def +/-(r: Rational): SMTRange = ???
 
   def addConstraint(e: Set[Expr]): SMTRange = {
-    SMTRange(interval, tree, constraints ++ e)
+    SMTRange(interval, tree, precond, constraints ++ e)
   }
 
   def unary_-(): SMTRange = {
     // negation does not affect tightness
-    SMTRange(-interval, UMinus(tree), constraints)
+    SMTRange(-this.interval, UMinus(tree), this.precond, this.constraints)
   }
 
   // needed for RangeArithmetic trait. apparently the members with parameters are not recognized
@@ -297,6 +288,9 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
   def sine: SMTRange = this.sine(lowPrecision, lowLoopThreshold)
   def cosine: SMTRange = this.cosine(lowPrecision, lowLoopThreshold)
   def tangent: SMTRange = this.tangent(lowPrecision, lowLoopThreshold)
+  def arcsine: SMTRange = this.arcsine(lowPrecision, lowLoopThreshold)
+  def arccosine: SMTRange = this.arccosine(lowPrecision, lowLoopThreshold)
+  def arctangent: SMTRange = this.arctangent(lowPrecision, lowLoopThreshold)
   def exp: SMTRange = this.exp(lowPrecision, lowLoopThreshold)
   def log: SMTRange = this.log(lowPrecision, lowLoopThreshold)
 
@@ -304,29 +298,31 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
   def +(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
 
     val newTree = Plus(this.tree, y.tree)
+    val newPrecond = mergePrecond(this.precond, y.precond)
     val newConstraints = mergeConstraints(this.constraints, y.constraints)
-    val newInterval = tightenBounds(this.interval + y.interval, newTree, newConstraints,
+    val newInterval = tightenBounds(this.interval + y.interval, newTree, newPrecond, newConstraints,
       precision, maxLoops)
 
-    SMTRange(newInterval, newTree, newConstraints)
-
+    SMTRange(newInterval, newTree, newPrecond, newConstraints)
   }
 
   def -(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
 
     val newTree = Minus(this.tree, y.tree)
+    val newPrecond = mergePrecond(this.precond, y.precond)
     val newConstraints = mergeConstraints(this.constraints, y.constraints)
-    val newInterval = tightenBounds(this.interval - y.interval, newTree, newConstraints,
+    val newInterval = tightenBounds(this.interval - y.interval, newTree, newPrecond, newConstraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, newConstraints)
+    SMTRange(newInterval, newTree, newPrecond, newConstraints)
   }
 
   def *(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = Times(this.tree, y.tree)
+    val newPrecond = mergePrecond(this.precond, y.precond)
     val newConstraints = mergeConstraints(this.constraints, y.constraints)
-    val newInterval = tightenBounds(this.interval * y.interval, newTree, newConstraints,
+    val newInterval = tightenBounds(this.interval * y.interval, newTree, newPrecond, newConstraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, newConstraints)
+    SMTRange(newInterval, newTree, newPrecond, newConstraints)
   }
 
   def *(r: Rational): SMTRange = {
@@ -344,17 +340,18 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
 
   def ^(n: Int, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = IntPow(this.tree, n)
-    val newInterval = tightenBounds(this.interval ^ n, newTree, constraints,
+    val newInterval = tightenBounds(this.interval ^ n, newTree, precond, constraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, constraints)
+    SMTRange(newInterval, newTree, precond, constraints)
   }
 
   def /(y: SMTRange, precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = Division(this.tree, y.tree)
+    val newPrecond = mergePrecond(this.precond, y.precond)
     val newConstraints = mergeConstraints(this.constraints, y.constraints)
-    val newInterval = tightenBounds(this.interval / y. interval, newTree, newConstraints,
+    val newInterval = tightenBounds(this.interval / y. interval, newTree, newPrecond, newConstraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, newConstraints)
+    SMTRange(newInterval, newTree, newPrecond, newConstraints)
   }
 
   def inverse: SMTRange = {
@@ -362,7 +359,7 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
     // val newConstraints = this.constraints
     // no tightening here, add if needed...
     val newInterval = Interval(Rational.one) / this.interval
-    SMTRange(newInterval, newTree, this.constraints)
+    SMTRange(newInterval, newTree, precond, this.constraints)
   }
 
   def squareRoot(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
@@ -371,44 +368,65 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
     val newCondition: Set[Expr] = Set(Equals(Times(newTree, newTree), this.tree),
       LessEquals(RealLiteral(zero), newTree))
     val newConstraints = mergeConstraints(this.constraints, newCondition)
-    val newInterval = tightenBounds(this.interval.squareRoot, newTree, newConstraints,
+    val newInterval = tightenBounds(this.interval.squareRoot, newTree, precond, newConstraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, newConstraints)
+    SMTRange(newInterval, newTree, precond, newConstraints)
   }
 
   def sine(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = Sin(this.tree)
-    val newInterval = tightenBounds(this.interval.sine, newTree, this.constraints,
+    val newInterval = tightenBounds(this.interval.sine, newTree, this.precond, this.constraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, this.constraints)
+    SMTRange(newInterval, newTree, this.precond, this.constraints)
   }
 
   def cosine(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = Cos(this.tree)
-    val newInterval = tightenBounds(this.interval.cosine, newTree, this.constraints,
+    val newInterval = tightenBounds(this.interval.cosine, newTree, this.precond, this.constraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, this.constraints)
+    SMTRange(newInterval, newTree, this.precond, this.constraints)
   }
 
   def tangent(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = Tan(this.tree)
-    val newInterval = tightenBounds(this.interval.tangent, newTree, this.constraints,
+    val newInterval = tightenBounds(this.interval.tangent, newTree, this.precond, this.constraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, this.constraints)
+    SMTRange(newInterval, newTree, this.precond, this.constraints)
+  }
+
+  def arcsine(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = Asin(this.tree)
+    val newInterval = tightenBounds(this.interval.arcsine, newTree, this.precond, this.constraints,
+      precision, maxLoops)
+    SMTRange(newInterval, newTree, this.precond, this.constraints)
+  }
+
+  def arccosine(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = Acos(this.tree)
+    val newInterval = tightenBounds(this.interval.arccosine, newTree, this.precond, this.constraints,
+      precision, maxLoops)
+    SMTRange(newInterval, newTree, this.precond, this.constraints)
+  }
+
+  def arctangent(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
+    val newTree = Atan(this.tree)
+    val newInterval = tightenBounds(this.interval.arctangent, newTree, this.precond, this.constraints,
+      precision, maxLoops)
+    SMTRange(newInterval, newTree, this.precond, this.constraints)
   }
 
   def exp(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = Exp(this.tree)
-    val newInterval = tightenBounds(this.interval.exp, newTree, this.constraints,
+    val newInterval = tightenBounds(this.interval.exp, newTree, this.precond, this.constraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, this.constraints)
+    SMTRange(newInterval, newTree, this.precond, this.constraints)
   }
 
   def log(precision: Rational = lowPrecision, maxLoops: Int = lowLoopThreshold): SMTRange = {
     val newTree = Log(this.tree)
-    val newInterval = tightenBounds(this.interval.log, newTree, this.constraints,
+    val newInterval = tightenBounds(this.interval.log, newTree, this.precond, this.constraints,
       precision, maxLoops)
-    SMTRange(newInterval, newTree, this.constraints)
+    SMTRange(newInterval, newTree, this.precond, this.constraints)
   }
 
   // function for now, later may be inlined
@@ -417,5 +435,15 @@ case class SMTRange private(interval: Interval, tree: Expr, constraints: Set[Exp
 
     set1 ++ set2
 
+  }
+
+  @inline
+  private def mergePrecond(precond1: Expr, precond2: Expr): Expr = {
+    if (precond1.equals(precond2)) {
+      precond1
+    } else {
+      reporter.warning(s"2 unequal preconditions: $precond1 and $precond2")
+      and(precond1, precond2)
+    }
   }
 }

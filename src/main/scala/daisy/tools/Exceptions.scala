@@ -15,3 +15,5 @@ case class NegativeSqrtException(s: String) extends Exception
 case class NoRelativeErrorException(s: String) extends Exception
 
 case class NonPositiveLogException(s: String) extends Exception
+
+case class ArcOutOfBoundsException(s: String) extends Exception

@@ -15,6 +15,8 @@ code design is ease of understanding and extensibility of the code.
 
 ## Publications
 
+  * Sound Approximation of Programs with Elementary Functions, CAV'19
+
   * [Sound Mixed-Precision Optimization with Rewriting](https://people.mpi-sws.org/~eva/papers/iccps18_mixedtuning_rewriting.pdf), ICCPS'18
 
   * [Daisy tool paper](https://people.mpi-sws.org/~eva/papers/tacas18_daisy_toolpaper.pdf), TACAS'18
@@ -65,7 +67,7 @@ To note about the input language:
 These are the main command-line options. For a full list, use `--help`.
 
 `--analysis=[dataflow:opt:relative] {--subdiv}`
-
+  
 Daisy supports forward dataflow analysis (as implemented in Rosa, Fluctuat and Gappa) and an optimization-based analysis (as implemented in FPTaylor and Real2Float). These methods compute absolute error bounds, and whenever
 a relative error can be computed, it is also reported. Daisy also supports a dedicated relative error computation which is often more accurate, but also more expensive. All methods can be combined with interval subdivision, which
 can provide tighter error bounds at the expense of larger running times. Accuracy and correspondingly cost of both dataflow and optimization-based analysis can be adjusted by choosing the method which is used to bound ranges:
@@ -264,6 +266,20 @@ modified program.
 
   > testOnly regression.AbsErrorRegressionTest
 
+
+### Benchmarking
+
+  Daisy is set up to use Scalameter for benchmarking on the JVM. Scalameter takes care of warming up the JVM and other mundane tasks. You can run Scalameter benchmarks from src/test, however, then the benchmarking will also be done each time someone calls > test. This is suboptimal, because these benchmarking runs can potentially take a very long time.
+
+  To avoid this, the project has a configuration called 'bench' which allow you to run Scalameter tests in the src/bench folder. (Note, by default, the sbt 'test' command will only search the src/test folder.)
+
+  To run all benchmarking in src/bench:
+
+  > bench:test
+
+  To run only one benchmark:
+
+  > bench:testOnly RangeBenchmark
 
 ### Contribution Guidelines
 

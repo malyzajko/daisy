@@ -444,6 +444,15 @@ abstract class SMTLibSolver(val ctx: Context) {
     case Tan(a) =>
       FunctionApplication(makeFunctionId("tan"), Seq(toSMT(a)))
 
+    case Asin(a) =>
+      FunctionApplication(makeFunctionId("sin"), Seq(toSMT(a)))
+
+    case Acos(a) =>
+      FunctionApplication(makeFunctionId("cos"), Seq(toSMT(a)))
+
+    case Atan(a) =>
+      FunctionApplication(makeFunctionId("tan"), Seq(toSMT(a)))
+
     case Exp(a) =>
       FunctionApplication(makeFunctionId("exp"), Seq(toSMT(a)))
 
