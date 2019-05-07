@@ -265,21 +265,7 @@ modified program.
   If you want to run only a specific test:
 
   > testOnly regression.AbsErrorRegressionTest
-
-
-### Benchmarking
-
-  Daisy is set up to use Scalameter for benchmarking on the JVM. Scalameter takes care of warming up the JVM and other mundane tasks. You can run Scalameter benchmarks from src/test, however, then the benchmarking will also be done each time someone calls > test. This is suboptimal, because these benchmarking runs can potentially take a very long time.
-
-  To avoid this, the project has a configuration called 'bench' which allow you to run Scalameter tests in the src/bench folder. (Note, by default, the sbt 'test' command will only search the src/test folder.)
-
-  To run all benchmarking in src/bench:
-
-  > bench:test
-
-  To run only one benchmark:
-
-  > bench:testOnly RangeBenchmark
+  
 
 ### Contribution Guidelines
 
