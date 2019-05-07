@@ -68,3 +68,8 @@ case class MultiChoiceOption[T: ClassTag](name: String, choices: Map[String, T],
   def helpLine: String = "--%-30s %s".format(name + "=[a:b:...]", description + ". Valid options: all, "
     + choices.keySet.toSeq.sorted.mkString(", "))
 }
+
+object MultiStringChoiceOption {
+  def apply(_name: String, _choices: Seq[String], _description: String = ""): CmdLineOption[List[String]] =
+    MultiChoiceOption[String](_name, _choices.map(s => s -> s).toMap, _description)
+}

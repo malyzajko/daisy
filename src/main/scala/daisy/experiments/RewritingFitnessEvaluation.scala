@@ -116,7 +116,8 @@ object RewritingFitnessEvaluation extends DaisyPhase with tools.RoundoffEvaluato
       val (resAffAffine, timeAffAffine) = generateValidStatic(exprs, uniformRoundoff_AA_AA(_, inputValMap, inputErrors, uniformPrecision)._1)
       val (fracAffAffine, equalCountAffAffine) = compareAgainstBaseline(resAffAffine, baseline, "aff-affine")
 
-      val (resSMTAffine, timeSMTAffine) = generateValidStatic(exprs, uniformRoundoff_SMT_AA(_, inputValMap, inputErrors, uniformPrecision)._1)
+      val (resSMTAffine, timeSMTAffine) = generateValidStatic(exprs, uniformRoundoff_SMT_AA(_, inputValMap, inputErrors,
+        fnc.precondition.get, uniformPrecision)._1)
       val (fracSMTAffine, equalCountSMTAffine) = compareAgainstBaseline(resSMTAffine, baseline, "smt-affine")
 
       // Intervals for errors

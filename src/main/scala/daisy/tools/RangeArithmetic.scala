@@ -19,6 +19,9 @@ trait RangeArithmetic[T] { self: T =>
   def sine: T
   def cosine: T
   def tangent: T
+  def arcsine: T
+  def arccosine: T
+  def arctangent: T
   def exp: T
   def log: T
   def toInterval: Interval

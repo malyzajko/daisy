@@ -33,6 +33,15 @@ object Real {
     def tan(x: Real): Real = ???
 
     @ignore
+    def asin(x: Real): Real = ???
+
+    @ignore
+    def acos(x: Real): Real = ???
+
+    @ignore
+    def atan(x: Real): Real = ???    
+
+    @ignore
     def log(x: Real): Real = ???
 
     @ignore

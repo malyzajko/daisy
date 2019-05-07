@@ -94,13 +94,14 @@ trait RoundoffEvaluators extends RangeEvaluators {
     expr: Expr,
     inputValMap: Map[Identifier, Interval],
     inputErrorMap: Map[Identifier, Rational],
+    precondition: Expr,
     uniformPrecision: Precision,
     trackRoundoffErrors: Boolean = true,
     approxRoundoff: Boolean = false): (Rational, Interval) = {
 
     val (resRange, intermediateRanges) = evalRange[SMTRange](expr,
-      inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }),
-      SMTRange.apply)
+      inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, precondition)) }),
+      SMTRange.apply(_, precondition))
 
     val (resRoundoff, _) = evalRoundoff[AffineForm](expr,
       intermediateRanges.mapValues(_.toInterval),
@@ -292,6 +293,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
           e = r * errorT + rangeT * e + e * errorT
           r *= rangeT
         }
+
         // The error of pow in java.Math is 1 ulp, thus we rely that the method
         // computeNewErrorTranscendental gives us 1 ulp error
         computeNewErrorTranscendental(r.toInterval, e, prec)
@@ -359,6 +361,45 @@ trait RoundoffEvaluators extends RangeEvaluators {
         // TODO: check that this operation exists for this precision
         computeNewErrorTranscendental(range(x), propagatedError, prec)
 
+      case x @ (Asin(t), path) =>
+        // TODO not supported for fixed-points
+        val (errorT, prec) = eval(t, path)
+
+        // compute the max slope (derivative), will be one of the end points
+        // instead of trying to figure out which one, compute both
+        val Interval(a, b) = range(t, path)
+        val errorMultiplier = max(abs(1 / sqrtDown(1 - a * a)), abs(1 / sqrtDown(1 - b * b)))
+        val propagatedError = errorT * errorMultiplier
+
+        // TODO: check that this operation exists for this precision
+        computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+      case x @ (Acos(t), path) =>
+        // TODO not supported for fixed-points
+        val (errorT, prec) = eval(t, path)
+
+        // compute the max slope (derivative), will be one of the end points
+        // instead of trying to figure out which one, compute both
+        val Interval(a, b) = range(t, path)
+        val errorMultiplier = max(abs(1 / sqrtDown(1 - a * a)), abs(1 / sqrtDown(1 - b * b)))
+        val propagatedError = errorT * errorMultiplier
+
+        // TODO: check that this operation exists for this precision
+        computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+      case x @ (Atan(t), path) =>
+        // TODO not supported for fixed-points
+        val (errorT, prec) = eval(t, path)
+
+        // compute the max slope (derivative), will be one of the end points
+        // instead of trying to figure out which one, compute both
+        val Interval(a, b) = range(t, path)
+        val errorMultiplier = max(abs(1 / (1 + a * a)), abs(1 / (1 + b * b)))
+        val propagatedError = errorT * errorMultiplier
+
+        // TODO: check that this operation exists for this precision
+        computeNewErrorTranscendental(range(x), propagatedError, prec)
+
       case x @ (Exp(t), path) =>
         // TODO not supported for fixed-points
         val (errorT, prec) = eval(t, path)
@@ -389,6 +430,18 @@ trait RoundoffEvaluators extends RangeEvaluators {
 
         // TODO: check that this operation exists for this precision
         computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+      case x @ (Approx(original, t, metalibmError, errorMultiplier, _, _), path) =>
+        // TODO not supported for fixed-points
+        // TODO: figure out which approach to use
+        //val (errorT, prec) = eval(t, path, false)
+        val (errorT, prec) = eval(t, path)
+        val maxRangeX = Interval.maxAbs(range(x))
+        val absoluteMetalibmError = metalibmError * maxRangeX
+        val propagatedError = errorT * errorMultiplier
+        val newError = propagatedError +/- absoluteMetalibmError
+
+        (newError, prec)
 
       case x @ (Let(id, value, body), path) =>
         val (valueError, valuePrec) = eval(value, path)
@@ -428,6 +481,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
       case _ => throw new Exception("Not supported")
 
     })
+
     val (resError, _) = eval(expr, emptyPath)
     (resError, intermediateErrors.mapValues(_._1).toMap)
   }

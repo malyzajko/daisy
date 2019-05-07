@@ -54,10 +54,11 @@ object RangePhase extends DaisyPhase with tools.RangeEvaluators {
 
           (resRange.toInterval, intermediateRanges.mapValues(_.toInterval))
 
-        case "smt" =>
-          val (resRange, intermediateRanges) = evalRange[SMTRange](fnc.body.get,
-            inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int)) }),
-            SMTRange.apply)
+          case "smt" =>
+            val precond = fnc.precondition.get
+            val (resRange, intermediateRanges) = evalRange[SMTRange](fnc.body.get,
+              inputValMap.map({ case (id, int) => (id -> SMTRange(Variable(id), int, precond)) }),
+              SMTRange.apply(_, precond))
 
           (resRange.toInterval, intermediateRanges.mapValues(_.toInterval))
 
