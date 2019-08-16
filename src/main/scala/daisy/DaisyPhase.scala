@@ -4,6 +4,7 @@
 package daisy
 
 import daisy.lang.Identifiers.Identifier
+import daisy.lang.Types.RealType
 
 import scala.collection.immutable.Seq
 import lang.Trees.{FunDef, Program}
@@ -38,10 +39,9 @@ trait DaisyPhase extends Pipeline[Program, Program] {
       funs = funs.filter(_.precondition.isDefined)
     }
     ctx.option[List[String]]("functions") match {
-      case Nil =>
-      case fncs => funs = funs.filter(f => fncs.contains(f.id.toString))
+      case Nil => funs
+      case fncs => funs.filter(f => fncs.contains(f.id.toString))
     }
-    funs
   }
 
   def analyzeConsideredFunctions[T](ctx: Context, prg: Program)(f: FunDef => T): Map[Identifier, T] = {
@@ -50,8 +50,5 @@ trait DaisyPhase extends Pipeline[Program, Program] {
 
   def transformConsideredFunctions(ctx: Context, prg: Program)(f: FunDef => FunDef): Seq[FunDef] = {
     functionsToConsider(ctx, prg).map(fnc => f(fnc))
-    // prg.defs.map{ fnc =>
-    //   if (functionsToConsider(ctx, prg).contains(fnc)) f(fnc) else fnc
-    // }
   }
 }

@@ -83,11 +83,11 @@ object Main {
     FlagOption(
       "pow-roll",
       "Roll products, e.g. x*x*x -> pow(x, 3)"
-      ),
+    ),
     FlagOption(
       "pow-unroll",
       "Unroll products, e.g. pow(x, 3) => x*x*x"
-      ),
+    ),
     StringOption(
       "mixed-precision",
       """File with type assignment for all variables.
@@ -108,8 +108,19 @@ object Main {
     FlagOption("rewrite-stability-experiment", "Run rewriting stability experiment."),
     FlagOption("mixed-cost-eval", "Mixed-precision cost function evaluation experiment"),
     FlagOption("mixed-exp-gen", "Mixed-precision experiment generation"),
-
     FlagOption("mixed-tuning", "Perform mixed-precision tuning"),
+    FlagOption(
+      "approx",
+      "Replaces expensive transcendental function calls with its approximations"
+    ),
+    StringOption(
+      "spec",
+      "Specification file with intervals for input variables and target error."),
+    StringChoiceOption(
+      "cost",
+      Set("area", "ml", "combined"),
+      "area",
+      "Cost function for mixed-tuning and approximation phases."),
 
     FlagOption("metalibm", "approximate an elementary function from Metalibm"),
     FlagOption("benchmarking", "generates the benchmark file")
@@ -138,6 +149,8 @@ object Main {
     experiment.CostFunctionEvaluationExperiment,
     backend.InfoPhase,
     frontend.ExtractionPhase,
+    frontend.CExtractionPhase,
+    opt.ApproxPhase,
     opt.MetalibmPhase,
     //transform.ReassignElemFuncPhase,
     experiment.BenchmarkingPhase,
@@ -175,8 +188,9 @@ object Main {
             ctx.reporter.warning(msg)
           case e: DaisyFatalError =>
             ctx.reporter.info("Something really bad happened. Cannot continue.")
-          case _ : Throwable =>
+          case _: Throwable =>
             ctx.reporter.info("Something really bad happened. Cannot continue.")
+
         }
         ctx.timers.get("total").stop
         ctx.reporter.info("time: \n" + ctx.timers.toString)
@@ -193,7 +207,8 @@ object Main {
 
   private def computePipeline(ctx: Context): Pipeline[Program, Program] = {
 
-    var pipeline: Pipeline[Program, Program] = frontend.ExtractionPhase
+    var pipeline: Pipeline[Program, Program] =
+      if (ctx.lang == ProgramLanguage.ScalaProgram) frontend.ExtractionPhase else frontend.CExtractionPhase
 
     pipeline >>= analysis.SpecsProcessingPhase
 
@@ -211,7 +226,7 @@ object Main {
       pipeline >>= analysis.DynamicPhase
       pipeline >>= backend.InfoPhase
 
-    } else if(ctx.hasFlag("bgrtdynamic")){
+    } else if (ctx.hasFlag("bgrtdynamic")) {
       pipeline >>= analysis.BGRTDynamicPhase
       pipeline >>= backend.InfoPhase
 
@@ -230,6 +245,20 @@ object Main {
     } else if (ctx.hasFlag("mixed-exp-gen")) {
       pipeline >>= experiment.MixedPrecisionExperimentGenerationPhase
 
+    } else if (ctx.hasFlag("approx")) {
+      pipeline >>= transform.TACTransformerPhase >>
+        transform.ConstantTransformerPhase
+
+      if (ctx.hasFlag("mixed-tuning")) {
+        pipeline >>= analysis.RangePhase >>
+          opt.MixedPrecisionOptimizationPhase
+      } else
+        pipeline >>= analysis.DataflowPhase
+
+      pipeline >>= opt.ApproxPhase >>
+        analysis.AbsErrorPhase >>
+        backend.InfoPhase >>
+        backend.CodeGenerationPhase
     } else if (ctx.hasFlag("comp-opts-exp-gen")) {
       pipeline >>= experiment.CompilerOptimizationsExperimentGenerationPhase
 
@@ -243,7 +272,7 @@ object Main {
         opt.MetalibmPhase >>
         analysis.DataflowPhase >>     // TODO: AbsErrorPhase is enough?
         backend.InfoPhase >>
-        backend.CodeGenerationPhase 
+        backend.CodeGenerationPhase
 
     } else if (ctx.hasFlag("mixed-tuning")) {
       pipeline >>= transform.TACTransformerPhase >>
@@ -260,7 +289,7 @@ object Main {
         opt.MetalibmPhase >>
         analysis.DataflowPhase >>  // TODO: AbsErrorPhase is enough?
         backend.InfoPhase >>
-        backend.CodeGenerationPhase 
+        backend.CodeGenerationPhase
 
     } else {
       // Standard static analyses
@@ -280,7 +309,7 @@ object Main {
       }
 
       pipeline >>= backend.InfoPhase
-      
+
       if (ctx.hasFlag("codegen")) {
         pipeline >>= backend.CodeGenerationPhase
       }
@@ -306,7 +335,7 @@ object Main {
     for (c <- Main.allPhases.toSeq.sortBy(_.name) if c.definedOptions.nonEmpty) {
       reporter.info("")
       reporter.info(s"${c.name} Phase")
-      for(opt <- c.definedOptions.toSeq.sortBy(_.name)) {
+      for (opt <- c.definedOptions.toSeq.sortBy(_.name)) {
         reporter.info(opt.helpLine)
       }
     }
@@ -324,9 +353,9 @@ object Main {
 
     val argsMap: Map[String, String] =
       args.filter(_.startsWith("--")).map(_.drop(2).split("=", 2).toList match {
-      case List(name, value) => name -> value
-      case List(name) => name -> "yes"
-    }).toMap
+        case List(name, value) => name -> value
+        case List(name) => name -> "yes"
+      }).toMap
 
 
     argsMap.keySet.diff(allOptions.map(_.name)).foreach {
@@ -343,15 +372,15 @@ object Main {
         name -> argsMap.get(name).map(_.stripPrefix("[").stripPrefix("]").split(":").toList).getOrElse(Nil)
 
       case NumOption(name, default, _) => argsMap.get(name) match {
-          case None => name -> default
-          case Some(s) => try {
-            name -> s.toLong
-          } catch {
-            case e: NumberFormatException =>
-              initReporter.warning(s"Can't parse argument for option $name, using default")
-              name -> default
-          }
+        case None => name -> default
+        case Some(s) => try {
+          name -> s.toLong
+        } catch {
+          case e: NumberFormatException =>
+            initReporter.warning(s"Can't parse argument for option $name, using default")
+            name -> default
         }
+      }
 
       case ChoiceOption(name, choices, default, _) => argsMap.get(name) match {
         case Some(s) if choices.keySet.contains(s) => name -> choices(s)
@@ -376,17 +405,25 @@ object Main {
       }
     }).toMap
 
-    val inputFile: String = args.filterNot(_.startsWith("-")) match {
+    def inputInfo: (String, ProgramLanguage.Value) = args.filterNot(_.startsWith("-")) match {
       case Seq() => initReporter.fatalError("No input file")
-      case Seq(f) if new File(f).exists => f
+      case Seq(f) if new File(f).exists && f.endsWith(".c") => (f, ProgramLanguage.CProgram)
+      case Seq(f) if new File(f).exists => (f, ProgramLanguage.ScalaProgram)
       case Seq(f) => initReporter.fatalError(s"File $f does not exist")
       case fs => initReporter.fatalError("More than one input file: " + fs.mkString(", "))
     }
 
+    val (inputFile, programLanguage) = inputInfo
     Option(Context(
       initReport = initReporter.report,
       file = inputFile,
+      lang = programLanguage,
       options = opts
     ))
   }
+
+  object ProgramLanguage extends Enumeration {
+    val CProgram, ScalaProgram = Value
+  }
+
 }

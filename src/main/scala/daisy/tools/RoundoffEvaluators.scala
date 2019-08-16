@@ -148,7 +148,9 @@ trait RoundoffEvaluators extends RangeEvaluators {
     interval2T: Interval => T,
     constantsPrecision: Precision,
     trackRoundoffErrors: Boolean, // if false, propagate only initial errors
-    approxRoundoff: Boolean = false
+    approxRoundoff: Boolean = false,
+    resultAbsErrors: Map[Identifier, Rational] = Map(),
+    resultErrorsMetalibm: Map[Expr, Rational] = Map()
     ): (T, Map[(Expr, PathCond), T]) = {
 
 
@@ -317,6 +319,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
+        //println("range map is " + range)
         computeNewError(range(x), propagatedError, prec)
 
       case x @ (Sin(t), path) =>
@@ -470,13 +473,32 @@ trait RoundoffEvaluators extends RangeEvaluators {
 
         val propagatedError = interval2T(errorThen.toInterval.union(errorElse.toInterval))// take max of the two errors
 
-        computeNewError(range(x), propagatedError, getUpperBound(precThen, precElse))
-
+        (propagatedError, getUpperBound(precThen, precElse))
+        
       case x @ (Cast(t, FinitePrecisionType(prec)), path) =>
         val (errorT, precT) = eval(t, path)
 
-        // add new roundoff error corresponding to the cast precision
-        computeNewError(range(x), errorT, prec)
+        if (prec > precT) {
+          // upcast does not lead to roundoff error
+          (errorT, prec)
+        } else {
+          // add new roundoff error corresponding to the cast precision
+          computeNewError(range(x), errorT, prec)  
+        }
+        
+      case x @ (ApproxPoly(orig, _, fncId, totalError), path) =>
+        val approxPrec = (fncId.getType: @unchecked) match {
+          case FinitePrecisionType(a) => Some(a)
+          case _ => 
+            // approx fnc must already have finite precision assignedinf
+            throw new Exception(s"Approximation must have precision assigned ${x._1}")
+        } 
+
+        // TODO: store resultAbsError directly in ApproxNode?
+        if (resultAbsErrors.contains(fncId))
+          (fromError(resultErrorsMetalibm(x._1) + resultAbsErrors(fncId)), approxPrec.get)
+        else
+          (fromError(totalError), approxPrec.get) // for another Metalibm phase (not ApproxPhase)  
 
       case _ => throw new Exception("Not supported")
 

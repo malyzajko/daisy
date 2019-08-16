@@ -62,6 +62,7 @@ object TreeOps {
     es.foreach(rec)
   }
 
+
   /** Post-traversal of the tree.
    *
    * Invokes the input function on every node '''after''' visiting
@@ -85,7 +86,6 @@ object TreeOps {
     es.foreach(rec)
     f(e)
   }
-
 
   /** Post-transformation of the tree.
    *
@@ -149,6 +149,7 @@ object TreeOps {
       Seq()
     }
   }
+
 
   /** Checks if the predicate holds in some sub-expression */
   def exists(matcher: PartialFunction[Expr, Boolean])(e: Expr): Boolean = {
@@ -222,16 +223,26 @@ object TreeOps {
     case _ => e
   }
 
-
-  /** Returns the set of all variables occuring in an expression */
+  /** Returns the set of all variables occuring (i.e. used) in an expression */
   def allVariablesOf(expr: Expr): Set[Identifier] = {
     fold[Set[Identifier]] {
       case (e, subs) =>
         val subvs = subs.flatten.toSet
         e match {
           case Variable(i) => subvs + i
-          // case Let(i, _, _) => subvs - i
-          // case Lambda(args, _) => subvs -- args.map(_.id)
+          case _ => subvs
+        }
+    }(expr)
+  }
+
+  // returns all IDs appearing in the program, both used and unused
+  def allIDsOf(expr: Expr): Set[Identifier] = {
+    fold[Set[Identifier]] {
+      case (e, subs) =>
+        val subvs = subs.flatten.toSet
+        e match {
+          case Variable(i) => subvs + i
+          case Let(i, _, _) => subvs + i
           case _ => subvs
         }
     }(expr)
@@ -255,5 +266,24 @@ object TreeOps {
   def size(e: Expr): Int = e match {
     case Operator(es, _) =>
       es.map(size).sum + 1
+  }
+
+  def containsApproxNode(e: Expr): Boolean = e match {
+    case ApproxPoly(_,_,_,_) => true
+    case Variable(_) => false
+    case RealLiteral(_) => false
+    case FinitePrecisionLiteral(_, _, _) => false
+
+    case ArithOperator(es, _) => es.map(containsApproxNode).foldLeft(false)((acc, x) => acc || x)
+
+    case IfExpr(cond, thenn, elze) =>
+      // conditionals do not contain approx (todo can this happen in the future?)
+      containsApproxNode(thenn) || containsApproxNode(elze)
+
+    case Let(_, value, body) =>
+      containsApproxNode(value) || containsApproxNode(body)
+
+    case x @ Cast(castedExpr, _) =>
+      containsApproxNode(castedExpr)
   }
 }
