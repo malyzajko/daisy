@@ -192,7 +192,7 @@ object FinitePrecision {
     override val toString = "Fixed" + bitlength
 
     override def _absRoundoff(i: Interval): Rational = Rational.powerTwo(-fractionalBits(i))
-    override def _absTranscendentalRoundoff(i: Interval): Rational = ???
+    override def _absTranscendentalRoundoff(i: Interval): Rational = Rational.two * _absRoundoff(i) // todo smarter computation // changed from: Rational.two *
 
     def fractionalBits(i: Interval): Int = fractionalBits(Interval.maxAbs(i))
     def fractionalBits(r: Rational): Int = bitlength - integerBitsNeeded(r)

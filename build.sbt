@@ -1,17 +1,19 @@
 name := "Daisy"
 
-version := "0.0"
+version := "0.1"
 
 organization := "org.mpi-sws.ava"
-
-//enablePlugins(ScalaNativePlugin)
 
 scalaVersion := "2.11.11"
 
 scalacOptions ++= Seq(
     "-deprecation",
     "-unchecked",
-    "-feature")
+    "-feature",
+    "-Ywarn-unused-import",
+    //"-Ywarn-unused",    too many false positives
+    "-Ywarn-dead-code",
+    "-Xlint:_,-adapted-args")
 
 resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/"
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
@@ -21,7 +23,8 @@ libraryDependencies ++= Seq(
     "org.scalatest" % "scalatest_2.11" % "2.2.4" % "test",
     "com.storm-enroute" %% "scalameter" % "0.7",
     "com.regblanc" % "scala-smtlib_2.11" % "0.2",
-    "org.fusesource.hawtjni" % "hawtjni-runtime" % "1.9"  //for JNI
+    "org.fusesource.hawtjni" % "hawtjni-runtime" % "1.9",  //for JNI
+    "org.scala-lang.modules" %% "scala-parser-combinators" % "1.0.5"
 )
 
 envVars := Map("LC_NUMERIC" -> "en_US.UTF-8")
@@ -33,15 +36,18 @@ javaOptions in run ++= Seq(
 
 Keys.fork in Test := true   //for native libraries to be on correct path
 
+parallelExecution in Test := false
+
 val scalaMeterFramework = new TestFramework("org.scalameter.ScalaMeterFramework")
 
 testFrameworks += scalaMeterFramework
 
-lazy val Benchmark = config("bench") extend Test
-
 testOptions in Test += Tests.Argument(scalaMeterFramework, "-silent")
 
-parallelExecution in Test := false
+lazy val Benchmark = config("bench") extend Test
+
+ivyLoggingLevel in clean := UpdateLogging.Quiet
+ivyLoggingLevel in Test := UpdateLogging.Quiet
 
 logBuffered := false
 
@@ -69,6 +75,7 @@ script := {
     val cps = (dependencyClasspath in Compile).value
     val out = (classDirectory      in Compile).value
     val res = (resourceDirectory   in Compile).value
+//    val jar = (artifactPath in Compile in packageBin).value
     //val is64 = System.getProperty("sun.arch.data.model") == "64"
     val f = scriptFile
     if(f.exists) {

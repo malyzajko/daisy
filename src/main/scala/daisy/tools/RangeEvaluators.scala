@@ -107,8 +107,8 @@ trait RangeEvaluators {
           Interval(Rational.min(tmpThen.toInterval.xlo, tmpElse.toInterval.xlo),
             Rational.max(tmpThen.toInterval.xhi, tmpElse.toInterval.xhi)))
 
-      case _ =>
-        throw new Exception("Not supported")
+      case x =>
+        throw new Exception(s"Not supported: $x")
     })
     val res = eval(expr, emptyPath)
     (res, intermediateRanges.toMap)

@@ -39,64 +39,78 @@ object ConstantTransformerPhase extends DaisyPhase {
     reporter = ctx.reporter
     // need to replace function bodies, so create a copy of the whole program
 
-    val newDefs = prg.defs.map(fnc =>
-      if (!fnc.body.isEmpty) {
-
+    val functionsToTransform = if (ctx.hasFlag("approx")) prg.defs.filter(_.returnType == RealType) else prg.defs
+    val newDefs = functionsToTransform.map(fnc =>
+      if (fnc.body.isDefined) {
+        
         val newBody = pullOutConstants(fnc.body.get)
-
         fnc.copy(body = Some(newBody))
 
       } else {
         fnc
       })
 
-    //println("new program: " + newDefs)
 
-    (ctx, Program(prg.id, newDefs))
+    (ctx, Program(prg.id, newDefs ++ prg.defs.diff(functionsToTransform)))
   }
 
   def pullOutConstants(expr: Expr): Expr = {
-    // find all constants
-    var constants = Seq[(Identifier, RealLiteral)]()
-    var counter = 0
-
-
-    def mapConstants(e: Expr): Expr = (e: @unchecked) match {
-      case v: Variable => v
-      case x @ RealLiteral(r) =>
-        val fresh = FreshIdentifier("_const" + counter, RealType)
-        counter = counter + 1
-        constants = constants :+ (fresh, x)
-        Variable(fresh)
-
-      case ArithOperator(es, recons) =>
-        recons(es.map(mapConstants(_)))
-
-      case IfExpr(cond, thenn, elze) =>
-        IfExpr(mapConstants(cond), mapConstants(thenn), mapConstants(elze))
-
-      case GreaterThan(l, r) => GreaterThan(mapConstants(l), mapConstants(r))
-      case GreaterEquals(l, r) => GreaterEquals(mapConstants(l), mapConstants(r))
-      case LessThan(l, r) => LessThan(mapConstants(l), mapConstants(r))
-      case LessEquals(l, r) => LessEquals(mapConstants(l), mapConstants(r))
-
-      case Let(id, r @ RealLiteral(_), b) => Let(id, r, mapConstants(b))
-      case Let(id, v, b) => Let(id, mapConstants(v), mapConstants(b))
-    }
-
-    val expr2 = mapConstants(expr)
-
     // generate vals for all constants
-    def makeIntoLets(consts: Seq[(Identifier, RealLiteral)]): Expr = {
+    def toLets(consts: Seq[(Identifier, RealLiteral)], lastExpr: Expr): Expr = {
       if (consts.length > 0) {
         val (fresh, const) = consts.head
-        Let(fresh, const, makeIntoLets(consts.tail))
+        Let(fresh, const, toLets(consts.tail, lastExpr))
       } else {
-        expr2
+        lastExpr
       }
     }
 
-    makeIntoLets(constants)
+    // find all constants
+    var counter = 0
+
+
+    def mapConstants(e: Expr): (Expr, Seq[(Identifier, RealLiteral)]) = (e: @unchecked) match {
+      case v: Variable => (v, Seq())
+      case x @ RealLiteral(r) =>
+        val fresh = FreshIdentifier("_const" + counter, RealType)
+        counter = counter + 1
+        //constants = constants :+ (fresh, x)
+        (Variable(fresh), Seq((fresh, x)))
+
+      case ArithOperator(es, recons) =>
+        val (exprs, constants) = es.map(mapConstants).unzip
+        (recons(exprs), constants.flatten)
+
+      case IfExpr(cond, thenn, elze) =>
+        // don't extract constants from conditionals for now
+        val (ifExpr, ifConsts) = mapConstants(thenn)
+        val (elseExpr, elseConst) = mapConstants(elze)
+
+        (IfExpr(cond, toLets(ifConsts, ifExpr), toLets(elseConst, elseExpr)), Seq())
+
+      case Let(id, r @ RealLiteral(_), b) => 
+        val (expr, consts) = mapConstants(b)
+        (Let(id, r, expr), consts)
+
+      case Let(id, v, b) => 
+        val (vExpr, vConsts) = mapConstants(v)
+        val (bExpr, bConsts) = mapConstants(b)
+        
+        (Let(id, vExpr, bExpr), vConsts ++ bConsts)
+
+      case x @ ApproxPoly(orig, arg, funId, err) =>
+        val (expr, consts) = mapConstants(arg)
+        (ApproxPoly(orig, expr, funId, err), consts)
+
+      case x @ Cast(castedExpr, typ) =>
+        val (expr, consts) = mapConstants(castedExpr)
+        (Cast(expr, typ), consts)
+    }
+
+    val (exprNew, consts) = mapConstants(expr)
+
+
+    toLets(consts, exprNew)
 
   }
 }

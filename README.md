@@ -77,6 +77,39 @@ You can then run Daisy on an input file as follows:
 $ ./daisy testcases/rosa/Doppler.scala
 ```
 
+## Installation for using Metalibm
+
+Metalibm requires additional dependencies which need to be installed first.
+
+1. Install/update dependencies (all but fplll on Mac worked with Homebrew)
+  - mpfr
+  - mpfi
+  - fplll (https://github.com/fplll/fplll.git, you may have to add the installation path to LD_LIBRARY_PATH)
+  - automake
+  - libtool
+  - flex
+  - bison
+  - boost
+
+2. Install Sollya
+  - check out repository: git clone https://scm.gforge.inria.fr/anonscm/git/sollya/sollya.git 
+  - ./autogen.sh
+  - ./configure
+  - make
+  - make install
+
+3. Install Gappa
+  - get code: http://gappa.gforge.inria.fr/
+  - ./configure
+  - remake
+  - remake install
+
+4. Setup Metalibm 
+  - add paths to Sollya and Gappa to your PATH
+  - make GCC (gcc and g++) your default C compiler (and not clang)
+  - make sed be the GNU version (and not the Mac default)
+  - `source scripts/approx/metalibm_install.sh`
+
 ## Additional Software
 
 Some features of Daisy require additional software to be installed.
@@ -109,9 +142,16 @@ Currently, this is
     - extract lib/metalibm.zip to metalibm/ (i.e. in the daisy home directory)
     - add paths to Sollya and Gappa to your PATH
     - make gcc and g++ and not clang your default GCC compiler
-    - make  (in the metalibm/ directory)
+    - `source scripts/approx/metalibm_install.sh` if you want to use APPROX project (otherwise `make` in the metalibm/ directory suffices)
 
   5. Run Daisy+Metalibm on an example:
+    - sbt  (in the home directory) then
+     ```
+     run --approx --apfixed --lang=C --precision=Fixed64 --cost=combined --choosePrecision=fixed --functions=axisRotationX testcases/approx/Benchmarks_large.scala --no-refinement
+     ```
+    For more experiments see scripts in the scripts/approx directory, as well ws the corresponding README file.
+  
+  5'. For floating-point approximations ([https://people.mpi-sws.org/~eva/papers/cav2019b.pdf](CAV'19)) run Daisy+Metalibm on an example:
     - sbt  (in the home directory)
     - run testcases/transcendentals/TransBenchsErrorBoundsLarge.scala --functions=sinxx10 --metalibm --codegen --lang=C
 

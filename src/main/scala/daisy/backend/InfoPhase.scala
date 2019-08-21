@@ -5,11 +5,12 @@ package daisy
 package backend
 
 import java.io.{BufferedWriter, File, FileWriter}
-import scala.collection.immutable.Seq
 
-import lang.Trees.{Program, Variable, Expr}
+import scala.collection.immutable.Seq
+import lang.Trees.{Expr, Program, Variable}
 import tools.{Interval, Rational}
 import Rational._
+import daisy.lang.TreeOps
 
 /**
   ??? Description goes here
@@ -18,7 +19,7 @@ import Rational._
   Prerequisites:
     -
  */
-object InfoPhase extends DaisyPhase {
+object InfoPhase extends DaisyPhase with opt.CostFunctions {
   override val name = "Info"
   override val shortName = "info"
   override val description = "Prints interesting information"
@@ -44,7 +45,8 @@ object InfoPhase extends DaisyPhase {
         o
       }
 
-    for (fnc <- functionsToConsider(ctx, prg)){
+    val funs = functionsToConsider(ctx, prg)// for ApproxPhase functions to consider only contain real valued functions
+    for (fnc <- funs){
 
       ctx.reporter.result(fnc.id)
       fnc.returnType match {
@@ -74,7 +76,11 @@ object InfoPhase extends DaisyPhase {
           range.foreach(r => ctx.reporter.result(s"  Real range:     $r"))
 
           relError.foreach(re => ctx.reporter.result(s"  Relative error: $re"))
-          
+
+          if (ctx.hasFlag("approx") && !TreeOps.containsApproxNode(fnc.body.get)) {
+            val numOps = countOps(fnc.body.get)
+            ctx.reporter.result(s"  Number of arithmetic operations in generated code: $numOps")
+          }
           val numSamples = ctx.resultNumberSamples.get(fnc.id)
 
           if (out.isDefined) {
@@ -85,7 +91,7 @@ object InfoPhase extends DaisyPhase {
                 relError.map(_.toString).getOrElse("") + "," +
                 range.map(_.xlo.toString).getOrElse("") + "," +
                 range.map(_.xhi.toString).getOrElse("") + "," +
-                ctx.seed.toString + "," + 
+                ctx.seed.toString + "," +
                 numSamples.map(_.toString).getOrElse("") + "\n"
               )
             } else {

@@ -187,6 +187,10 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
         pp(fdId, p)
 
         ppNary(args, "(", ", ", ")")
+      case ApproxPoly(_, arg, approxFncId, _) =>
+        pp(approxFncId, p)
+
+        ppUnary(arg, "(", ")")
 
       case Lambda(args, body) =>
         ppNary(args, "(", ", ", ")")

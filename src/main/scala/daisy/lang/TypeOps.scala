@@ -5,6 +5,7 @@ package daisy
 package lang
 
 import Types._
+import daisy.tools.FinitePrecision.{FixedPrecision, FloatPrecision}
 
 object TypeOps {
 
@@ -17,6 +18,12 @@ object TypeOps {
       }
 
     case (o1, o2) if o1 == o2 => Some(o1)
+    // TODO: are there more false negatives?
+    case (FinitePrecisionType(p1), FinitePrecisionType(p2)) => (p1, p2) match {
+      case (FixedPrecision(b1),FixedPrecision(b2)) => Some(FinitePrecisionType(FixedPrecision(math.max(b1, b2))))
+      case (FloatPrecision(f1), FloatPrecision(f2)) => if (f1 >= f2) Some(FinitePrecisionType(p1)) else Some(FinitePrecisionType(p2))
+      case _ => None
+    }
     case _ => None
   }
 
