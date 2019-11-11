@@ -81,6 +81,9 @@ object Main {
       "noInitialErrors",
       "Do not track initial errors specified by user"),
     FlagOption(
+      "probabilisticError",
+      "Runs the probabilistic error phase."),
+    FlagOption(
       "probabilistic",
       "Runs the probabilistic phase. Requires a file with thresholds"),
     FlagOption(
@@ -112,11 +115,15 @@ object Main {
     FlagOption("mixed-cost-eval", "Mixed-precision cost function evaluation experiment"),
     FlagOption("mixed-exp-gen", "Mixed-precision experiment generation"),
 
-    FlagOption("mixed-tuning", "Perform mixed-precision tuning")
+    FlagOption("mixed-tuning", "Perform mixed-precision tuning"),
+
+    FlagOption("metalibm", "approximate an elementary function from Metalibm"),
+    FlagOption("benchmarking", "generates the benchmark file")
   )
 
   lazy val allPhases: Set[DaisyPhase] = Set(
     analysis.SpecsProcessingPhase,
+    transform.CompilerOptimizationPhase,
     analysis.AbsErrorPhase,
     analysis.RangePhase,
     analysis.DataflowPhase,
@@ -124,6 +131,7 @@ object Main {
     analysis.TaylorErrorPhase,
     analysis.DataflowSubdivisionPhase,
     analysis.ProbabilisticBranchesPhase,
+    analysis.MPFRProbabilisticDataflowPhase,
     backend.CodeGenerationPhase,
     transform.TACTransformerPhase,
     transform.PowTransformerPhase,
@@ -134,9 +142,15 @@ object Main {
     opt.MixedPrecisionOptimizationPhase,
     experiment.RewritingFitnessEvaluation,
     experiment.MixedPrecisionExperimentGenerationPhase,
+    experiment.CompilerOptimizationsExperimentGenerationPhase,
     experiment.CostFunctionEvaluationExperiment,
     backend.InfoPhase,
-    frontend.ExtractionPhase
+    frontend.ExtractionPhase,
+    opt.MetalibmPhase,
+    //transform.ReassignElemFuncPhase,
+    experiment.BenchmarkingPhase,
+    experiment.BenchmarkingRDTSCPhase,
+    transform.DecompositionPhase
   )
 
   // all available options from all phases
@@ -165,11 +179,12 @@ object Main {
             ctx.reporter.warning("A library could not be loaded: " + e)
           case tools.NegativeSqrtException(msg) =>
             ctx.reporter.warning(msg)
+          case tools.ArcOutOfBoundsException(msg) =>
+            ctx.reporter.warning(msg)
           case e: DaisyFatalError =>
             ctx.reporter.info("Something really bad happened. Cannot continue.")
           case _ : Throwable =>
             ctx.reporter.info("Something really bad happened. Cannot continue.")
-            
         }
         ctx.timers.get("total").stop
         ctx.reporter.info("time: \n" + ctx.timers.toString)
@@ -192,6 +207,8 @@ object Main {
 
     if (ctx.hasFlag("rewrite")) {
       pipeline >>= opt.RewritingOptimizationPhase
+    } else if (ctx.option[List[Any]]("comp-opts").nonEmpty) {
+      pipeline >>= transform.CompilerOptimizationPhase
     }
 
     if ((ctx.hasFlag("pow-roll") || ctx.hasFlag("pow-unroll")) && !ctx.fixedPoint) {
@@ -221,6 +238,21 @@ object Main {
     } else if (ctx.hasFlag("mixed-exp-gen")) {
       pipeline >>= experiment.MixedPrecisionExperimentGenerationPhase
 
+    } else if (ctx.hasFlag("comp-opts-exp-gen")) {
+      pipeline >>= experiment.CompilerOptimizationsExperimentGenerationPhase
+
+    } else if (ctx.hasFlag("metalibm") && ctx.hasFlag("mixed-tuning")){
+      // for now will only consider depth = 0 and equal error distribution
+      pipeline >>= transform.TACTransformerPhase >>
+        transform.ConstantTransformerPhase >>
+        analysis.DataflowPhase >>
+        opt.MixedPrecisionOptimizationPhase >>
+        analysis.AbsErrorPhase >>
+        opt.MetalibmPhase >>
+        analysis.DataflowPhase >>     // TODO: AbsErrorPhase is enough?
+        backend.InfoPhase >>
+        backend.CodeGenerationPhase 
+
     } else if (ctx.hasFlag("mixed-tuning")) {
       pipeline >>= transform.TACTransformerPhase >>
         transform.ConstantTransformerPhase >>
@@ -230,9 +262,19 @@ object Main {
         backend.InfoPhase >>
         backend.CodeGenerationPhase
 
+    } else if (ctx.hasFlag("metalibm")){
+      pipeline >>= transform.DecompositionPhase >>
+        analysis.DataflowPhase >>
+        opt.MetalibmPhase >>
+        analysis.DataflowPhase >>  // TODO: AbsErrorPhase is enough?
+        backend.InfoPhase >>
+        backend.CodeGenerationPhase 
+
     } else if (ctx.hasFlag("probabilistic")) {
       pipeline >>= analysis.ProbabilisticBranchesPhase
-    
+
+    } else if (ctx.hasFlag("probabilisticError")) {
+      pipeline >>= analysis.MPFRProbabilisticDataflowPhase
     } else {
       // Standard static analyses
       if (ctx.fixedPoint && ctx.hasFlag("apfixed")) {
@@ -256,6 +298,12 @@ object Main {
         pipeline >>= backend.CodeGenerationPhase
       }
     }
+
+    if (ctx.hasFlag("benchmarking")) {
+      //pipeline >>= experiment.BenchmarkingPhase
+      pipeline >>= experiment.BenchmarkingRDTSCPhase
+    }
+
     pipeline
   }
 

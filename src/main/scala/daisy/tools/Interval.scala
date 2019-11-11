@@ -278,7 +278,6 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
     def mod(a: BigInt, b: BigInt): BigInt = {(a % b + b) % b}
 
     val ((yloBounded, yhiBounded), (posLo, posHi)) = this.reduceRange()
-
     if (posHi - posLo >= 4) {
       // the interval is larger than 2 pi -> no information
       Interval(-1, 1)
@@ -324,6 +323,24 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
 
   def tangent: Interval = {
     this.sine / this.cosine
+  }
+
+  def arcsine: Interval = {
+    if (xlo < -one || xhi > one) {
+      throw new ArcOutOfBoundsException("Trying to compute arcsine of: " + this)
+    }
+    Interval(arcsineDown(xlo), arcsineUp(xhi))
+  }
+
+  def arccosine: Interval = {
+    if (xlo < -one || xhi > one) {
+      throw new ArcOutOfBoundsException("Trying to compute arccosine of: " + this)
+    }
+    Interval(arccosineDown(xhi), arccosineUp(xlo))   // negative derivative
+  }
+
+  def arctangent: Interval = {
+    Interval(arctanDown(xlo), arctanUp(xhi))
   }
 
   def exp: Interval = {

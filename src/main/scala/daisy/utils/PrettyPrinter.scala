@@ -153,12 +153,21 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case Not(expr) => ppUnary(expr, "\u00AC(", ")")               // \neg
       case Implies(l,r) => ppBinary(l, r, " ==> ")
       case UMinus(expr) => ppUnary(expr, "-(", ")")
+
+      case Sin(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "sinf")
+      case Sqrt(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "sqrtf")
+      case Cos(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "cosf")
+      case Tan(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "tanf")
+      case Exp(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "expf")
+      case Log(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "logf")
+
       case Sqrt(expr) => ppMathFun(Seq(expr), "sqrt")
       case Sin(expr) => ppMathFun(Seq(expr), "sin")
       case Cos(expr) => ppMathFun(Seq(expr), "cos")
       case Tan(expr) => ppMathFun(Seq(expr), "tan")
       case Exp(expr) => ppMathFun(Seq(expr), "exp")
       case Log(expr) => ppMathFun(Seq(expr), "log")
+      case Approx(_, expr, _, _, fName, _) => ppMathFun(Seq(expr), fName)
       case Equals(l,r) => ppBinary(l, r, " == ")
       case Int16Literal(v) => sb.append(v.toString)
       case Int32Literal(v) => sb.append(v.toString)

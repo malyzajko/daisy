@@ -450,6 +450,9 @@ trait CodeExtraction extends ASTExtractors {
         case ExSin(e)         => Sin(extractTree(e))
         case ExCos(e)         => Cos(extractTree(e))
         case ExTan(e)         => Tan(extractTree(e))
+        case ExAsin(e)        => Asin(extractTree(e))
+        case ExAcos(e)        => Acos(extractTree(e))
+        case ExAtan(e)        => Atan(extractTree(e))
         case ExExp(e)         => Exp(extractTree(e))
         case ExLog(e)         => Log(extractTree(e))
 

@@ -108,6 +108,42 @@ object Rational {
     Rational.fromDouble(mpfrRes)
   }
 
+  def arcsineUp(x: Rational): Rational = {
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextUp(MPFRFloat.asinUp(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
+  }
+
+  def arcsineDown(x: Rational): Rational = {
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextDown(MPFRFloat.asinDown(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
+  }
+
+  def arccosineUp(x: Rational): Rational = {
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextUp(MPFRFloat.acosUp(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
+  }
+
+  def arccosineDown(x: Rational): Rational = {
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextDown(MPFRFloat.acosDown(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
+  }
+
+  def arctanUp(x: Rational): Rational = {
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextUp(MPFRFloat.atanUp(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
+  }
+
+  def arctanDown(x: Rational): Rational = {
+    val dblValue = x.doubleValue
+    val mpfrRes = java.lang.Math.nextDown(MPFRFloat.atanDown(MPFRFloat.fromDouble(dblValue)).doubleValue)
+    Rational.fromDouble(mpfrRes)
+  }
+
   def expUp(x: Rational): Rational = {
     val dblValue = x.doubleValue
     val mpfrRes = java.lang.Math.nextUp(MPFRFloat.expUp(MPFRFloat.fromDouble(dblValue)).doubleValue)
@@ -419,6 +455,7 @@ object Rational {
 
   private val mathContext = new java.math.MathContext(64, java.math.RoundingMode.HALF_EVEN)
   private val mathContextUp = new java.math.MathContext(64, java.math.RoundingMode.UP)
+  private val mathContextDown = new java.math.MathContext(64, java.math.RoundingMode.DOWN)
 
   def niceDoubleString(d: Double): String = {
     // TODO: is there a library function maybe for this?
@@ -544,7 +581,7 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
   }
 
   lazy val isPowerOf2: Boolean = {
-    if (n != 1 && d != 1) {
+    if ((n==0) || (n != 1 && d != 1)){
       false
     } else {
       var intPart = if (n == 1) d else n
@@ -589,6 +626,29 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
     val res = bigN.divide(bigD, mathContextUp)
     res.floatValue
   }
+
+  def toMPFRInterval: MPFRInterval = {
+    val bigN = new java.math.BigDecimal(n.bigInteger, mathContext)
+    val bigD = new java.math.BigDecimal(d.bigInteger, mathContext)
+    val resUp = bigN.divide(bigD, mathContextUp)
+    val resDown = bigN.divide(bigD, mathContextDown)
+    MPFRInterval(MPFRFloat.fromString(resDown.toString), MPFRFloat.fromString(resUp.toString))
+  }
+
+  def toStringUp: String = {
+    val bigN = new java.math.BigDecimal(n.bigInteger, mathContext)
+    val bigD = new java.math.BigDecimal(d.bigInteger, mathContext)
+    val resUp = bigN.divide(bigD, mathContextUp)
+    resUp.toString
+  }
+
+  def toStringDown: String = {
+    val bigN = new java.math.BigDecimal(n.bigInteger, mathContext)
+    val bigD = new java.math.BigDecimal(d.bigInteger, mathContext)
+    val resDown = bigN.divide(bigD, mathContextDown)
+    resDown.toString
+  }
+
   override def intValue(): Int = Predef.double2Double(doubleValue).intValue
   override def isValidByte: Boolean = false
   override def isValidChar: Boolean = false

@@ -7,6 +7,10 @@ package tools
 import scala.collection.immutable.Seq
 import scala.collection.mutable.ListBuffer
 import lang.Identifiers._
+import daisy.tools._
+
+import util.control.Breaks._
+
 
 import utils.UniqueCounter
 import Rational.{zero => rzero, one => rone, _}
@@ -514,6 +518,13 @@ case class DSAffineForm(x0: Rational, noise: Seq[DSDeviation]) extends RangeArit
 
   /** Min-range based linear approximation of the exp() function
    */
+
+   def arccosine: daisy.tools.DSAffineForm = ???
+
+  def arcsine: daisy.tools.DSAffineForm = ???
+
+  def arctangent: daisy.tools.DSAffineForm = ???
+
   def exp: DSAffineForm = {
     val (a, b) = (toInterval.xlo, toInterval.xhi)
 

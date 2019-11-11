@@ -16,13 +16,7 @@ case class NoRelativeErrorException(s: String) extends Exception
 
 case class NonPositiveLogException(s: String) extends Exception
 
-case class OutOfDomainException(s: String) extends Exception 
-
-case class TimeOutException(s: String) extends Exception 
+case class ArcOutOfBoundsException(s: String) extends Exception
 
 case class NoSolutionException(s: String) extends Exception 
-
-
-
-
 

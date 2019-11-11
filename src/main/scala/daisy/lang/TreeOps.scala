@@ -62,7 +62,6 @@ object TreeOps {
     es.foreach(rec)
   }
 
-
   /** Post-traversal of the tree.
    *
    * Invokes the input function on every node '''after''' visiting
@@ -86,6 +85,7 @@ object TreeOps {
     es.foreach(rec)
     f(e)
   }
+
 
   /** Post-transformation of the tree.
    *
@@ -139,6 +139,16 @@ object TreeOps {
       }
       f(newV) getOrElse newV
     }
+
+  // Returns all sub-expression in an expression in a list
+  def getSubExpr(e: Expr): Seq[Expr] = {
+    val Operator(es, _) = e
+    if(es.size >0){
+      es.flatMap(getSubExpr(_)) :+ e
+    } else {
+      Seq()
+    }
+  }
 
   /** Checks if the predicate holds in some sub-expression */
   def exists(matcher: PartialFunction[Expr, Boolean])(e: Expr): Boolean = {
@@ -205,6 +215,11 @@ object TreeOps {
           case _ => subvs
         }
     }(expr)
+  }
+
+  def getLastExpression(e: Expr): Expr = e match {
+    case Let(_, _, body) => getLastExpression(body)
+    case _ => e
   }
 
 

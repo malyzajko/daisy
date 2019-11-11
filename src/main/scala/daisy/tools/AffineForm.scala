@@ -91,7 +91,6 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
 
   def *(y: AffineForm): AffineForm = {
     var z0 = this.x0 * y.x0
-
     // z0Addition is not necessarily used, depending on which fnc you use
     val (z0Addition, delta) = multiplyQueuesOptimized(this.noise, y.noise)
     z0 += z0Addition
@@ -265,6 +264,65 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     this.sine / this.cosine
   }
 
+  def arcsine: AffineForm = {
+    val (a, b) = (toInterval.xlo, toInterval.xhi)
+    
+    if (a < -one || b > one) {
+      throw new ArcOutOfBoundsException("Trying to compute arcsine of: " + this)
+    }
+
+    // compute the max slope (derivative), will be one of the end points
+    // instead of trying to figure out which one, compute both
+    val slopeLo = abs(1 / sqrtDown(1 - a * a))
+    val slopeHi = abs(1 / sqrtDown(1 - b * b))
+    val alpha = max(slopeLo, slopeHi)
+
+    val dmin = arcsineDown(a) - (alpha * a)
+    val dmax = arcsineUp(b) - (alpha * b)
+
+    val zeta = computeZeta(dmin, dmax)
+    val delta = max(abs(dmin - zeta), abs(dmax - zeta))
+    unaryOp(x0, noise, alpha, zeta, delta)
+  }
+
+  def arccosine: AffineForm = {
+    val (a, b) = (toInterval.xlo, toInterval.xhi)
+    
+    if (a < -one || b > one) {
+      throw new ArcOutOfBoundsException("Trying to compute arccosine of: " + this)
+    }
+
+    // compute the max slope (derivative), will be one of the end points
+    // instead of trying to figure out which one, compute both
+    val slopeLo = abs(-1 / sqrtDown(1 - a * a))
+    val slopeHi = abs(-1 / sqrtDown(1 - b * b))
+    val alpha = max(slopeLo, slopeHi)
+
+    val dmin = arccosineDown(a) - (alpha * a)
+    val dmax = arccosineUp(b) - (alpha * b)
+
+    val zeta = computeZeta(dmin, dmax)
+    val delta = max(abs(dmin - zeta), abs(dmax - zeta))
+    unaryOp(x0, noise, alpha, zeta, delta)
+  }
+
+  def arctangent: AffineForm = {
+    val (a, b) = (toInterval.xlo, toInterval.xhi)
+    
+    // compute the max slope (derivative), will be one of the end points
+    // instead of trying to figure out which one, compute both
+    val slopeLo = abs(1 / (1 + a * a))
+    val slopeHi = abs(1 / (1 + b * b))
+    val alpha = max(slopeLo, slopeHi)
+
+    val dmin = arctanDown(a) - (alpha * a)
+    val dmax = arctanUp(b) - (alpha * b)
+
+    val zeta = computeZeta(dmin, dmax)
+    val delta = max(abs(dmin - zeta), abs(dmax - zeta))
+    unaryOp(x0, noise, alpha, zeta, delta)
+  }
+
   /** Min-range based linear approximation of the exp() function
    */
   def exp: AffineForm = {
@@ -272,7 +330,6 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
 
     // Take slope of the left ending point of the interval (which is smaller),
     // probably results in better ranges.
-    // Round it down to be sound for convex functions such as exp.
     val alpha = expDown(a)
     val dmin = expDown(a) - (alpha * a)
     val dmax = expUp(b) - (alpha * b)
@@ -291,7 +348,6 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
 
     // Take slope of the right ending point of the interval (which is smaller),
     // probably results in better ranges.
-    // Round it down to be sound for concave functions such as log.
     val alpha = one / b
     val dmin = logDown(a) - (alpha * a)
     val dmax = logUp(b) - (alpha * b)

@@ -3,27 +3,133 @@
 package daisy
 package utils
 
+import scala.collection.immutable.Seq
+
 import lang.TreeOps
 import lang.Trees._
 import lang.Types._
 import tools.FinitePrecision._
+import lang.Identifiers._
 
 // GenerateDaisyInput: If we are interested in generating a real valued program, that will later be again used as input to Daisy
 // importString: import and package statements inlcuded at top of generated file
 class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
+
+  val format    =  ctx.option[Precision]("precision")
 
   override def pp(tree: Tree, parent: Option[Tree])(implicit lvl: Int): Unit = {
     implicit val p = Some(tree)
 
     tree match {
 
+      case Let(b, Approx(orig, arg, _, _, implName, true), e) =>
+        pp(b.getType, p)
+        sb.append(" ")
+        pp(b, p)
+        sb.append(";")
+        nl(lvl)
+        val fresh = FreshIdentifier("_dummy", lang.Types.RealType, true)
+        sb.append("double")
+        sb.append(" ")
+        pp(fresh, p)
+        sb.append(";")
+        nl(lvl)
+
+        sb.append(s"$implName(&")
+        pp(b, p)
+        sb.append(", &")
+        pp(fresh, p)
+        sb.append(", ")
+        pp(arg, p)
+        sb.append(");")
+
+        nl(lvl)
+        e match {
+          case x: Let => ;
+          case IfExpr(_, _, _) => ;
+          case _ => sb.append("return ")
+        }
+        pp(e, p)(lvl)
+        e match {
+          case x: Let => ;
+          case _ => sb.append(";")
+        }
+
+      case Let(b, Approx(orig, arg, _, _, implName, false), e) if (b.getType == FinitePrecisionType(Float32)) =>
+        // double _dummy;
+        // f_approx_4_1539098081_d3f7a987cd91d22c691a9da3bcfc2b6a_(&_dummy, x1);
+        // float _tmp = (float) _dummy;
+        val fresh = FreshIdentifier("_dummy", lang.Types.RealType, true)
+
+        sb.append("double")
+        sb.append(" ")
+        pp(fresh, p)
+        sb.append(";")
+        nl(lvl)
+
+        sb.append(s"$implName(&")
+        pp(fresh, p)
+        sb.append(", ")
+        pp(arg, p)
+        sb.append(");")
+        nl(lvl)
+
+        pp(b.getType, p)
+        sb.append(" ")
+        pp(b, p)
+        sb.append(" = (float) ")
+        pp(fresh, p)
+        sb.append(";")
+        nl(lvl)
+
+        nl(lvl)
+        e match {
+          case x: Let => ;
+          case IfExpr(_, _, _) => ;
+          case _ => sb.append("return ")
+        }
+        pp(e, p)(lvl)
+        e match {
+          case x: Let => ;
+          case _ => sb.append(";")
+        }
+
+      case Let(b, Approx(orig, arg, _, _, implName, false), e) =>
+        pp(b.getType, p)
+        sb.append(" ")
+        pp(b, p)
+        sb.append(";")
+        nl(lvl)
+
+        sb.append(s"$implName(&")
+        pp(b, p)
+        sb.append(", ")
+        pp(arg, p)
+        sb.append(");")
+
+        nl(lvl)
+        e match {
+          case x: Let => ;
+          case IfExpr(_, _, _) => ;
+          case _ => sb.append("return ")
+        }
+        pp(e, p)(lvl)
+        e match {
+          case x: Let => ;
+          case _ => sb.append(";")
+        }
+
+
+
       case Let(b,d,e) =>
+
         pp(b.getType, p)
         sb.append(" ")
         pp(b, p)
         sb.append(" = ")
         pp(d, p)
         sb.append(";")
+
         nl(lvl)
         e match {
           case x: Let => ;
@@ -67,6 +173,16 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
 
       case Program(id, defs) =>
         assert(lvl == 0)
+        if (ctx.option[List[String]]("comp-opts").nonEmpty &&
+            defs.exists(_.body.exists(TreeOps.exists { case FMA(_, _, _) => true }))){
+          sb.append(
+            """#pragma STDC FP_CONTRACT OFF
+              |#if !__FMA__ && !__FMA4__
+              |  #pragma message("Fast FMA not supported by architecture. Supported architectures: >=haswell (FMA3), >=bdver1 (FMA4)'")
+              |#endif
+              |
+              |""".stripMargin)
+        }
         sb.append("#include <math.h>\n")
         if (ctx.hasFlag("apfixed") || (ctx.hasFlag("mixed-tuning") && ctx.fixedPoint)) {
           sb.append("#include <ap_fixed.h>\n")
@@ -79,10 +195,18 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
             case _ => false }})) {
           sb.append("#include <qd/dd_real.h>\n")
         }
+
+        if (ctx.hasFlag("metalibm")) {
+          sb.append(ctx.wrapperFunctions.mkString("\n"))
+           // val prototypes = defs.map(fnc => getPrototypes(fnc.body.get).mkString("")).toList.mkString("")
+           // sb.append(s"\n$prototypes")
+        }
+
         nl
         defs.foreach {
           m => pp(m, p)(lvl)
         }
+
         if (ctx.hasFlag("genMain")) {
           sb.append(
             """
@@ -167,6 +291,7 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
         nl(lvl - 1)
         nl(lvl - 1)
 
+      //case Approx(_, expr, _, _, fName) => ppMathFun(Seq(expr), fName + "_wrapper")
     case _ => super.pp(tree, parent)
     }
   }

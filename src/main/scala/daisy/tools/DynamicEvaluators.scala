@@ -307,6 +307,9 @@ trait DynamicEvaluators {
       case Sin(x) => math.sin(eval(x))
       case Cos(x) => math.cos(eval(x))
       case Tan(x) => math.tan(eval(x))
+      case Asin(x) => math.asin(eval(x))
+      case Acos(x) => math.acos(eval(x))
+      case Atan(x) => math.atan(eval(x))
       case Exp(x) => math.exp(eval(x))
       case Log(x) => math.log(eval(x))
       case Let(id, v, b) =>
@@ -357,6 +360,9 @@ trait DynamicEvaluators {
       case Sin(x) => MPFRFloat.sin(eval(x))
       case Cos(x) => MPFRFloat.cos(eval(x))
       case Tan(x) => MPFRFloat.tan(eval(x))
+      case Asin(x) => MPFRFloat.asin(eval(x))
+      case Acos(x) => MPFRFloat.acos(eval(x))
+      case Atan(x) => MPFRFloat.atan(eval(x))
       case Exp(x) => MPFRFloat.exp(eval(x))
       case Log(x) => MPFRFloat.log(eval(x))
       case Let(id, v, b) =>

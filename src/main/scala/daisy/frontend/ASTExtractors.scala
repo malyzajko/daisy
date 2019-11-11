@@ -272,6 +272,27 @@ trait ASTExtractors {
       }
     }
 
+    object ExAsin {
+      def unapply(tree: Apply): Option[Tree] = tree match {
+        case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.asin") => Some(arg)
+        case _ => None
+      }
+    }
+
+    object ExAcos {
+      def unapply(tree: Apply): Option[Tree] = tree match {
+        case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.acos") => Some(arg)
+        case _ => None
+      }
+    }
+
+    object ExAtan {
+      def unapply(tree: Apply): Option[Tree] = tree match {
+        case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.atan") => Some(arg)
+        case _ => None
+      }
+    }
+
     object ExLog {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.log") => Some(arg)

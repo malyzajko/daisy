@@ -15,6 +15,8 @@ code design is ease of understanding and extensibility of the code.
 
 ## Publications
 
+  * Sound Approximation of Programs with Elementary Functions, CAV'19
+
   * [Sound Mixed-Precision Optimization with Rewriting](https://people.mpi-sws.org/~eva/papers/iccps18_mixedtuning_rewriting.pdf), ICCPS'18
 
   * [Daisy tool paper](https://people.mpi-sws.org/~eva/papers/tacas18_daisy_toolpaper.pdf), TACAS'18
@@ -65,7 +67,7 @@ To note about the input language:
 These are the main command-line options. For a full list, use `--help`.
 
 `--analysis=[dataflow:opt:relative] {--subdiv}`
-
+  
 Daisy supports forward dataflow analysis (as implemented in Rosa, Fluctuat and Gappa) and an optimization-based analysis (as implemented in FPTaylor and Real2Float). These methods compute absolute error bounds, and whenever
 a relative error can be computed, it is also reported. Daisy also supports a dedicated relative error computation which is often more accurate, but also more expensive. All methods can be combined with interval subdivision, which
 can provide tighter error bounds at the expense of larger running times. Accuracy and correspondingly cost of both dataflow and optimization-based analysis can be adjusted by choosing the method which is used to bound ranges:
@@ -263,7 +265,7 @@ modified program.
   If you want to run only a specific test:
 
   > testOnly regression.AbsErrorRegressionTest
-
+  
 
 ### Contribution Guidelines
 
