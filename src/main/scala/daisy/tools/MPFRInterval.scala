@@ -15,6 +15,8 @@ object MPFRInterval {
 
   def apply(r: Rational): MPFRInterval = r.toMPFRInterval
 
+  def apply(i: Interval): MPFRInterval = MPFRInterval(MPFRFloat.fromString(i.xlo.toStringDown), MPFRFloat.fromString(i.xhi.toStringUp))
+
   def apply(r: MPFRFloat): MPFRInterval = MPFRInterval(r, r)
 
   def apply(i: MPFRInterval): MPFRInterval = i
@@ -22,6 +24,11 @@ object MPFRInterval {
   def +/-(r: MPFRFloat) = MPFRInterval(-r,r)
 
   val zero: MPFRInterval = MPFRInterval(fzero)
+
+  def isZero(i: MPFRInterval): Boolean = {
+    if (i.toString == "[0e+00, 0e+00]") true // TODO: Figure out why equal to zero does not work!
+    else false
+  }
 
   val pi = MPFRInterval(MPFRFloat.fromString("3.141592653589793238"),
                     MPFRFloat.fromString("3.141592653589793239"))
@@ -42,10 +49,12 @@ case class MPFRInterval(xlo: MPFRFloat, xhi: MPFRFloat) extends RangeArithmetic[
   // val radius: MPFRFloat = width up_/ two
 
   def isPointRange: Boolean = xlo == xhi
+  def toMPFRInterval: MPFRInterval = this
+
 
   // for compatibility with RangeArithmetic
   def toInterval: Interval = Interval(Rational.fromString(xlo.toString),
-      Rational.fromString(xhi.toString))
+    Rational.fromString(xhi.toString))
 
   /* Adds an error of magnitude r */
   def +/-(r: MPFRFloat): MPFRInterval = this + MPFRInterval(-r, r)
@@ -315,6 +324,22 @@ case class MPFRInterval(xlo: MPFRFloat, xhi: MPFRFloat) extends RangeArithmetic[
     }
   }
 
+  def square(): MPFRInterval = {
+    if (xhi < fzero) {
+      MPFRInterval(pow(xhi, two), pow(xlo, two))
+    }
+    else if (includes(fzero)) {
+      MPFRInterval(fzero, pow(MPFRInterval.maxAbs(this), two))
+    }
+    else {
+      MPFRInterval(pow(xlo, two),pow(xhi, two))
+
+    }
+
+  }
+    def pow(x: MPFRFloat, y: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.pow(y.bf, context))
+
+
   /** Over-approximating implementation of the trigonometric cosine function
    */
   def cosine: MPFRInterval = {
@@ -326,9 +351,11 @@ case class MPFRInterval(xlo: MPFRFloat, xhi: MPFRFloat) extends RangeArithmetic[
     this.sine / this.cosine
   }
 
+
   def arccosine: daisy.tools.MPFRInterval = ???
   def arcsine: daisy.tools.MPFRInterval = ???
   def arctangent: daisy.tools.MPFRInterval = ???
+
 
   def exp: MPFRInterval = {
     MPFRInterval(expDown(xlo), expUp(xhi))

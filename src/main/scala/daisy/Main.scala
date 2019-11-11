@@ -81,6 +81,9 @@ object Main {
       "noInitialErrors",
       "Do not track initial errors specified by user"),
     FlagOption(
+      "probabilisticError",
+      "Runs the probabilistic error phase."),
+    FlagOption(
       "probabilistic",
       "Runs the probabilistic phase. Requires a file with thresholds"),
     FlagOption(
@@ -128,6 +131,7 @@ object Main {
     analysis.TaylorErrorPhase,
     analysis.DataflowSubdivisionPhase,
     analysis.ProbabilisticBranchesPhase,
+    analysis.MPFRProbabilisticDataflowPhase,
     backend.CodeGenerationPhase,
     transform.TACTransformerPhase,
     transform.PowTransformerPhase,
@@ -269,9 +273,8 @@ object Main {
     } else if (ctx.hasFlag("probabilistic")) {
       pipeline >>= analysis.ProbabilisticBranchesPhase
 
-    } else if (ctx.hasFlag("probabilistic")) {
-      pipeline >>= analysis.ProbabilisticBranchesPhase
-    
+    } else if (ctx.hasFlag("probabilisticError")) {
+      pipeline >>= analysis.MPFRProbabilisticDataflowPhase
     } else {
       // Standard static analyses
       if (ctx.fixedPoint && ctx.hasFlag("apfixed")) {

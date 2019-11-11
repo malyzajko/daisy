@@ -17,6 +17,8 @@ object MPFRFloat {
   // val context = new BinaryMathContext(500, 24)
   // val context = BinaryMathContext.BINARY128
   def fromString(s: String): MPFRFloat = new MPFRFloat(new BigFloat(s, context))
+  // def fromInt(i: Integer): MPFRFloat = new MPFRFloat(new BigFloat(i, context))
+
   def fromDouble(d: Double): MPFRFloat = new MPFRFloat(new BigFloat(d, context))
 
   val Pi: MPFRFloat = new MPFRFloat(BigFloat.pi(context))
@@ -44,6 +46,11 @@ object MPFRFloat {
   def powDown(x: MPFRFloat, y: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.pow(y.bf, roundDownContext))
   def powUp(x: MPFRFloat,  y: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.pow(y.bf,roundUpContext))
 
+  def powerTwo(n: Int): MPFRFloat = {
+    val exp = n.toString
+    pow(two, fromString(exp)) //TODO: Check if this needs pow/pow_up/pow_down
+  }
+
   def cos(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.cos(context))
 
   def sin(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.sin(context))
@@ -59,6 +66,7 @@ object MPFRFloat {
   def tan(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.tan(context))
 
   def acos(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.acos(context))
+
   def acosDown(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.acos(roundDownContext))
   def acosUp(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.acos(roundUpContext))
 
@@ -69,6 +77,7 @@ object MPFRFloat {
   def atan(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.atan(context))
   def atanDown(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.atan(roundDownContext))
   def atanUp(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.atan(roundUpContext))
+
 
   def sinh(x: MPFRFloat): MPFRFloat = new MPFRFloat(x.bf.sinh(context))
 
@@ -112,7 +121,6 @@ class MPFRFloat(val bf: BigFloat) extends ScalaNumber with Ordered[MPFRFloat] {
   def up_%(that: MPFRFloat): MPFRFloat = new MPFRFloat(this.bf.remainder(that.bf, roundUpContext))
   def down_%(that: MPFRFloat): MPFRFloat = new MPFRFloat(this.bf.remainder(that.bf, roundDownContext))
 
-
   def isNaN: Boolean = bf.isNaN
   def isInfinite: Boolean = bf.isInfinite
 
@@ -136,6 +144,9 @@ class MPFRFloat(val bf: BigFloat) extends ScalaNumber with Ordered[MPFRFloat] {
       throw new Exception("longString not 1 or 2 as expected, but " + longString.length)
     }
   }
+  def integerPart: Int = intValue()
+  def longPart: Long = longValue()
+
 
   // Members declared in java.lang.Number
   def doubleValue(): Double = bf.doubleValue
@@ -144,14 +155,19 @@ class MPFRFloat(val bf: BigFloat) extends ScalaNumber with Ordered[MPFRFloat] {
   def longValue(): Long = bf.longValue
 
   // Members declared in scala.math.Ordered
-  def compare(that: daisy.tools.MPFRFloat): Int = this.bf.compareTo(that.bf)
+  def compare(that: daisy.tools.MPFRFloat): Int = {
+    Rational.fromString(this.toString).compare(Rational.fromString(that.toString)) //TODO: It seems that MPFRFloat compare method is broken!
+    //this.bf.compareTo(that.bf)
+  }
 
   // Members declared in scala.math.ScalaNumber
   def isWhole(): Boolean = new BigFloat(bf.intValue, context).equals(bf)
   def underlying(): Object = ???  // not sure what this is supposed to be
 
   override def equals(other: Any): Boolean = other match {
+
     case x: MPFRFloat => this.compare(x) == 0
+
     case _ => this.bf.equals(other)
   }
 
