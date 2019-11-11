@@ -67,7 +67,7 @@ object ProbabilisticBranchesPhase extends DaisyPhase with DynamicEvaluators with
         val inputRanges = ctx.specInputRanges(fncId)
         val thres = Rational.fromString(threshold(fncId.toString))
         val inputErrors = ctx.specInputErrors(fnc.id)
-        val (rndoffError, _) = uniformRoundoff_SMT_AA(body, inputRanges, inputErrors, prec,
+        val (rndoffError, _) = uniformRoundoff_SMT_AA(body, inputRanges, inputErrors, fnc.precondition.get, prec,
             trackRoundoffErrors = true, approxRoundoff = false)
         val criticalInterval = Interval((thres - rndoffError), (thres + rndoffError))
         if (derivative) {
@@ -101,7 +101,7 @@ object ProbabilisticBranchesPhase extends DaisyPhase with DynamicEvaluators with
           val divLimit: Int = math.floor(math.pow(outerSubDiv.toInt, 1.0/(fnc.params.length)) + 0.01).toInt // 0.01 for roundoff
           val supportNormalized = Interval(- rone, rone).divide(numDSSubDiv.toInt)
 
-          if (uniformInput) { // inputs are uiformly distributed
+          if (uniformInput) { // inputs are uniformly distributed
             val subIntervals: Seq[Map[Identifier, Interval]] = getIntervalSubdivision(inputRanges, divLimit).toList
             val wrongPathProb = probWithSubdiv(body, subIntervals, criticalInterval, numDSSubDiv.toInt, dependency)
             ctx.reporter.info(s"Function:" + fncId + " Wrong Path Probability:" + wrongPathProb)

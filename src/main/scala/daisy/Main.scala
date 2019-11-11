@@ -269,6 +269,9 @@ object Main {
     } else if (ctx.hasFlag("probabilistic")) {
       pipeline >>= analysis.ProbabilisticBranchesPhase
 
+    } else if (ctx.hasFlag("probabilistic")) {
+      pipeline >>= analysis.ProbabilisticBranchesPhase
+    
     } else {
       // Standard static analyses
       if (ctx.fixedPoint && ctx.hasFlag("apfixed")) {

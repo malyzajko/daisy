@@ -13,6 +13,38 @@ import scala.collection.immutable.Map
  */
 trait Subdivision extends DeltaAbstractionUtils {
 
+  // returns carthesian product, subdividing every input variable into as many equal pieces
+  // as specified in numSubdiv
+  def getIntervalSubdivisionCustom(inputValMap: Map[Identifier, Interval],
+    numSubdiv: Map[Identifier, Int]): Seq[Map[Identifier, Interval]] = {
+
+    // set of vectors. each vector contains the maps for one var
+    val srcCartesian: Map[Identifier, Seq[Interval]] = inputValMap.map({
+      case (id, interval) =>
+        if (interval.xlo.equals(interval.xhi)) {
+          (id -> Seq(interval))
+        } else {
+          (id -> interval.divide(numSubdiv(id)))
+        }
+      })
+    cartesianProduct(srcCartesian)
+  }
+
+  // returns carthesian product, subdividing every input variable into numSubdiv equal pieces
+  def getIntervalSubdivision(inputValMap: Map[Identifier, Interval], numSubdiv: Int): Seq[Map[Identifier, Interval]] = {
+
+    // set of vectors. each vector contains the maps for one var
+    val srcCartesian: Map[Identifier, Seq[Interval]] = inputValMap.mapValues({
+      case interval =>
+        if (interval.xlo.equals(interval.xhi)) {
+          Seq(interval)
+        } else {
+          interval.divide(numSubdiv)
+        }
+      })
+    cartesianProduct(srcCartesian)
+  }
+
   // TODO: the divParameter can go I think
   def getEqualSubintervals(inputValMap: Map[Identifier, Interval], divLimit: Int, divParameter: Int = -1,
     totalOpt: Int = 32): Seq[Map[Identifier, Interval]] = {
