@@ -14,6 +14,11 @@ object Interval {
     min(abs(i.xlo), abs(i.xhi))
   }
 
+  def minAbsWithZero(i: Interval): Rational = {
+    if(i.includes(Rational.zero)) Rational.zero
+    else min(abs(i.xlo), abs(i.xhi))
+  }
+
   def apply(r: Rational): Interval = Interval(r, r)
   def apply(i: Interval): Interval = i
 

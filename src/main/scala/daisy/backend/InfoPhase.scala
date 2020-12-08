@@ -74,7 +74,7 @@ object InfoPhase extends DaisyPhase {
           range.foreach(r => ctx.reporter.result(s"  Real range:     $r"))
 
           relError.foreach(re => ctx.reporter.result(s"  Relative error: $re"))
-          
+
           val numSamples = ctx.resultNumberSamples.get(fnc.id)
 
           if (out.isDefined) {
@@ -85,7 +85,7 @@ object InfoPhase extends DaisyPhase {
                 relError.map(_.toString).getOrElse("") + "," +
                 range.map(_.xlo.toString).getOrElse("") + "," +
                 range.map(_.xhi.toString).getOrElse("") + "," +
-                ctx.seed.toString + "," + 
+                ctx.seed.toString + "," +
                 numSamples.map(_.toString).getOrElse("") + "\n"
               )
             } else {
@@ -100,6 +100,8 @@ object InfoPhase extends DaisyPhase {
           }
       }
     }
+
+    println("numLargeErrorWarnings: " + tools.RoundoffEvaluators.numLargeErrorWarnings)
 
     if (solvers.Solver.unknownCounter != 0) {
       ctx.reporter.warning(s"Solver returned unknown or timed out ${solvers.Solver.unknownCounter} times.")

@@ -10,7 +10,12 @@ import FinitePrecision._
 import Rational._
 import daisy.utils.CachingMap
 
+object RoundoffEvaluators {
+  var numLargeErrorWarnings = 0
+}
+
 trait RoundoffEvaluators extends RangeEvaluators {
+  import RoundoffEvaluators._
 
   /**
    * Calculates the roundoff error for a given uniform precision
@@ -174,6 +179,53 @@ trait RoundoffEvaluators extends RangeEvaluators {
       (propagatedError, prec)
     }
 
+    // detect large roundoff errors
+    // def checkLargeErrors(errorBefore: T, rangeBefore: Interval, newError: T, newRange: Interval, x: Expr, xBefore: Expr): Unit = {
+    //   val relErrorBefore = Interval.maxAbs(errorBefore.toInterval) / max(Interval.minAbsWithZero(rangeBefore), Rational.fromReal(0.0001))
+    //   val newRelError =  Interval.maxAbs(newError.toInterval) / max(Interval.minAbsWithZero(newRange), Rational.fromReal(0.0001))
+
+    //   // print warning if the error is several magnitudes larger than before the op;
+    //   // if the previous error was zero, we had an integer constant, printing a message is then not meaningful
+    //   if (newRelError > 10000 * relErrorBefore && relErrorBefore > zero) {
+    //     println(s"large relative error found at: ${x}; error before: ${relErrorBefore}, error after: ${newRelError}")
+    //     println(s"expression before: ${xBefore}")
+    //     numLargeErrorWarnings = numLargeErrorWarnings + 1
+    //   }
+    // }
+
+    def checkCancellation(errorLhs: T, errorRhs: T, errorNew: T, rangeLhs: Interval, rangeRhs: Interval,
+      rangeNew: Interval, x: Expr): Unit = {
+
+      var c = Rational.fromReal(0.0001) 
+      var maxAbsLhs = Interval.maxAbs(rangeLhs.toInterval)
+      var maxAbsRhs = Interval.maxAbs(rangeRhs.toInterval)
+      var maxAbsNew = Interval.maxAbs(rangeNew.toInterval)
+
+      // if any is exactly zero, don't use them for the computation of the constant, they also don't have an error
+      if (maxAbsRhs == zero) maxAbsRhs = one
+      if (maxAbsLhs == zero) maxAbsLhs = one
+      if (maxAbsNew == zero) maxAbsNew = one
+
+      // choose constant for rel. error computation such that it is within all of the ranges
+      if (maxAbsLhs < c || maxAbsRhs < c || maxAbsNew < c) {
+        c = min(maxAbsLhs, min(maxAbsRhs, maxAbsNew))
+      }
+
+      val relErrorLhs = Interval.maxAbs(errorLhs.toInterval) / max(Interval.minAbsWithZero(rangeLhs), c)
+      val relErrorRhs = Interval.maxAbs(errorRhs.toInterval) / max(Interval.minAbsWithZero(rangeRhs), c)
+      val relErrorNew = Interval.maxAbs(errorNew.toInterval) / max(Interval.minAbsWithZero(rangeNew), c)
+
+      // if both operands are exact (e.g. integer constants, this computation does not make sense)
+      if (relErrorLhs > zero && relErrorRhs > zero) {
+        // if the new error is much bigger than the error in both operands
+        if (relErrorNew > 1000 * relErrorLhs && relErrorNew > 1000 * relErrorRhs) {
+          println(s"large relative error found at: ${x}; errors before: ${relErrorLhs}, ${relErrorRhs}, error after: ${relErrorNew}")
+          println(s"ranges lhs: ${rangeLhs}, rhs: ${rangeRhs}, new: ${rangeNew}")
+          numLargeErrorWarnings = numLargeErrorWarnings + 1
+        }
+      }
+    }
+
     def eval(e: Expr, p: PathCond): (T, Precision) = intermediateErrors.getOrAdd((e, p), {
 
       case x @ (RealLiteral(r), _) =>
@@ -200,7 +252,13 @@ trait RoundoffEvaluators extends RangeEvaluators {
 
         val propagatedError = errorLhs + errorRhs
 
-        computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs)  /* Scala semantics */)
+        val newError = computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs)  /* Scala semantics */)
+
+        // checkLargeErrors(errorLhs, range(lhs, path), newError._1, range(x), x._1, lhs)
+        // checkLargeErrors(errorRhs, range(rhs, path), newError._1, range(x), x._1, rhs)
+        checkCancellation(errorLhs, errorRhs, newError._1, range(lhs, path), range(rhs, path), range(x), x._1)
+
+        newError
 
       case x @ (Minus(lhs, rhs), path) =>
         val (errorLhs, precLhs) = eval(lhs, path)
@@ -209,11 +267,16 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorLhs - errorRhs
         val precision = getUpperBound(precLhs, precRhs)
 
-        if (precision.isInstanceOf[FloatPrecision] && sterbenzTheoremApplies(range(lhs, path), range(rhs, path))) {
+        val newError = if (precision.isInstanceOf[FloatPrecision] && sterbenzTheoremApplies(range(lhs, path), range(rhs, path))) {
           (propagatedError, precision)
         } else {
           computeNewError(range(x), propagatedError, precision)
         }
+
+        // checkLargeErrors(errorLhs, range(lhs, path), newError._1, range(x), x._1, lhs)
+        // checkLargeErrors(errorRhs, range(rhs, path), newError._1, range(x), x._1, rhs)
+        checkCancellation(errorLhs, errorRhs, newError._1, range(lhs, path), range(rhs, path), range(x), x._1)
+        newError
 
       case x @ (Times(lhs, rhs), path) =>
         val (errorLhs, precLhs) = eval(lhs, path)
@@ -231,12 +294,18 @@ trait RoundoffEvaluators extends RangeEvaluators {
 
         val precision = getUpperBound(precLhs, precRhs)
         // No roundoff error if one of the operands is a non-negative power of 2
-        if ((rangeLhs.isNonNegative && rangeLhs.isPowerOf2)
+        val newError = if ((rangeLhs.isNonNegative && rangeLhs.isPowerOf2)
           || (rangeRhs.isNonNegative && rangeRhs.isPowerOf2)) {
           (propagatedError, precision)
         } else {
           computeNewError(range(x), propagatedError, precision)
         }
+
+        // checkLargeErrors(errorLhs, range(lhs, path), newError._1, range(x), x._1, lhs)
+        // checkLargeErrors(errorRhs, range(rhs, path), newError._1, range(x), x._1, rhs)
+        checkCancellation(errorLhs, errorRhs, newError._1, range(lhs, path), range(rhs, path), range(x), x._1)
+
+        newError
 
       case x @ (FMA(fac1, fac2, sum), path) =>
         val (errorFac1, precFac1) = eval(fac1, path)
@@ -252,7 +321,13 @@ trait RoundoffEvaluators extends RangeEvaluators {
           errorFac1 * errorFac2 +
           errorSum
 
-        computeNewError(range(x), propagatedError, getUpperBound(precFac1, precFac2, precSum))
+        val newError = computeNewError(range(x), propagatedError, getUpperBound(precFac1, precFac2, precSum))
+
+        // checkLargeErrors(errorFac1, range(fac1, path), newError._1, range(x), x._1, fac1)
+        // checkLargeErrors(errorFac2, range(fac2, path), newError._1, range(x), x._1, fac2)
+        // checkLargeErrors(errorSum, range(sum, path), newError._1, range(x), x._1, sum)
+
+        newError
 
       case x @ (Division(lhs, rhs), path) =>
         val (errorLhs, precLhs) = eval(lhs, path)
@@ -280,7 +355,13 @@ trait RoundoffEvaluators extends RangeEvaluators {
           interval2T(inverse) * errorLhs +
           errorLhs * invErr
 
-        computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs))
+        val newError = computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs))
+
+        // checkLargeErrors(errorLhs, range(lhs, path), newError._1, range(x), x._1, lhs)
+        // checkLargeErrors(errorRhs, range(rhs, path), newError._1, range(x), x._1, rhs)
+        checkCancellation(errorLhs, errorRhs, newError._1, range(lhs, path), range(rhs, path), range(x), x._1)
+
+        newError
 
       case x @ (IntPow(base, n), path) =>
         val (errorT, prec) = eval(base, path)
@@ -295,7 +376,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
 
         // The error of pow in java.Math is 1 ulp, thus we rely that the method
         // computeNewErrorTranscendental gives us 1 ulp error
-        computeNewErrorTranscendental(r.toInterval, e, prec)
+        val newError = computeNewErrorTranscendental(r.toInterval, e, prec)
+
+        //checkLargeErrors(errorT, range(base, path), newError._1, range(x), x._1, base)
+
+        newError
 
       case x @ (UMinus(t), path) =>
         val (error, prec) = eval(t, path)
@@ -316,7 +401,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        computeNewError(range(x), propagatedError, prec)
+        val newError = computeNewError(range(x), propagatedError, prec)
+
+        //checkLargeErrors(errorT, range(t, path), newError._1, range(x), x._1, t)
+
+        newError
 
       case x @ (Sin(t), path) =>
         // TODO not supported for fixed-points
@@ -330,7 +419,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        computeNewErrorTranscendental(range(x), propagatedError, prec)
+        val newError = computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+        //checkLargeErrors(errorT, range(t, path), newError._1, range(x), x._1, t)
+
+        newError
 
       case x @ (Cos(t), path) =>
         // TODO not supported for fixed-points
@@ -344,7 +437,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        computeNewErrorTranscendental(range(x), propagatedError, prec)
+        val newError = computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+        //checkLargeErrors(errorT, range(t, path), newError._1, range(x), x._1, t)
+
+        newError
 
       case x @ (Tan(t), path) =>
         // TODO not supported for fixed-points
@@ -358,7 +455,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        computeNewErrorTranscendental(range(x), propagatedError, prec)
+        val newError = computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+        //checkLargeErrors(errorT, range(t, path), newError._1, range(x), x._1, t)
+
+        newError
 
       case x @ (Asin(t), path) =>
         // TODO not supported for fixed-points
@@ -371,7 +472,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        computeNewErrorTranscendental(range(x), propagatedError, prec)
+        val newError = computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+        //checkLargeErrors(errorT, range(t, path), newError._1, range(x), x._1, t)
+
+        newError
 
       case x @ (Acos(t), path) =>
         // TODO not supported for fixed-points
@@ -384,7 +489,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        computeNewErrorTranscendental(range(x), propagatedError, prec)
+        val newError = computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+        //checkLargeErrors(errorT, range(t, path), newError._1, range(x), x._1, t)
+
+        newError
 
       case x @ (Atan(t), path) =>
         // TODO not supported for fixed-points
@@ -406,7 +515,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        computeNewErrorTranscendental(range(x), propagatedError, prec)
+        val newError = computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+        //checkLargeErrors(errorT, range(t, path), newError._1, range(x), x._1, t)
+
+        newError
 
       case x @ (Exp(t), path) =>
         // TODO not supported for fixed-points
@@ -422,7 +535,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        computeNewErrorTranscendental(range(x), propagatedError, prec)
+        val newError = computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+        //checkLargeErrors(errorT, range(t, path), newError._1, range(x), x._1, t)
+
+        newError
 
       case x @ (Log(t), path) =>
         // TODO not supported for fixed-points
@@ -437,7 +554,11 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        computeNewErrorTranscendental(range(x), propagatedError, prec)
+        val newError = computeNewErrorTranscendental(range(x), propagatedError, prec)
+
+        //checkLargeErrors(errorT, range(t, path), newError._1, range(x), x._1, t)
+
+        newError
 
       case x @ (Approx(original, t, metalibmError, errorMultiplier, _, _), path) =>
         // TODO not supported for fixed-points
