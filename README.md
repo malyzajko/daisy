@@ -4,6 +4,10 @@
 
 ## News
 
+  * Updated to Scala 2.13!
+  
+  * Roundoff error evaluation now available using interval and affine arithmetic with MPFR bounds with `--errorMethod=intervalMPFR` or `--errorMethod=affineMPFR`! The error bounds are sound (and slightly less tight), but the computation is faster for longer benchmarks.
+
   * Daisy now has [documentation](doc/documentation.md)!
 
   * Mixed-precision tuning is now available through the `--mixed-tuning` flag!
