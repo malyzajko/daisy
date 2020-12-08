@@ -3,6 +3,7 @@
 
 package daisy
 
+import daisy.lang.Trees.Program
 import utils.{NoPosition, OffsetPosition, RangePosition, Position}
 import scala.collection.mutable.ArrayBuffer
 
@@ -103,6 +104,70 @@ abstract class Reporter(val debugSections: Set[DebugSection], silent: Boolean, v
     )(section)
   }
 
+  def debugContext(oldCtx: Context, newCtx: Context, oldPrg: Program, newPrg: Program)(implicit section: DebugSection): Unit = {
+    if(oldCtx.codegenOutput != newCtx.codegenOutput){
+      debug("New code gen output "+newCtx.codegenOutput)(section)
+    }
+    if(oldCtx.specInputRanges != newCtx.specInputRanges){
+      debug("New spec input ranges "+newCtx.specInputRanges)(section)
+    }
+    if(oldCtx.specInputErrors != newCtx.specInputErrors){
+      debug("New spec input errors "+newCtx.specInputErrors)(section)
+    }
+    if(oldCtx.specInputPrecisions != newCtx.specInputPrecisions){
+      debug("New spec input precisions "+newCtx.specInputPrecisions)(section)
+    }
+    if(oldCtx.specResultPrecisions != newCtx.specResultPrecisions){
+      debug("New spec result precisions "+newCtx.specResultPrecisions)(section)
+    }
+    if(oldCtx.specAdditionalConstraints != newCtx.specAdditionalConstraints){
+      debug("New spec additional constraints "+newCtx.specAdditionalConstraints)(section)
+    }
+    if(oldCtx.specResultRangeBounds != newCtx.specResultRangeBounds){
+      debug("New spec range bounds "+newCtx.specResultRangeBounds)(section)
+    }
+    if(oldCtx.specResultErrorBounds != newCtx.specResultErrorBounds){
+      debug("New spec Error bounds "+newCtx.specResultErrorBounds)(section)
+    }
+    if(oldCtx.resultTupleIds != newCtx.resultTupleIds){
+      debug("New tuple IDs "+newCtx.resultTupleIds)(section)
+    }
+    if(oldCtx.uniformPrecisions != newCtx.uniformPrecisions){
+      debug("New uniform precisions "+newCtx.uniformPrecisions)(section)
+    }
+    if(oldCtx.resultAbsoluteErrors != newCtx.resultAbsoluteErrors){
+      debug("New absolute errors "+newCtx.resultAbsoluteErrors)(section)
+    }
+    if(oldCtx.resultRealRanges != newCtx.resultRealRanges){
+      debug("New real ranges "+newCtx.resultRealRanges)(section)
+    }
+    if(oldCtx.resultNumberSamples != newCtx.resultNumberSamples){
+      debug("New number samples "+newCtx.resultNumberSamples)(section)
+    }
+    if(oldCtx.resultRelativeErrors != newCtx.resultRelativeErrors){
+      debug("New relative errors "+newCtx.resultRelativeErrors)(section)
+    }
+    if(oldCtx.intermediateAbsErrors != newCtx.intermediateAbsErrors){
+      debug("New intermediate absolute errors "+newCtx.intermediateAbsErrors)(section)
+    }
+    if(oldCtx.intermediateRanges != newCtx.intermediateRanges){
+      debug("New intermediate ranges "+newCtx.intermediateRanges)(section)
+    }
+    if(oldCtx.seed != newCtx.seed){
+      debug("new seed "+newCtx.seed)(section)
+    }
+    if(oldCtx.wrapperFunctions != newCtx.wrapperFunctions){
+      debug("New wrapper functions "+newCtx.wrapperFunctions)(section)
+    }
+    if(oldCtx.originalFunctions != newCtx.originalFunctions){
+      debug("New original functions "+newCtx.originalFunctions)(section)
+    }
+    if(oldPrg != newPrg){
+      debug("New program "+newPrg)(section)
+    }
+
+  }
+
 
   // No-position alternatives
   final def result(msg: Any): Unit        = result(NoPosition, msg)
@@ -160,7 +225,7 @@ class DefaultReporter(debugSections: Set[DebugSection], silent: Boolean = false,
         val lines = if (pos == NoPosition) {
           Nil
         } else {
-          scala.io.Source.fromFile(pos.file).getLines.toList
+          scala.io.Source.fromFile(pos.file).getLines().toList
         }
 
         linesOf += pos.file -> lines

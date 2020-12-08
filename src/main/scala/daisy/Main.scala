@@ -28,9 +28,6 @@ object Main {
       "dynamic",
       "Run dynamic analysis"),
     FlagOption(
-      "bgrtdynamic",
-      "Run binary guided random testing dynamic analysis"),
-    FlagOption(
       "codegen",
       "Generate code (as opposed to just doing analysis)"),
     FlagOption(
@@ -71,7 +68,7 @@ object Main {
       "(Default, uniform) precision to use"),
     StringChoiceOption(
       "rangeMethod",
-      Set("affine", "interval", "smt"),
+      Set("affine", "interval", "smt", "intervalMPFR", "affineMPFR"),
       "interval",
       "Method for range analysis"),
     FlagOption(
@@ -104,8 +101,7 @@ object Main {
       "denormals",
       "Include parameter for denormals in the FP abstraction (for optimization-based approach only)."),
 
-    FlagOption("rewrite-fitness-eval", "Generate expressions and analyze errors for various fitness functions"),
-    FlagOption("rewrite-stability-experiment", "Run rewriting stability experiment."),
+
     FlagOption("mixed-cost-eval", "Mixed-precision cost function evaluation experiment"),
     FlagOption("mixed-exp-gen", "Mixed-precision experiment generation"),
 
@@ -128,20 +124,16 @@ object Main {
     transform.TACTransformerPhase,
     transform.PowTransformerPhase,
     analysis.DynamicPhase,
-    analysis.BGRTDynamicPhase,
     opt.RewritingOptimizationPhase,
     transform.ConstantTransformerPhase,
     opt.MixedPrecisionOptimizationPhase,
-    experiment.RewritingFitnessEvaluation,
     experiment.MixedPrecisionExperimentGenerationPhase,
-    experiment.CompilerOptimizationsExperimentGenerationPhase,
     experiment.CostFunctionEvaluationExperiment,
     backend.InfoPhase,
     frontend.ExtractionPhase,
     opt.MetalibmPhase,
     //transform.ReassignElemFuncPhase,
     experiment.BenchmarkingPhase,
-    experiment.BenchmarkingRDTSCPhase,
     transform.DecompositionPhase
   )
 
@@ -155,7 +147,7 @@ object Main {
     processOptions(args.toList) match {
       case Some(new_ctx) =>
         ctx = new_ctx
-        ctx.timers.total.start
+        ctx.timers.total.start()
         val pipeline = computePipeline(ctx)
         ctx.reporter.info("\n************ Starting Daisy ************")
         try { // for debugging it's better to have these off.
@@ -173,12 +165,12 @@ object Main {
             ctx.reporter.warning(msg)
           case tools.ArcOutOfBoundsException(msg) =>
             ctx.reporter.warning(msg)
-          case e: DaisyFatalError =>
-            ctx.reporter.info("Something really bad happened. Cannot continue.")
-          case _ : Throwable =>
-            ctx.reporter.info("Something really bad happened. Cannot continue.")
+          // case e: DaisyFatalError =>
+          //   ctx.reporter.info("Something really bad happened. Cannot continue.")
+          // case _ : Throwable =>
+          //   ctx.reporter.info("Something really bad happened. Cannot continue.")
         }
-        ctx.timers.get("total").stop
+        ctx.timers.get("total").stop()
         ctx.reporter.info("time: \n" + ctx.timers.toString)
         Option(ctx)
       case None =>
@@ -211,16 +203,6 @@ object Main {
       pipeline >>= analysis.DynamicPhase
       pipeline >>= backend.InfoPhase
 
-    } else if(ctx.hasFlag("bgrtdynamic")){
-      pipeline >>= analysis.BGRTDynamicPhase
-      pipeline >>= backend.InfoPhase
-
-    } else if (ctx.hasFlag("rewrite-fitness-eval")) {
-      pipeline >>= experiment.RewritingFitnessEvaluation
-
-    // } else if (ctx.hasFlag("rewrite-stability-experiment")) {
-    //   pipeline >>= experiment.RewritingStabilityExperiment
-
     } else if (ctx.hasFlag("mixed-cost-eval")) {
       pipeline >>= transform.TACTransformerPhase >>
         transform.ConstantTransformerPhase >>
@@ -229,9 +211,6 @@ object Main {
 
     } else if (ctx.hasFlag("mixed-exp-gen")) {
       pipeline >>= experiment.MixedPrecisionExperimentGenerationPhase
-
-    } else if (ctx.hasFlag("comp-opts-exp-gen")) {
-      pipeline >>= experiment.CompilerOptimizationsExperimentGenerationPhase
 
     } else if (ctx.hasFlag("metalibm") && ctx.hasFlag("mixed-tuning")){
       // for now will only consider depth = 0 and equal error distribution
@@ -243,12 +222,19 @@ object Main {
         opt.MetalibmPhase >>
         analysis.DataflowPhase >>     // TODO: AbsErrorPhase is enough?
         backend.InfoPhase >>
-        backend.CodeGenerationPhase 
+        backend.CodeGenerationPhase
 
     } else if (ctx.hasFlag("mixed-tuning")) {
+
+      val rangePhase = if (ctx.hasFlag("subdiv")) {
+        analysis.DataflowSubdivisionPhase
+      } else {
+        analysis.DataflowPhase
+      }
+
       pipeline >>= transform.TACTransformerPhase >>
         transform.ConstantTransformerPhase >>
-        analysis.RangePhase >>
+        rangePhase >>
         opt.MixedPrecisionOptimizationPhase >>
         analysis.AbsErrorPhase >>
         backend.InfoPhase >>
@@ -260,7 +246,7 @@ object Main {
         opt.MetalibmPhase >>
         analysis.DataflowPhase >>  // TODO: AbsErrorPhase is enough?
         backend.InfoPhase >>
-        backend.CodeGenerationPhase 
+        backend.CodeGenerationPhase
 
     } else {
       // Standard static analyses
@@ -280,15 +266,14 @@ object Main {
       }
 
       pipeline >>= backend.InfoPhase
-      
+
       if (ctx.hasFlag("codegen")) {
         pipeline >>= backend.CodeGenerationPhase
       }
     }
 
     if (ctx.hasFlag("benchmarking")) {
-      //pipeline >>= experiment.BenchmarkingPhase
-      pipeline >>= experiment.BenchmarkingRDTSCPhase
+      pipeline >>= experiment.BenchmarkingPhase
     }
 
     pipeline

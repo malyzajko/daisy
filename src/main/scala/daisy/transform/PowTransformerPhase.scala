@@ -14,8 +14,8 @@ import lang.Trees._
 object PowTransformerPhase extends DaisyPhase {
 
   override val name = "Pow transformer"
-  override val shortName = "pow-transform"
   override val description = "Converts between expressions of form (x * x * ... * x) and IntPow(x, n)"
+  override implicit val debugSection = DebugSectionTransform
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val transformationFunction = if (ctx.hasFlag("pow-roll")) {
@@ -28,7 +28,6 @@ object PowTransformerPhase extends DaisyPhase {
     val newDefs = transformConsideredFunctions(ctx, prg){ fnc =>
       fnc.copy(body = Some(transformationFunction(fnc.body.get)))
     }
-
     (ctx, Program(prg.id, newDefs))
   }
 

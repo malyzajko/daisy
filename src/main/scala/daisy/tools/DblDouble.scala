@@ -151,7 +151,7 @@ class DblDouble(val hi: Double, val lo: Double) extends ScalaNumber with Ordered
 
   def %(y: DblDouble): DblDouble = this - (y * (this/y).toInt)
 
-  def unary_-(): DblDouble = new DblDouble(-hi, -lo)
+  def unary_- = new DblDouble(-hi, -lo)
 
   def isNaN: Boolean = hi != hi || lo != lo
 
@@ -207,4 +207,3 @@ class DblDouble(val hi: Double, val lo: Double) extends ScalaNumber with Ordered
   override def isWhole(): Boolean = hi % 1.0 == 0.0 && lo == 0.0
 
 }
-

@@ -4,13 +4,12 @@ package opt
 import scala.collection.immutable.Seq
 import scala.collection.mutable.{Set => MSet}
 import util.Random
-
 import lang.Trees._
 import lang.Types._
 import lang.Identifiers._
 import tools.FinitePrecision._
 import lang.TreeOps._
-import tools.{Interval, Rational, AffineForm}
+import tools.{AffineForm, Interval, Rational}
 import Rational._
 import lang.Extractors.ArithOperator
 
@@ -34,17 +33,14 @@ import lang.Extractors.ArithOperator
 object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
   with search.GeneticSearch[Map[Identifier, Precision]] with tools.RoundoffEvaluators {
 
-  override val name = "mixed-precision optimization"
-  override val shortName = "mixedTuning"
+  override val name = "Mixed-precision optimization"
   override val description = "determines a suitable mixed-precision type assignment"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
-    FlagOption("mixed-fixedpoint",
-    "Optimize for fixed-point arithmetic instead of floating-point"),
     StringChoiceOption("mixed-opt-method", Set("random", "delta", "genetic"), "delta",
       "Algorithm to use for mixed-precision optimization")
   )
 
-  implicit val debugSection = DebugSectionOptimisation
+  override implicit val debugSection = DebugSectionOptimization
 
   var reporter: Reporter = null
 
@@ -159,7 +155,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
       precisionMap = precisionMap + (fnc.id -> typeConfig)
 
       // final step: apply found type config
-      val updatedBody = applyFinitePrecision(body, typeConfig)
+      val updatedBody = applyFinitePrecision(body, typeConfig)(resPrecision)
 
       val updatedParams = fnc.params.map(valDef =>
         ValDef(valDef.id.changeType(FinitePrecisionType(typeConfig(valDef.id)))))
@@ -172,7 +168,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
     // update rangeMap with trees with casts
     val newIntermediateRanges = newDefs.map(fnc => {
       var newRanges = Map[(Expr, Seq[Expr]), Interval]()
-      var currRanges = ctx.intermediateRanges(fnc.id)
+      val currRanges = ctx.intermediateRanges(fnc.id)
 
       postTraversal(e => {
 
@@ -183,9 +179,17 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
       (fnc.id -> newRanges)
       }).toMap
 
+    val newInputErrors = newDefs.map(fnc => {
+      val inputRanges = ctx.specInputRanges(fnc.id)
+      val precisions = precisionMap(fnc.id)
+
+      fnc.id -> fnc.params.map(p => p.id -> precisions(p.id).absRoundoff(inputRanges(p.id))).toMap
+    }).toMap
+
     (ctx.copy(resultAbsoluteErrors = resAbsoluteErrors,
       intermediateRanges = newIntermediateRanges,
-      specInputPrecisions = precisionMap), Program(prg.id, newDefs))
+      specInputPrecisions = precisionMap,
+      specInputErrors = newInputErrors), Program(prg.id, newDefs))
   }
 
 
@@ -271,19 +275,21 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
         typeConfig
       } else {
 
+        val typeConfigCost = costFnc(expr, typeConfig)
+
         // 1: lower all variables in varsToOpt
         val loweredTypeConfig = lowerVariables(currentVars, typeConfig)
         candidateTypeConfigs += loweredTypeConfig
 
         // 2: evaluate current config
-        val (currentError, retPrec) = errorFnc(loweredTypeConfig, highestPrecision)
+        val (currentError, _) = errorFnc(loweredTypeConfig, highestPrecision)
 
         // 3a: if the error is below threshold, we are done recursing
         if (currentError <= errorSpec) {
           numValidConfigs = numValidConfigs + 1
           val fixedVars = allVars.diff(currentVars)
 
-          if (fixedVars.size == 0) { // nothing to optimize further
+          if (fixedVars.isEmpty) { // nothing to optimize further
             loweredTypeConfig
           } else {
             val (fixedVarsLeft, fixedVarsRight) = fixedVars.splitAt(fixedVars.length / 2)
@@ -291,20 +297,23 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
             val loweredRight = lowerVariables(fixedVarsRight, loweredTypeConfig)
             candidateTypeConfigs += loweredLeft; candidateTypeConfigs += loweredRight
 
-            val (errorLeft, retPrecLeft) = errorFnc(loweredLeft, highestPrecision)
-            val (errorRight, retPrecRight) = errorFnc(loweredRight, highestPrecision)
+            val (errorLeft, _) = errorFnc(loweredLeft, highestPrecision)
+            val (errorRight, _) = errorFnc(loweredRight, highestPrecision)
+
+            val loweredCost = costFnc(expr, loweredTypeConfig)
 
             // choose the one with lowest cost
-            var currentMinCost = costFnc(expr, loweredTypeConfig)
-            var currentBestConfig = loweredTypeConfig
-            var currentBestRetPrec = retPrec
+            var (currentMinCost, currentBestConfig) = if (lessThanCost(typeConfigCost, loweredCost)) {
+              (typeConfigCost, typeConfig)
+            } else {
+              (loweredCost, loweredTypeConfig)
+            }
 
             if (errorLeft < errorSpec) {
               numValidConfigs = numValidConfigs + 1
               val costLeft = costFnc(expr, loweredLeft)
               if (lessThanCost(costLeft, currentMinCost)) {
                 currentBestConfig = loweredLeft
-                currentBestRetPrec = retPrecLeft
                 currentMinCost = costLeft
               }
             }
@@ -314,7 +323,6 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
               val costRight = costFnc(expr, loweredRight)
               if (lessThanCost(costRight, currentMinCost)) {
                 currentBestConfig = loweredRight
-                currentBestRetPrec = retPrecRight
                 currentMinCost = costRight
               }
             }
@@ -338,7 +346,9 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
             val costLeft = costFnc(expr, configLeft)
             val costRight = costFnc(expr, configRight)
 
-            if (lessThanCost(costLeft, costRight)) {
+            if (lessThanCost(typeConfigCost, costLeft) && lessThanCost(typeConfigCost, costRight)) {
+              typeConfig
+            } else if (lessThanCost(costLeft, costRight)) {
               configLeft
             } else {
               configRight
@@ -367,7 +377,6 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
 
     var continue = true
     while (continue && currentLowPrecIndex >= 0) {
-      //println(s"currentLowPrecIndex: $currentLowPrecIndex - ${availablePrecisions(currentLowPrecIndex)}")
       // do delta debugging, which will lower some variables
       val newTypeConfig = deltaDebug(currentVars, currentTypeConfig, 0)
 
@@ -377,11 +386,9 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
       } else {
         // something did change, so fix the higher-precision variables and only
         // keep the low-precision ones in the running
-        val lowPrecision = availablePrecisions(availablePrecisions.length - 2)
+        val lowPrecision = availablePrecisions(currentLowPrecIndex)
 
-        val varsToLowerFurther = allVars.filter({
-          case id => newTypeConfig(id) == lowPrecision
-          })
+        val varsToLowerFurther = allVars.filter((id => newTypeConfig(id) == lowPrecision))
 
         // update everything
         currentVars = varsToLowerFurther
@@ -389,6 +396,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
         currentLowPrecIndex = currentLowPrecIndex - 1
       }
     }
+
     val finalCost = costFnc(expr, currentTypeConfig)
     reporter.info(s"initial Cost: $originalCost - final cost: $finalCost")
     reporter.info(s"number of valid type configs: ---- $numValidConfigs, out of ${candidateTypeConfigs.size} unique configs seen")
@@ -400,7 +408,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
     type configuration and by inserting necessary (down) casts.
 
   */
-  def applyFinitePrecision(expr: Expr, typeConfig: Map[Identifier, Precision]): Expr = {
+  def applyFinitePrecision(expr: Expr, typeConfig: Map[Identifier, Precision])(implicit returnPrec: Precision): Expr = {
 
     def recurse(e: Expr): Expr = (e: @unchecked) match {
 
@@ -414,13 +422,24 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
         Let(id.changeType(FinitePrecisionType(idPrec)), newValue, recurse(body))
 
       case Let(id, x @ ArithOperator(Seq(t @ Variable(tId)), recons), body) =>
-        var tmp: Expr = recons(Seq(recurse(t)))
         val idPrec = typeConfig(id)
+        val tPrec = typeConfig(tId)
 
-        if (idPrec < typeConfig(tId)) { // need to downcast
-          tmp = Cast(tmp, FinitePrecisionType(idPrec))
+        val updatedT = recurse(t)
+        val opPrec = getUpperBound(tPrec, idPrec)
+
+        // We only need to introduce an upcast for the inner operation or a downcast for the outer operation.
+        // It can't happen that both are necessary, since tPrec < opPrec ==> idPrec = opPrec and
+        // idPrec < opPrec ==> tPrec = opPrec.
+        val withCasts: Expr =  if (tPrec < opPrec) { // need to introduce upcast for operation
+          recons(Seq(Cast(updatedT, FinitePrecisionType(idPrec))))
+        } else if (idPrec < opPrec) { // need to downcast for assignment
+          Cast(recons(Seq(updatedT)), FinitePrecisionType(idPrec))
+        } else {
+          recons(Seq(recurse(t)))
         }
-        Let(id.changeType(FinitePrecisionType(idPrec)), tmp, recurse(body))
+
+        Let(id.changeType(FinitePrecisionType(idPrec)), withCasts, recurse(body))
 
 
       case Let(id, x @ ArithOperator(Seq(y @ Variable(lhs), z @ Variable(rhs)), recons), body) =>
@@ -451,9 +470,22 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
         recons(Seq(recurse(t)))
 
       case x @ ArithOperator(Seq(y @ Variable(_), z @ Variable(_)), recons) =>
-        recons(Seq(recurse(y), recurse(z)))
+        val lPrec = typeConfig(y.id)
+        val rPrec = typeConfig(z.id)
+        val opPrec = getUpperBound(getUpperBound(lPrec, rPrec), returnPrec)
 
+        var left = recurse(y)
+        var right = recurse(z)
 
+        // forced upcasts
+        if (lPrec != opPrec) {
+          left = Cast(left, FinitePrecisionType(opPrec))
+        }
+        if (rPrec != opPrec) {
+          right = Cast(right, FinitePrecisionType(opPrec))
+        }
+
+        recons(Seq(left, right))
     }
     recurse(expr)
   }
@@ -927,7 +959,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
     // the factor is to accommodate random assignment to pick the same
     val maxIterCount = 15 * maxCandTypeConfigs
 
-    var iterCount = 0l
+    var iterCount = 0L
 
     val candidateTypeConfigs = MSet[TypeConfig]()
 
@@ -944,7 +976,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
       s"exhaustive search would need: $maxUniqueTypeConfigs")
 
     // test all of them, and keep track of best (only)
-    //val veryLargeRational = Rational(100000l, 1l)
+    //val veryLargeRational = Rational(100000L, 1L)
     var numValidConfigs = 0
 
     // default is the highest precision, since we know that that must work

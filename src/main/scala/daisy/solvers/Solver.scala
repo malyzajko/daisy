@@ -6,12 +6,12 @@ package solvers
 
 import scala.collection.immutable.Seq
 
-import _root_.smtlib.parser.Terms.{Let => SMTLet,Identifier => SMTIdentifier,_}
-import _root_.smtlib.parser.Commands.{FunDef => _, Assert => SMTAssert, _ }
-import _root_.smtlib.parser.CommandsResponses.{Error => ErrorResponse, _}
-import _root_.smtlib.interpreters.ProcessInterpreter
-import _root_.smtlib.printer.{RecursivePrinter => SMTPrinter}
-import _root_.smtlib.theories._
+import smtlib.trees.Terms.{Let => SMTLet,Identifier => SMTIdentifier,_}
+import smtlib.trees.Commands.{FunDef => _, Assert => SMTAssert, _ }
+import smtlib.trees.CommandsResponses.{Error => ErrorResponse, _}
+import smtlib.interpreters.ProcessInterpreter
+import smtlib.printer.{RecursivePrinter => SMTPrinter}
+import smtlib.theories._
 
 import lang.Types._
 import lang.Trees._
@@ -47,14 +47,14 @@ object Solver {
 object Power extends scala.AnyRef{
   def apply(t1: Term, t2: Term): Term =
     FunctionApplication(
-      QualifiedIdentifier(smtlib.parser.Terms.Identifier(SSymbol("^"))),
+      QualifiedIdentifier(smtlib.trees.Terms.Identifier(SSymbol("^"))),
         Seq(t1, t2)
     )
 
     def unapply(term: Term): Option[(Term, Term)] = term match {
     case FunctionApplication(
       QualifiedIdentifier(
-        smtlib.parser.Terms.Identifier(SSymbol("^"), Seq()),
+        smtlib.trees.Terms.Identifier(SSymbol("^"), Seq()),
         None
       ), Seq(t1, t2)) => Some((t1, t2))
     case _ => None
@@ -72,11 +72,10 @@ abstract class SMTLibSolver(val ctx: Context) {
   /* Solver name */
   def targetName: String
   def name: String = "smt-" + targetName
-
   val interpreterOpts: Seq[String]
   protected def getNewInterpreter(): ProcessInterpreter
 
-  protected lazy val interpreter = getNewInterpreter
+  protected lazy val interpreter = getNewInterpreter()
 
   val output = new java.io.StringWriter
   val commandBuffer = new java.io.BufferedWriter(output)
@@ -492,7 +491,7 @@ abstract class SMTLibSolver(val ctx: Context) {
         if (d == BigDecimal(0)) {
           RealLiteral(Rational.zero)
         } else {
-          d.toBigIntExact() match {
+          d.toBigIntExact match {
             case Some(num) =>
               RealLiteral(Rational(num, 1))
             case _ =>

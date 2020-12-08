@@ -63,10 +63,10 @@ trait DynamicEvaluators {
       // add errors to lower precision version, if there are any
       val dblInputs: Map[Identifier, Double] = dblInputsWithoutErrors.map({
         case (x, d) =>
-          if (rand.nextBoolean) {
-            (x -> (d + inputErrorMap(x).toDouble * rand.nextDouble))
+          if (rand.nextBoolean()) {
+            (x -> (d + inputErrorMap(x).toDouble * rand.nextDouble()))
           } else {
-            (x -> (d - inputErrorMap(x).toDouble * rand.nextDouble))
+            (x -> (d - inputErrorMap(x).toDouble * rand.nextDouble()))
           }
       })
 
@@ -145,7 +145,7 @@ trait DynamicEvaluators {
 
   }
 
-  def dynamicErrorEvaluation(expr: Expr, inputConfig: Map[Identifier, Interval], 
+  def dynamicErrorEvaluation(expr: Expr, inputConfig: Map[Identifier, Interval],
     seed: Long, numSamples: Long, useRoundoff: Boolean): ErrorMeasurerMPFR = {
 
     val sampler = new Uniform(inputConfig, seed)

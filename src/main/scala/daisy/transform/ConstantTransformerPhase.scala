@@ -28,10 +28,9 @@ import lang.Extractors._
 object ConstantTransformerPhase extends DaisyPhase {
 
   override val name = "Constant transformer"
-  override val shortName = "const-trans"
   override val description = "Pulls out constants"
 
-  implicit val debugSection = DebugSectionTransform
+  override implicit val debugSection = DebugSectionTransform
 
   var reporter: Reporter = null
 
@@ -51,7 +50,6 @@ object ConstantTransformerPhase extends DaisyPhase {
       })
 
     //println("new program: " + newDefs)
-
     (ctx, Program(prg.id, newDefs))
   }
 

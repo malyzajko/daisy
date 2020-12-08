@@ -9,7 +9,6 @@ import scala.collection.immutable.Seq
 
 import lang.Trees._
 import lang.Identifiers._
-import lang.Extractors._
 import tools.FinitePrecision._
 import tools._
 import lang.Trees.RealLiteral.{zero, one, two}
@@ -20,7 +19,6 @@ import lang.Trees.RealLiteral.{zero, one, two}
 object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools.Taylor {
 
   override val name = "Metalibm"
-  override val shortName = "metalibm"
   override val description = "generates elementary functions from metalibm tool"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     NumOption("timeout", 120, "Hand over to Daisy when timout is outdated"),
@@ -37,7 +35,7 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
     StringChoiceOption("errorDist", Set("deriv", "equal"), "equal", "How to dsitribute the error budget.")
   )
 
-  implicit val debugSection = DebugSectionOptimisation
+  override implicit val debugSection = DebugSectionOptimization
 
   var reporter: Reporter = null
   var timeOut: Int = 0
@@ -52,7 +50,7 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
     val extraError = Rational.fromString(ctx.option[Option[String]]("extraError").getOrElse("-1"))
     val errorDist = ctx.option[String]("errorDist")
 
-    val targetError  =  precision match { case f @ FloatPrecision(_) => f.machineEpsilon }
+    //val targetError  =  precision match { case f @ FloatPrecision(_) => f.machineEpsilon }
     val minWidthToString = "(sup(dom) - inf(dom)) * 1/" + ctx.option[Long]("minWidth").toString
     val metaSplitMinWidthToString = "(sup(dom) - inf(dom)) * 1/" + ctx.option[Long]("metaSplitMinWidth").toString
 
@@ -118,9 +116,9 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
           ctx.specResultErrorBounds(fnc.id) - ctx.resultAbsoluteErrors(fnc.id)
         }
 
-        val (newBody, _approx) = insertApproxNode(fnc.body.get,
+        val (newBody, _approx): (Expr, Seq[(String, String, String)]) = insertApproxNode(fnc.body.get,
           ctx.originalFunctions(fnc.id).body.get, intermRange, intermAbsError,
-          params, normElemFactors, approxError, errorDist)
+          params, normElemFactors.toMap, approxError, errorDist)
         approxs = approxs ++ _approx
 
         // sanity check so we don't benchmark mathh and think it's Metalibm
@@ -142,7 +140,6 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
     }
 
     val wrappers: Seq[String] = generateWrappers(approxs, precision)
-
     (ctx.copy(wrapperFunctions=wrappers), newProgram)
   }
 
@@ -174,7 +171,7 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
         reporter.info(s"Try to approximate $value in $domain:")
         val fncToApprox = value.toString // the expression that we want to approximate
 
-        var paramsUpdated = params + (
+        var paramsUpdated = params.+(
           "dom" -> domain.toString,
           "f"   -> fncToApprox)
 
@@ -399,10 +396,10 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
 
 
   def generateWrappers(generatedFunctions: Seq[(String, String, String)], precision: Precision): Seq[String] = {
-    val precString = precision match {
-      case FloatPrecision(32) => "float"
-      case FloatPrecision(64) => "double"
-    }
+    //val precString = precision match {
+    //  case FloatPrecision(32) => "float"
+    //  case FloatPrecision(64) => "double"
+    //}
 
     val prototypes = generatedFunctions.map({ case (_, fncName, signature) => signature match {
       case "D_TO_D" =>

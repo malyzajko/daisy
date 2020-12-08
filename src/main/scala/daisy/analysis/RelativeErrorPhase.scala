@@ -14,7 +14,7 @@ import Interval._
 
 import scala.collection.immutable.Map
 import scala.util.control.Breaks._
-
+import scala.collection.parallel.CollectionConverters._
 
 /**
  * Compute relative errors directly, i.e. not through first computing
@@ -29,8 +29,7 @@ import scala.util.control.Breaks._
 object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdivision
   with tools.RoundoffEvaluators with RangeEvaluators {
 
-  override val name = "Relative Error"
-  override val shortName = "relative"
+  override val name = "Relative error"
   override val description = "Computes relative errors directly."
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     StringChoiceOption(
@@ -46,15 +45,6 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
       "rel-divRemainder",
       0,
       "Max amount of interval divisions for remainder term"),
-    NumOption(
-      "rel-totalOpt",
-      32,
-      "Max total amount of analysis runs"),
-    //    StringChoiceOption(
-    //      "rel-subdiv",
-    //      Set("simple", "model"),
-    //      "simple",
-    //      "Method to subdivide intervals"),
     StringChoiceOption(
       "approach",
       Set("taylor", "naive"),
@@ -62,12 +52,11 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
       "Approach for expressions")
   )
 
-  implicit val debugSection = DebugSectionAnalysis
+  override implicit val debugSection = DebugSectionAnalysis
 
   var divLimit: Int = 0
   var divRemainder: Int = 0
   var rangeMethod: String = null
-  // val subdiv: String = ctx.option[String]("rel-subdiv")
   var approach: String = null
   var uniformPrecision: Precision = null
 
@@ -78,7 +67,6 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
     divLimit = ctx.option[Long]("rel-divLimit").toInt
     divRemainder = ctx.option[Long]("rel-divRemainder").toInt
     rangeMethod = ctx.option[String]("rel-rangeMethod")
-    // subdiv: String = ctx.option[String]("rel-subdiv")
     approach = ctx.option[String]("approach")
     uniformPrecision = ctx.option[Precision]("precision")
 
@@ -289,7 +277,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
 
         case ("affine") =>
           Some(maxAbs(evalRange[AffineForm](relErrorExpr,
-            inputValMap.mapValues(AffineForm(_)), AffineForm.apply)._1.toInterval))
+            inputValMap.mapValues(AffineForm(_)).toMap, AffineForm.apply)._1.toInterval))
 
         case ("smtreuse") =>
           Some(maxAbs(evalRange[SMTRange](relErrorExpr,
@@ -475,7 +463,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
         //  res = res + (id -> a)
         case _ =>
           abort = true
-          break
+          break()
       }
     })
     if (abort) {
@@ -488,4 +476,3 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
   }
 
 }
-

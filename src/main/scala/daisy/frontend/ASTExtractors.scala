@@ -81,16 +81,17 @@ trait ASTExtractors {
      * objects of case classes (or any synthetic class).
      */
     object ExObjectDef {
-      def unapply(cd: ClassDef): Option[(String,Template)] = cd match {
-        case ClassDef(_, name, tparams, impl) if
-          (cd.symbol.isModuleClass || cd.symbol.hasPackageFlag) &&
-          tparams.isEmpty &&
-          !cd.symbol.isSynthetic &&
-          !cd.symbol.isCaseClass
+      def unapply(md: ModuleDef): Option[(String,Template)] = md match {
+        case ModuleDef(mods, name, impl) if
+          (md.symbol.isModule) &&
+          !md.symbol.isSynthetic &&
+          !md.symbol.isCaseClass
         => {
           Some((name.toString, impl))
         }
-        case _ => None
+        case _ => {
+          println(s"${md.symbol.isModule} ${md.symbol.isModuleClass} ${md.symbol.hasPackageFlag} ${!md.symbol.isSynthetic} ${!md.symbol.isCaseClass}")
+          None }
       }
     }
 

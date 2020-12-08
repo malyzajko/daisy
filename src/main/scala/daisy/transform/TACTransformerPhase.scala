@@ -22,9 +22,9 @@ import lang.Extractors._
     None
  */
 object TACTransformerPhase extends DaisyPhase {
-  override val name = "Three-address form transformer"
-  override val shortName = "tac"
-  override val description = "Transforms the function bodies into SSA form."
+  override val name = "TAC transformer"
+  override val description = "Three-address form transformers transforms the function bodies into SSA form."
+  override implicit val debugSection = DebugSectionTransform
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     // need to replace function bodies, create a copy of the whole program

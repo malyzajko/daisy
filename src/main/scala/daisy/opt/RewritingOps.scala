@@ -19,8 +19,6 @@ trait RewritingOps {
 
   var rand: Random
 
-  implicit val debugSection: DebugSection
-
   var countUnmodified = 0
 
   /* This method is split to enable unit tests.

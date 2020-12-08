@@ -3,8 +3,6 @@
 package daisy
 package utils
 
-import scala.collection.immutable.Seq
-
 import lang.TreeOps
 import lang.Trees._
 import lang.Types._

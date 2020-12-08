@@ -1,9 +1,9 @@
 package regression
 
 import daisy._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class PowTransformerRegressionTest extends FunSuite {
+class PowTransformerRegressionTest extends AnyFunSuite {
   val fileName = "src/test/resources/RegressionFunctions.scala"
 
   val _ctx: Context = Main.processOptions(List(fileName, "--silent")).get

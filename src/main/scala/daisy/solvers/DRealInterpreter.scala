@@ -6,11 +6,11 @@ package solvers
 import scala.concurrent.{Future, blocking, ExecutionContext, Await, TimeoutException}
 import scala.concurrent.duration._
 
-import _root_.smtlib.interpreters.ProcessInterpreter
-import _root_.smtlib.parser.Commands._
-import _root_.smtlib.parser.Terms.{SExpr, SSymbol}
-import _root_.smtlib.printer.{RecursivePrinter => SMTPrinter}
-import _root_.smtlib.parser.CommandsResponses.{Error => ErrorResponse, _}
+import smtlib.interpreters.ProcessInterpreter
+import smtlib.trees.Commands._
+import smtlib.trees.Terms.{SExpr, SSymbol}
+import smtlib.printer.{RecursivePrinter => SMTPrinter}
+import smtlib.trees.CommandsResponses.{Error => ErrorResponse, _}
 
 class DRealInterpreter(executable: String, args: Array[String])
   extends ProcessInterpreter(executable, args) {

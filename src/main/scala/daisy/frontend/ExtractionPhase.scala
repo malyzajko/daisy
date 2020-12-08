@@ -9,11 +9,10 @@ import lang.Trees.Program
 import scala.tools.nsc.{Settings,CompilerCommand}
 
 object ExtractionPhase extends DaisyPhase {
-  override val name = "Scalac Extraction"
-  override val shortName = "frontend"
+  override val name = "Scala extraction"
   override val description = "Extraction of trees from the Scala Compiler"
 
-  implicit val debug = DebugSectionFrontend
+  override implicit val debugSection = DebugSectionFrontend
 
   def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val settings = new Settings

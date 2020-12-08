@@ -27,10 +27,9 @@ import tools.FinitePrecision._
  */
 object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
   override val name = "Roundoff"
-  override val shortName = "roundoff"
   override val description = "Computes roundoff errors"
 
-  implicit val debugSection = DebugSectionAnalysis
+  override implicit val debugSection = DebugSectionAnalysis
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val trackRoundoffErrs = !ctx.hasFlag("noRoundoff")
@@ -46,7 +45,7 @@ object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
 
       val (resRoundoff, allErrors) = evalRoundoff[AffineForm](fncBody, intermediateRanges,
         precisionMap,
-        inputErrorMap.mapValues(AffineForm.+/-),
+        inputErrorMap.mapValues(AffineForm.+/-).toMap,
         zeroError = AffineForm.zero,
         fromError = AffineForm.+/-,
         interval2T = AffineForm.apply,
@@ -54,12 +53,11 @@ object AbsErrorPhase extends DaisyPhase with tools.RoundoffEvaluators {
         trackRoundoffErrs)
 
       // computeAbsError(fnc.body.get, Map.empty, trackInitialErrs, trackRoundoffErrs)
-      (Interval.maxAbs(resRoundoff.toInterval), allErrors.mapValues(aa => Interval.maxAbs(aa.toInterval)))
+      (Interval.maxAbs(resRoundoff.toInterval), allErrors.mapValues(aa => Interval.maxAbs(aa.toInterval)).toMap)
     }
-
     (ctx.copy(
-      resultAbsoluteErrors = res.mapValues(_._1),
-      intermediateAbsErrors = res.mapValues(_._2)),
+      resultAbsoluteErrors = res.mapValues(_._1).toMap,
+      intermediateAbsErrors = res.mapValues(_._2).toMap),
     prg)
   }
 

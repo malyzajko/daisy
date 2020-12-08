@@ -13,20 +13,20 @@ import lang.Trees.{FunDef, Program}
  */
 trait DaisyPhase extends Pipeline[Program, Program] {
   val name: String
-  val shortName: String
   // TODO: do we need this?
   val description: String
   val definedOptions: Set[CmdLineOption[Any]] = Set()
+  implicit val debugSection: DebugSection
 
   def runPhase(ctx: Context, prog: Program): (Context, Program)
 
   override def run(ctx: Context, prg: Program): (Context, Program) = {
-    ctx.timers.get(shortName).start()
+    ctx.timers.get(name).start()
     ctx.reporter.info(s"\nStarting ${name} phase")
 
     val (_ctx, _prg) = runPhase(ctx, prg)
-
-    _ctx.timers.get(shortName).stop()
+    ctx.reporter.debugContext(ctx, _ctx, prg, _prg)
+    _ctx.timers.get(name).stop()
     // cfg.reporter.info(s"Finished ${name} phase\n")
     (_ctx, _prg)
   }

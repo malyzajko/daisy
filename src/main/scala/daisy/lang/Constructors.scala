@@ -22,18 +22,17 @@ object Constructors {
     }
 
     var stop = false
-    val simpler = for(e <- flat if !stop && e != BooleanLiteral(true)) yield {
+    val simpler:Seq[Expr] = for(e <- flat if !stop && e != BooleanLiteral(true)) yield {
       if (e == BooleanLiteral(false)) {
         stop = true
       }
       e
     }
 
-    simpler match {
-      case collection.mutable.Seq()  => BooleanLiteral(true)
-      case collection.mutable.Seq(x) => x
-      case _      => And(Seq(simpler: _*))  // make immutable Seq
-    }
+    if (simpler.length == 0) BooleanLiteral(true)
+    else if (simpler.length == 1) simpler.head
+    else And(Seq(simpler: _*))
+
   }
 
   /** $encodingof `&&`-expressions with arbitrary number of operands as a sequence, and simplified.
@@ -51,7 +50,7 @@ object Constructors {
     }
 
     var stop = false
-    val simpler = for(e <- flat if !stop && e != BooleanLiteral(false)) yield {
+    val simpler:Seq[Expr] = for(e <- flat if !stop && e != BooleanLiteral(false)) yield {
       if (e == BooleanLiteral(true)) {
         stop = true
       }
@@ -60,7 +59,7 @@ object Constructors {
 
     simpler match {
       case collection.mutable.Seq()  => BooleanLiteral(false)
-      case collection.mutable.Seq(x) => x
+      case collection.mutable.Seq(x) => simpler(0)
       case _      => Or(Seq(simpler: _*)) // make immutable Seq
     }
   }

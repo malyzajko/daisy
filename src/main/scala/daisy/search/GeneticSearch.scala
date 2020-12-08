@@ -50,7 +50,7 @@ trait GeneticSearch[T] {
         var mutantTwo = mutate(candTwo)
 
         // crossover (with a certain probability)
-        if (crossoverProb != 0.0 && crossoverProb >= rand.nextDouble) {
+        if (crossoverProb != 0.0 && crossoverProb >= rand.nextDouble()) {
           val (m1, m2) = crossover(mutantOne, mutantTwo)
           mutantOne = m1
           mutantTwo = m2

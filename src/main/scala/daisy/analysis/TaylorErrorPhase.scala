@@ -12,17 +12,16 @@ import Rational._
 import Interval._
 
 import scala.collection.immutable.Map
+import scala.collection.parallel.CollectionConverters._
 
 /**
  * Computes absolute errors same way as in RangeErrorPhase,
  * but evaluates taylor simplifications instead
  */
 object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Taylor with tools.RangeEvaluators {
-  override val name: String = "Taylor Absolute Error"
-  override val shortName: String = "taylor"
-  override val description: String = "Computes abssolut error using taylor simplifications."
-
-  implicit val debugSection = DebugSectionAnalysis
+  override val name: String = "Taylor error"
+  override val description: String = "Computes absolute error using taylor simplifications."
+  override implicit val debugSection = DebugSectionAnalysis
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     // default range method: intervals
@@ -55,8 +54,8 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
       }
     }
 
-    (ctx.copy(resultAbsoluteErrors = res.mapValues(_._1),
-      resultRealRanges = res.mapValues(_._2)),
+    (ctx.copy(resultAbsoluteErrors = res.mapValues(_._1).toMap,
+      resultRealRanges = res.mapValues(_._2).toMap),
       prg)
   }
 

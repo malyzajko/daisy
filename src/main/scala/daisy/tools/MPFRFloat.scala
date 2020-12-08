@@ -91,7 +91,7 @@ class MPFRFloat(val bf: BigFloat) extends ScalaNumber with Ordered[MPFRFloat] {
   import MPFRFloat._
 
 
-  def unary_-(): MPFRFloat = new MPFRFloat(bf.negate)
+  def unary_- = new MPFRFloat(bf.negate)
   def +(that: MPFRFloat): MPFRFloat = new MPFRFloat(this.bf.add(that.bf, context))
   def up_+(that: MPFRFloat): MPFRFloat = new MPFRFloat(this.bf.add(that.bf, roundUpContext))
   def down_+(that: MPFRFloat): MPFRFloat = new MPFRFloat(this.bf.add(that.bf, roundDownContext))

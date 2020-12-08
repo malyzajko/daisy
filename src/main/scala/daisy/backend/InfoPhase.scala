@@ -20,13 +20,13 @@ import Rational._
  */
 object InfoPhase extends DaisyPhase {
   override val name = "Info"
-  override val shortName = "info"
   override val description = "Prints interesting information"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     StringOption(
       "results-csv",
       "Which file to write analysis results to. Output file is created in output/")
   )
+  override implicit val debugSection = DebugSectionBackend
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val out = ctx.option[Option[String]]("results-csv")

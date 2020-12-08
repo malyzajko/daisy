@@ -15,8 +15,7 @@ import scala.collection.immutable.Seq
 import scala.collection.immutable.ListMap
 
 object CompilerOptimizationPhase extends DaisyPhase with NewRewritingOps {
-  override val name: String = "Compiler Optimization"
-  override val shortName: String = "compopt"
+  override val name: String = "Compiler optimization"
   override val description: String = "Applies compiler optimizations"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     MultiStringChoiceOption(
@@ -25,10 +24,12 @@ object CompilerOptimizationPhase extends DaisyPhase with NewRewritingOps {
       "Which compiler optimizations to apply before analysis"
     )
   )
+  override implicit val debugSection = DebugSectionTransform
+
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
 
     val newDefs = transformConsideredFunctions(ctx, prg){ fnc =>
-      val oldFnc = fnc
+      //val oldFnc = fnc
       val newFnc = fnc.copy(body = Some(
         ctx.option[List[String]]("comp-opts").foldLeft(fnc.body.get)({case (currExpr, option) =>
           option match {
@@ -47,7 +48,6 @@ object CompilerOptimizationPhase extends DaisyPhase with NewRewritingOps {
         })))
       newFnc
     }
-
     (ctx, Program(prg.id, newDefs))
   }
 

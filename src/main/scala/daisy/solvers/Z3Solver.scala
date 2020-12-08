@@ -5,9 +5,9 @@ package daisy
 package solvers
 
 import scala.collection.immutable.Seq
-import _root_.smtlib.interpreters.Z3Interpreter
-import _root_.smtlib.parser.Commands.{AttributeOption, SetOption}
-import _root_.smtlib.parser.Terms._
+import smtlib.interpreters.Z3Interpreter
+import smtlib.trees.Commands.{AttributeOption, SetOption}
+import smtlib.trees.Terms._
 import lang.Trees.Expr
 
 // TODO has to be singleton
@@ -56,7 +56,7 @@ class Z3Solver(ctx: Context) extends SMTLibSolver(ctx) {
   val interpreterOpts = Seq("-in", "-smt2")
 
 
-  def getNewInterpreter: Z3Interpreter = {
+  def getNewInterpreter(): Z3Interpreter = {
     val opts = interpreterOpts
     ctx.reporter.debug("Invoking solver " + targetName + " with " + opts.mkString(" "))
 

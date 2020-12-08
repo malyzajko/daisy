@@ -34,7 +34,7 @@ object TreeOps {
 
     // Usages of views makes the computation lazy. (which is useful for
     // contains-like operations)
-    f(e, Seq(es.view.map(rec): _*))
+    f(e, Seq(es.view.map[T](rec).toSeq: _*))
     // f(e, es.map(rec))
   }
 
@@ -119,10 +119,10 @@ object TreeOps {
   def postMap(f: Expr => Option[Expr], applyRec: Boolean = false)(e: Expr): Expr =
     if (applyRec) {
       var prev = e
-      var curr = postMap(f)(e)
+      var curr = postMap(f,false)(e)
       while (prev != curr) {
         prev = curr
-        curr = postMap(f)(curr)
+        curr = postMap(f,false)(curr)
       }
       curr
     } else {

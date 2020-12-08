@@ -53,7 +53,7 @@ case class Interval(xlo: Rational, xhi: Rational) extends RangeArithmetic[Interv
 
   def addConstraint(e: Set[lang.Trees.Expr]): Interval = this
 
-  def unary_-(): Interval = Interval(-xhi, -xlo)
+  def unary_- = Interval(-xhi, -xlo)
 
   def +(other: Interval): Interval = {
     Interval(xlo + other.xlo, xhi + other.xhi)

@@ -30,8 +30,8 @@ class ErrorMeasurerMPFR {
   var currentRelError_Sum = MPFRFloat.fromDouble(0.0)
 
   var currentUlpError_Min = Long.MaxValue
-  var currentUlpError_Max = 0l
-  var currentUlpError_Sum = 0l
+  var currentUlpError_Max = 0L
+  var currentUlpError_Sum = 0L
 
   /*
     @return (abs, rel error, ulp error)

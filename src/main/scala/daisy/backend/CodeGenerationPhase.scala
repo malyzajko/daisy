@@ -6,8 +6,6 @@ package backend
 import scala.collection.immutable.Seq
 import utils.CodePrinter
 import lang.Trees._
-import tools.FinitePrecision
-import FinitePrecision._
 import tools.FinitePrecision._
 import lang.Types._
 import lang.Extractors.ArithOperator
@@ -15,8 +13,7 @@ import tools.{Interval, Rational}
 import lang.Identifiers.Identifier
 
 object CodeGenerationPhase extends DaisyPhase {
-  override val name = "Code Generation"
-  override val shortName = "codegen"
+  override val name = "Code generation"
   override val description = "Generates (executable) code."
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     StringChoiceOption(
@@ -32,7 +29,7 @@ object CodeGenerationPhase extends DaisyPhase {
       "Print C code for Xilinx with ap_fixed data type")
   )
 
-  implicit val debugSection = DebugSectionBackend
+  override implicit val debugSection = DebugSectionBackend
 
   var reporter: Reporter = null
 
@@ -161,7 +158,6 @@ object CodeGenerationPhase extends DaisyPhase {
       else ctx.option[String]("lang")
 
     writeFile(newProgram, lang, ctx)
-
     (ctx, newProgram)
   }
 

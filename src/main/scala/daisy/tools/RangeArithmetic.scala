@@ -6,7 +6,7 @@ package tools
 
 trait RangeArithmetic[T] { self: T =>
 
-  def unary_-(): T
+  def unary_- : T
   def +(other: T): T
   def -(other: T): T
   def *(other: T): T

@@ -19,6 +19,7 @@ object SMTRange {
   val lowLoopThreshold = 20
   val highPrecision = Rational.fromReal(0.00000000000000000001)
   val highLoopThreshold = 100
+  implicit val debugSection = DebugSectionTools
 
   def toConstraints(v: Variable, i: Interval): Set[Expr] = {
     Set(
@@ -70,7 +71,6 @@ object SMTRange {
   // what happens if we have to reporter sticking around?
   // val context = Context(new DefaultReporter(Set()), Seq(), Seq())
   var reporter = new DefaultReporter(Set())
-  implicit val debugSection = DebugSectionSMTRange
 
   val checkTightness = false
 
@@ -85,7 +85,7 @@ object SMTRange {
     @param constrs constraints on t
    */
   def tightenBounds(i: Interval, t: Expr, precond: Expr, constrs: Set[Expr], precisionThreshold: Rational,
-    loopThreshold: Int): Interval = {
+    loopThreshold: Int, checkVars: Boolean = false): Interval = {
     //    reporter.warning(s"Tighten the bounds on $t")
     // TODO: massage arithmetic
 
@@ -199,7 +199,7 @@ object SMTRange {
 
 
 
-    if (lang.TreeOps.size(t) == 1) {
+    if (lang.TreeOps.size(t) == 1 && !checkVars) {
       //reporter.warning("Calling tightenRange on simple expression: " + t)
       // TODO what to do?
       i
@@ -272,16 +272,16 @@ case class SMTRange private(interval: Interval, tree: Expr, precond: Expr, const
     SMTRange(interval, tree, precond, constraints ++ e)
   }
 
-  def unary_-(): SMTRange = {
+  def unary_- = {
     // negation does not affect tightness
     SMTRange(-this.interval, UMinus(tree), this.precond, this.constraints)
   }
 
   // needed for RangeArithmetic trait. apparently the members with parameters are not recognized
-  def +(y: SMTRange): SMTRange = this + (y, lowPrecision, lowLoopThreshold)
-  def -(y: SMTRange): SMTRange = this - (y, lowPrecision, lowLoopThreshold)
-  def *(y: SMTRange): SMTRange = this * (y, lowPrecision, lowLoopThreshold)
-  def /(y: SMTRange): SMTRange = this / (y, lowPrecision, lowLoopThreshold)
+  def +(y: SMTRange): SMTRange = this.+(y, lowPrecision, lowLoopThreshold)
+  def -(y: SMTRange): SMTRange = this.-(y, lowPrecision, lowLoopThreshold)
+  def *(y: SMTRange): SMTRange = this.*(y, lowPrecision, lowLoopThreshold)
+  def /(y: SMTRange): SMTRange = this./(y, lowPrecision, lowLoopThreshold)
 //  def ^(n: SMTRange): SMTRange = this ^ (n, lowPrecision, lowLoopThreshold)
   def ^(n: Int): SMTRange = this ^ (n, lowPrecision, lowLoopThreshold)
   def squareRoot: SMTRange = this.squareRoot(lowPrecision, lowLoopThreshold)

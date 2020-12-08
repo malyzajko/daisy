@@ -225,10 +225,10 @@ trait CodeExtraction extends ASTExtractors {
 
       case TypeRef(_, sym, args) if sym.toString == "class Tuple2" =>
         TupleType(args map { x => extractType(x) })
-      
+
       case TypeRef(_, sym, args) if sym.toString == "class Tuple3" =>
         TupleType(args map { x => extractType(x) })
-      
+
       case _ =>
         if (tpt ne null) {
           outOfSubsetError(tpt.typeSymbol.pos, "Could not extract type as PureScala: " +
@@ -501,10 +501,10 @@ trait CodeExtraction extends ASTExtractors {
               LessEquals(a1, a2)
 
             case (IsTyped(a1, RealType), "!=", IsTyped(a2, RealType)) =>
-              LessEquals(a1, a2)
+              Not(Equals(a1, a2))
 
             case (IsTyped(a1, RealType), "==", IsTyped(a2, RealType)) =>
-              LessEquals(a1, a2)
+              Equals(a1, a2)
 
             // Boolean methods
             case (IsTyped(a1, BooleanType), "&&", IsTyped(a2, BooleanType)) =>
@@ -568,7 +568,7 @@ trait CodeExtraction extends ASTExtractors {
               r2.getType + " and " + r3.getType + ")")
           }
 
-        case ExTuple(args) => 
+        case ExTuple(args) =>
           Tuple(args map {x => extractTree(x)})
 
         // default behaviour is to complain :)

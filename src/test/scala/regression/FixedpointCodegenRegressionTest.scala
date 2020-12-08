@@ -2,12 +2,12 @@ package regression
 
 import daisy._
 import daisy.tools.FinitePrecision._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 /**
   Regression test for the fixed-point arithmetic code generation.
 */
-class FixedpointCodegenRegressionTest extends FunSuite {
+class FixedpointCodegenRegressionTest extends AnyFunSuite {
 
   val inputFile: String = "src/test/resources/RegressionFunctions.scala"
   val context : Context = Main.processOptions(List(inputFile)).get

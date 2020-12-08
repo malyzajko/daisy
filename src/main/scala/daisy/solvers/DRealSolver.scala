@@ -6,15 +6,17 @@ package solvers
 
 import scala.collection.immutable.Seq
 
-import _root_.smtlib.parser.Commands._
-import _root_.smtlib.parser.Terms.SExpr
-import _root_.smtlib.printer.{RecursivePrinter => SMTPrinter}
-import _root_.smtlib.parser.CommandsResponses.{Error => ErrorResponse}
+import smtlib.trees.Commands._
+import smtlib.trees.Terms.SExpr
+import smtlib.printer.{RecursivePrinter => SMTPrinter}
+import smtlib.trees.CommandsResponses.{Error => ErrorResponse}
 
 import lang.Trees._
 import lang.Identifiers._
 
 object DRealSolver {
+
+  implicit val debugSection = DebugSectionSolver
 
   def checkSat(query: Expr, ctx: Context): Option[Boolean] = {
     val solver = new DRealSolver(ctx)
@@ -42,7 +44,7 @@ class DRealSolver(ctx: Context) extends SMTLibSolver(ctx) {
 
   def writeLogic(): Unit = {
     // without this, dReal segfaults
-    emit(SetLogic(QF_NRA))
+    emit(SetLogic(QF_NRA()))
   }
 
   override protected def emit(cmd: SExpr, rawOut: Boolean = false): SExpr = {
@@ -71,7 +73,7 @@ class DRealSolver(ctx: Context) extends SMTLibSolver(ctx) {
   // model generation is not supported for dReal
   override protected def getModel(filter: Identifier => Boolean): Model = ???
 
-  def getNewInterpreter: DRealInterpreter = {
+  def getNewInterpreter(): DRealInterpreter = {
     val opts = interpreterOpts
     ctx.reporter.debug("Invoking solver " + targetName + " with " + opts.mkString(" "))
 

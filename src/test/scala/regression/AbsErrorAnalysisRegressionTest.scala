@@ -1,13 +1,13 @@
 package regression
 
 import daisy._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 
 /**
   Regression test for the basic absolute error and range computations.
 */
-class AbsErrorAnalysisRegressionTest extends FunSuite {
+class AbsErrorAnalysisRegressionTest extends AnyFunSuite {
   val fileName = "src/test/resources/RegressionFunctions.scala"
 
   val _ctx : Context = Main.processOptions(List(fileName, "--silent")).get
@@ -361,7 +361,7 @@ class AbsErrorAnalysisRegressionTest extends FunSuite {
     ("sphere", ("1.199040866595141e-14", "[-19.99999999999947, 19.99999999999947]"))
   ))
 
-run_crash_tests("--analysis=opt --rangeMethod=smt --solver=z3", "Float64", 
+run_crash_tests("--analysis=opt --rangeMethod=smt --solver=z3", "Float64",
   List("dopplerInlined", "bspline0", "bspline1", "bspline2", "bspline3", "rigidBody1", "rigidBody2", "turbine1", "turbine2", "turbine3", "kepler0",
     "kepler1", "kepler2", "himmilbeau", "invertedPendulum", "sine", "sineOrder3", "sqroot", "train4_out1", "train4_state1", "train4_state2", "train4_state3",
     "train4_state4", "train4_state5", "train4_state6", "train4_state7", "train4_state8", "train4_state9", "jetEngineInlined", "pendulum1", "pendulum2",

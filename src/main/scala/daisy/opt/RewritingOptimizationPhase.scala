@@ -21,7 +21,6 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
   opt.CostFunctions with RoundoffEvaluators with DynamicEvaluators {
 
   override val name = "Rewriting-Optimization"
-  override val shortName = "rewriting"
   override val description = "Optimization by rewriting"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     NumOption("rewrite-generations",      30,   "Number of generations to search for"),
@@ -31,8 +30,7 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
     StringChoiceOption("rewrite-fitness-fnc", Set("interval-affine", "affine-affine", "dynamic"),
       "interval-affine", "Fitness function to be used for rewriting")
   )
-
-  implicit val debugSection = DebugSectionOptimization
+  override implicit val debugSection = DebugSectionOptimization
 
   var reporter: Reporter = null
 
@@ -42,7 +40,7 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
   val activeRules = COMMUTATIVITY ++ ASSOCIATIVITY ++ DISTRIBUTIVITY ++ List(IDENTITIES) ++
     FRACTIONS_TRANSFORM ++ FRACTIONS_DISTRIBUTE
 
-  var initSeed: Long = 0l
+  var initSeed: Long = 0L
   var rand: Random = null
 
   var optimizeForAccuracy = true
@@ -91,7 +89,6 @@ object RewritingOptimizationPhase extends DaisyPhase with GeneticSearch[Expr] wi
 
       fnc.copy(body = Some(newBody))
     }
-
     (ctx.copy(seed = initSeed), Program(prg.id, newDefs))
   }
 

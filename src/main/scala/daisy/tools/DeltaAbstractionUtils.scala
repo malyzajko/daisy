@@ -22,7 +22,7 @@ trait DeltaAbstractionUtils {
    * @return map for variables
    */
   def removeDeltasFromMap(in: Map[Identifier, Interval]): Map[Identifier, Interval] ={
-    in.filterKeys(x => !x.isDeltaId && !x.isEpsilonId)
+    in.filterKeys(x => !x.isDeltaId && !x.isEpsilonId).toMap
   }
 
   // returns the delta-abstracted expression, as well as the list of deltas

@@ -9,7 +9,7 @@ import utils.UniqueCounter
 import Rational.{zero => rzero, _}
 
 private[tools] case class Deviation(mgnt: Rational, index: Int) {
-  def unary_-(): Deviation = Deviation(-mgnt, index)
+  def unary_- = Deviation(-mgnt, index)
   def +(y: Deviation): Deviation = {
     assert(this.index == y.index)
     Deviation(this.mgnt + y.mgnt, index)
@@ -78,7 +78,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
 
   def addConstraint(e: Set[lang.Trees.Expr]): AffineForm = this
 
-  def unary_-(): AffineForm = AffineForm(-x0, noise.map(-_))
+  def unary_- = AffineForm(-x0, noise.map(-_))
 
   def +(y: AffineForm): AffineForm =
     AffineForm(this.x0 + y.x0, addQueues(this.noise, y.noise))
@@ -263,7 +263,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
 
   def arcsine: AffineForm = {
     val (a, b) = (toInterval.xlo, toInterval.xhi)
-    
+
     if (a < -one || b > one) {
       throw new ArcOutOfBoundsException("Trying to compute arcsine of: " + this)
     }
@@ -284,7 +284,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
 
   def arccosine: AffineForm = {
     val (a, b) = (toInterval.xlo, toInterval.xhi)
-    
+
     if (a < -one || b > one) {
       throw new ArcOutOfBoundsException("Trying to compute arccosine of: " + this)
     }
@@ -305,7 +305,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
 
   def arctangent: AffineForm = {
     val (a, b) = (toInterval.xlo, toInterval.xhi)
-    
+
     // compute the max slope (derivative), will be one of the end points
     // instead of trying to figure out which one, compute both
     val slopeLo = abs(1 / (1 + a * a))
@@ -378,7 +378,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     var sum = rzero
     val iter = queue.iterator
     while(iter.hasNext) {
-      sum += Rational.abs(iter.next.mgnt)
+      sum += Rational.abs(iter.next().mgnt)
     }
     sum
   }
@@ -529,7 +529,7 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
     var deviation = Seq[Deviation]()
     val iter = queue.iterator
     while(iter.hasNext) {
-      val xi = iter.next
+      val xi = iter.next()
       val zi = xi * factor
       if (!zi.isZero) deviation :+= zi
     }
@@ -554,24 +554,24 @@ object DoubleQueueIterator {
   def iterate(iterX: Iterator[Deviation], iterY: Iterator[Deviation],
     dummy: Deviation, fx: (Deviation) => Unit, fy: (Deviation) => Unit,
     fCouple: (Deviation, Deviation) => Unit): Unit = {
-    var xi: Deviation = if (iterX.hasNext) iterX.next else dummy
-    var yi: Deviation = if (iterY.hasNext) iterY.next else dummy
+    var xi: Deviation = if (iterX.hasNext) iterX.next() else dummy
+    var yi: Deviation = if (iterY.hasNext) iterY.next() else dummy
 
     var i = 0
     while ((iterX.hasNext || iterY.hasNext)) {
       i = i + 1
       if(xi.index < yi.index) {
         fx(xi)
-        xi = if (iterX.hasNext) iterX.next else dummy
+        xi = if (iterX.hasNext) iterX.next() else dummy
       }
       else if (yi.index < xi.index) {
         fy(yi)
-        yi = if (iterY.hasNext) iterY.next else dummy
+        yi = if (iterY.hasNext) iterY.next() else dummy
       }
       else {
         fCouple(xi, yi)
-        xi = if (iterX.hasNext) iterX.next else dummy
-        yi = if (iterY.hasNext) iterY.next else dummy
+        xi = if (iterX.hasNext) iterX.next() else dummy
+        yi = if (iterY.hasNext) iterY.next() else dummy
       }
     }
     if (xi.index == yi.index) {

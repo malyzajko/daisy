@@ -5,14 +5,14 @@ package daisy
 package frontend
 
 import scala.tools.nsc.Settings
-import scala.tools.nsc.reporters.AbstractReporter
+import scala.tools.nsc.reporters.Reporter
 
 import scala.reflect.internal.util.{Position, NoPosition, FakePos}
 import utils.{Position => DaisyPosition, NoPosition => DaisyNoPosition, OffsetPosition => DaisyOffsetPosition}
 
 /** This implements a reporter that calls the callback with every line that a
 regular ConsoleReporter would display. */
-class SimpleReporter(val settings: Settings, reporter: daisy.Reporter) extends AbstractReporter {
+class SimpleReporter(val settings: Settings, reporter: daisy.Reporter) extends Reporter {
   final val errorLimit = 5
 
   private def label(severity: Severity): String = severity match {
@@ -63,11 +63,13 @@ class SimpleReporter(val settings: Settings, reporter: daisy.Reporter) extends A
   }
 
   def display(pos: Position, msg: String, severity: Severity): Unit = {
-    severity.count += 1
-    if (severity != ERROR || severity.count <= errorLimit) {
+    //errorCount += 1 // FIXME
+    if (severity != ERROR || errorCount <= errorLimit) {
       print(pos, msg, severity)
     }
   }
 
   def displayPrompt(): Unit = {}
+
+  def info0(pos: scala.reflect.internal.util.Position, msg: String, severity: SimpleReporter.this.Severity, force: Boolean): Unit = {}// inherited from class Reporter
 }

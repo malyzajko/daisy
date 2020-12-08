@@ -13,6 +13,7 @@ import tools.Interval._
 import scala.util.control.Breaks._
 
 import scala.collection.immutable.Map
+import scala.collection.parallel.CollectionConverters._
 
 /**
  * Trait with collections of methods to perform Taylor simplifications
@@ -20,8 +21,6 @@ import scala.collection.immutable.Map
 trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
 
   var listFailed: List[Map[Identifier, Interval]] = List.empty
-
-  implicit val debugSection: DebugSection // = DebugSectionAnalysis
 
   // TODO: this can be replaced by reduceOption(Rational.max)
   implicit val optionAbsOrdering = new Ordering[Option[Rational]]{
@@ -103,7 +102,7 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
             // remove the element from denominator
             newDenomList = newDenomList.diff(List(d))
             newNomList = newNomList.diff(List(n))
-            break } }
+            break() } }
       }
     }
 
@@ -177,7 +176,7 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
 
       case x @ RealLiteral(r) =>
         if (r.<(Rational.zero)) {
-          UMinus(RealLiteral(r.unary_-()))
+          UMinus(RealLiteral(-r))
         } else {
           x
         }
@@ -913,5 +912,3 @@ trait Taylor extends DeltaAbstractionUtils with RangeEvaluators {
     }
   }
 }
-
-

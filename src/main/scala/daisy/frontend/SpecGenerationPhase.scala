@@ -20,9 +20,9 @@ import lang.Identifiers._
     -
  */
 object SpecGenerationPhase extends DaisyPhase {
-  override val name = "spec gen"
-  override val shortName = "specGen"
+  override val name = "Spec generation"
   override val description = "generates specs"
+  override implicit val debugSection = DebugSectionFrontend
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     for (fnc <- functionsToConsider(ctx, prg)) {
@@ -94,7 +94,6 @@ object SpecGenerationPhase extends DaisyPhase {
       } */
 
     }
-
     (ctx, prg)
   }
 

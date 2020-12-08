@@ -1,14 +1,14 @@
 package regression
 
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import daisy._
 
 /**
   Regression test for the basic absolute error and range computations.
 */
-class MixedTuningRegressionTest extends FunSuite {
+class MixedTuningRegressionTest extends AnyFunSuite {
 
   val fileName = "src/test/resources/MixedTuningRegressionFunctions.scala"
 
@@ -61,10 +61,10 @@ class MixedTuningRegressionTest extends FunSuite {
     ("doppler_float32_05", ("8.388367288853761e-05", "")),
     ("sine_float32_05", ("1.807112941741575e-07", "")),
     ("sqroot_float32_05", ("8.77380432557919e-05", "")),
-    ("bspline0_float32_05", ("2.980232427044857e-08", "")),
+    ("bspline0_float32_05", ("1.6190752442450204e-16", "")),
     ("bspline1_float32_05", ("1.688798359304282e-07", "")),
     ("bspline2_float32_05", ("1.3907751265455448e-07", "")),
-    ("rigidBody1_float32_05", ("6.58035291678516e-05", "")),
+    ("rigidBody1_float32_05", ("3.2152058793144533e-13", "")),
     ("rigidBody2_float32_05", ("0.00788450276878195", "")),
     ("turbine1_float32_05", ("1.8521599395563295e-05", "")),
     ("turbine2_float32_05", ("3.0484246406228637e-05", "")),

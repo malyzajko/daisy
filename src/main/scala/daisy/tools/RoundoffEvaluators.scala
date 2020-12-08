@@ -9,7 +9,6 @@ import lang.Identifiers._
 import FinitePrecision._
 import Rational._
 import daisy.utils.CachingMap
-import scala.collection.immutable.Seq
 
 trait RoundoffEvaluators extends RangeEvaluators {
 
@@ -36,7 +35,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
 
     val (resRoundoff, _) = evalRoundoff[AffineForm](expr, intermediateRanges,
       Map.empty.withDefaultValue(uniformPrecision),
-      inputErrorMap.mapValues(AffineForm.+/-),
+      inputErrorMap.mapValues(AffineForm.+/-).toMap,
       zeroError = AffineForm.zero,
       fromError = AffineForm.+/-,
       interval2T = AffineForm.apply,
@@ -65,12 +64,12 @@ trait RoundoffEvaluators extends RangeEvaluators {
     approxRoundoff: Boolean = false): (Rational, Interval) = {
 
     val (resRange, intermediateRanges) = evalRange[AffineForm](expr,
-      inputValMap.mapValues(AffineForm(_)), AffineForm.apply)
+      inputValMap.mapValues(AffineForm(_)).toMap, AffineForm.apply)
 
     val (resRoundoff, _) = evalRoundoff[AffineForm](expr,
-      intermediateRanges.mapValues(_.toInterval),
+      intermediateRanges.mapValues(_.toInterval).toMap,
       Map.empty.withDefaultValue(uniformPrecision),
-      inputErrorMap.mapValues(AffineForm.+/-),
+      inputErrorMap.mapValues(AffineForm.+/-).toMap,
       zeroError = AffineForm.zero,
       fromError = AffineForm.+/-,
       interval2T = AffineForm.apply,
@@ -104,9 +103,9 @@ trait RoundoffEvaluators extends RangeEvaluators {
       SMTRange.apply(_, precondition))
 
     val (resRoundoff, _) = evalRoundoff[AffineForm](expr,
-      intermediateRanges.mapValues(_.toInterval),
+      intermediateRanges.mapValues(_.toInterval).toMap,
       Map.empty.withDefaultValue(uniformPrecision),
-      inputErrorMap.mapValues(AffineForm.+/-),
+      inputErrorMap.mapValues(AffineForm.+/-).toMap,
       zeroError = AffineForm.zero,
       fromError = AffineForm.+/-,
       interval2T = AffineForm.apply,
@@ -391,10 +390,19 @@ trait RoundoffEvaluators extends RangeEvaluators {
         // TODO not supported for fixed-points
         val (errorT, prec) = eval(t, path)
 
-        // compute the max slope (derivative), will be one of the end points
-        // instead of trying to figure out which one, compute both
+        // compute the max slope (derivative)
         val Interval(a, b) = range(t, path)
-        val errorMultiplier = max(abs(1 / (1 + a * a)), abs(1 / (1 + b * b)))
+        val errorMultiplier = if (a >= Rational.zero) {
+          // The interval is fully above zero, so the maximum derivative is at 1 / (a**2 + 1)
+          1 / (a * a + Rational.one)
+        } else if (b <= Rational.zero) {
+          // The interval is fully below zero, so the maximum derivative is at 1 / (b**2 + 1), since b is the closest to
+          // zero.
+          1 / (b * b + Rational.one)
+        } else {
+          // The interval contains zero, so the maximum value is 1 / (0**2 + 1) = 1
+          Rational.one
+        }
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
@@ -464,13 +472,32 @@ trait RoundoffEvaluators extends RangeEvaluators {
           throw new Exception("Unknown variable: " + id)
 
       case x @ (IfExpr(cond, thenn, elze), path) =>
-        // TODO: do something with the condition
-        val (errorThen, precThen) = eval(thenn, path :+ cond)
-        val (errorElse, precElse) = eval(elze, path :+ lang.TreeOps.negate(cond))
 
-        val propagatedError = interval2T(errorThen.toInterval.union(errorElse.toInterval))// take max of the two errors
+        // a branch is feasible if the range for it exists
+        val thenRes: Option[(T, Precision)] = range.get((thenn, path :+ cond)) match {
+          case Some(_) => Some(eval(thenn, path :+ cond))
+          case _ => None
+        }
 
-        computeNewError(range(x), propagatedError, getUpperBound(precThen, precElse))
+        val elseRes: Option[(T, Precision)] = range.get((elze, path :+ lang.TreeOps.negate(cond))) match {
+          case Some(_) => Some(eval(elze, path :+ lang.TreeOps.negate(cond)))
+          case _ => None
+        }
+
+        (thenRes, elseRes) match {
+          case (Some((errorThen, precThen)), Some((errorElse, precElse))) =>
+            val propagatedError = interval2T(errorThen.toInterval.union(errorElse.toInterval))// take max of the two errors
+            computeNewError(range(x), propagatedError, getUpperBound(precThen, precElse))
+
+          case (Some((errorThen, precThen)), None) =>
+            computeNewError(range(x), errorThen, precThen)
+
+          case (None, Some((errorElse, precElse))) =>
+            computeNewError(range(x), errorElse, precElse)
+
+          case (None, None) => // should not happen; should have already failed for ranges
+            throw new Exception("Not supported")
+        }
 
       case x @ (Cast(t, FinitePrecisionType(prec)), path) =>
         val (errorT, precT) = eval(t, path)

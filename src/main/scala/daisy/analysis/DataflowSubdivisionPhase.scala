@@ -5,6 +5,7 @@ package analysis
 
 import scala.collection.immutable.Map
 import scala.collection.parallel.{ParSeq}
+import scala.collection.parallel.CollectionConverters._
 
 import daisy.solvers.Solver
 import lang.Trees._
@@ -25,21 +26,20 @@ import tools.FinitePrecision._
  * - SpecsProcessingPhase
  */
 object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with RoundoffEvaluators {
-  override val name = "Forward Dataflow with Subdivision"
-  override val shortName = "subdiv"
+  override val name = "Dataflow subdivision"
   override val description = "Forward dataflow with subdivision"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     NumOption("divLimit", 3, "Max amount of interval divisions"),
     NumOption("totalOpt", 32, "Max total amount of analysis runs")
   )
 
-  implicit val debugSection = DebugSectionAnalysis
+  override implicit val debugSection = DebugSectionAnalysis
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
 
     val divLimit = ctx.option[Long]("divLimit").toInt
     val totalOpt = ctx.option[Long]("totalOpt").toInt
-    
+
     // for each function, returns (abs error, rel error, result interval)
     val res = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
@@ -168,11 +168,11 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
     }
 
     (ctx.copy(
-      resultAbsoluteErrors = res.mapValues(_._1),
-      resultRelativeErrors = res.mapValues(_._2),
-      resultRealRanges = res.mapValues(_._3),
-      intermediateRanges = res.mapValues(_._4),
-      intermediateAbsErrors = res.mapValues(_._5)),
+      resultAbsoluteErrors = res.mapValues(_._1).toMap,
+      resultRelativeErrors = res.mapValues(_._2).toMap,
+      resultRealRanges = res.mapValues(_._3).toMap,
+      intermediateRanges = res.mapValues(_._4).toMap,
+      intermediateAbsErrors = res.mapValues(_._5).toMap),
     prg)
   }
 
@@ -204,4 +204,3 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
   }
 
 }
-

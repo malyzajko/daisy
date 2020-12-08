@@ -1,13 +1,13 @@
 package regression
 
 import daisy._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 
 /**
   Regression test for the basic absolute error and range computations.
 */
-class RelErrorRegressionTest extends FunSuite {
+class RelErrorRegressionTest extends AnyFunSuite {
   val fileName = "src/test/resources/RelErrorRegressionFunctions.scala"
 
   val _ctx : Context = Main.processOptions(List(fileName, "--silent")).get

@@ -33,10 +33,8 @@ import lang.Trees.Program
  */
 object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
   override val name = "Specs processing"
-  override val shortName = "specs"
   override val description = "Processes the specifications for later phases."
-
-  implicit val debugSection = DebugSectionAnalysis
+  override implicit val debugSection = DebugSectionAnalysis
 
   var reporter: Reporter = null
 
@@ -207,9 +205,6 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
         case _ => fnc
       }
     }
-
-    ctx.reporter.debug("range bounds: " + resRanges.mkString("\n"))
-    ctx.reporter.debug("error bounds: " + resErrors.mkString("\n"))
 
     (ctx.copy(
       specInputRanges = allRanges,

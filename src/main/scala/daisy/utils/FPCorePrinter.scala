@@ -38,7 +38,7 @@ class FPCorePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
     sb.append(")")
   }
 
-  def ppMathFun(exprs: Seq[Tree], fun: String)(implicit parent:Option[Tree], lvl: Int): Unit = {
+  override def ppMathFun(exprs: Seq[Tree], fun: String)(implicit parent:Option[Tree], lvl: Int): Unit = {
     ppNary(exprs, fun)
   }
 
@@ -66,9 +66,11 @@ class FPCorePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
         pp(e, p)(lvl + 1)
         sb.append(")")
 
+      case AbsError(_, err) => sb.append(f"${err}\n")
+
       case And(exprs) => ppNary(exprs, "and")            // \land
       case Or(exprs) => ppNary(exprs,"or")             // \lor
-      case Not(Equals(l, r)) => ppBinary(l, r, " <> ")    // \neq
+      case Not(Equals(l, r)) => ppBinary(l, r, " != ")    // \neq
       case Not(expr) => ppUnary(expr, "!", "")               // \neg
       case Implies(l,r) => ppBinary(l, r, " ==> ")
       case UMinus(expr) => ppUnary(expr, "-", "")
@@ -76,6 +78,9 @@ class FPCorePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
       case Sin(expr) => ppMathFun(Seq(expr), "sin")
       case Cos(expr) => ppMathFun(Seq(expr), "cos")
       case Tan(expr) => ppMathFun(Seq(expr), "tan")
+      case Asin(expr) => ppMathFun(Seq(expr), "asin")
+      case Acos(expr) => ppMathFun(Seq(expr), "acos")
+      case Atan(expr) => ppMathFun(Seq(expr), "atan")
       case Exp(expr) => ppMathFun(Seq(expr), "exp")
       case Log(expr) => ppMathFun(Seq(expr), "log")
       case Equals(l,r) => ppBinary(l, r, " == ")
@@ -98,7 +103,7 @@ class FPCorePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
       case LessThan(l,r) => ppBinary(l, r, " < ")
       case GreaterThan(l,r) => ppBinary(l, r, " > ")
       case LessEquals(l,r) => ppBinary(l, r, " <= ")      // \leq
-      case GreaterEquals(l,r) => ppBinary(l, r, " <= ")   // \geq
+      case GreaterEquals(l,r) => ppBinary(l, r, " >= ")   // \geq
 
       case IfExpr(c, t, e) =>
         sb.append("( if (")
@@ -138,8 +143,12 @@ class FPCorePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
 
         fd.postcondition.foreach{ post => {
           ind
-          sb.append(":ensuring ")
-          pp(post, p)(lvl)
+          post match {
+            case Lambda(_, body) =>
+              sb.append(":rosa-ensuring ")
+              pp(body, p)(lvl)
+            case _ => ctx.reporter.warning(s"[${fd.id.name}] Unexpected expression in postcondition. Ignoring it.")
+          }
           sb.append("\n")
         }}
 

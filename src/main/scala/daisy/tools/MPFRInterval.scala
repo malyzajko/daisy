@@ -19,7 +19,15 @@ object MPFRInterval {
 
   def apply(i: MPFRInterval): MPFRInterval = i
 
+  def apply(i: Interval): MPFRInterval = {
+    val lo = i.xlo.toMPFRInterval.xlo
+    val hi = i.xhi.toMPFRInterval.xhi
+    MPFRInterval(lo, hi)
+  }
+
   def +/-(r: MPFRFloat) = MPFRInterval(-r,r)
+
+  def +/-(r: Rational) = MPFRInterval(Interval(-r,r))
 
   val zero: MPFRInterval = MPFRInterval(fzero)
 
@@ -58,7 +66,7 @@ case class MPFRInterval(xlo: MPFRFloat, xhi: MPFRFloat) extends RangeArithmetic[
 
   def addConstraint(e: Set[lang.Trees.Expr]): MPFRInterval = this
 
-  def unary_-(): MPFRInterval = MPFRInterval(-xhi, -xlo)
+  def unary_- = MPFRInterval(-xhi, -xlo)
 
   def +(other: MPFRInterval): MPFRInterval = {
     MPFRInterval(xlo down_+ other.xlo, xhi up_+ other.xhi)

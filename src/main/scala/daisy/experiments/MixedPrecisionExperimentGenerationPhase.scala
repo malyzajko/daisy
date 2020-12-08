@@ -25,16 +25,12 @@ import lang.Types.RealType
  */
 object MixedPrecisionExperimentGenerationPhase extends DaisyPhase with tools.RoundoffEvaluators {
 
-  override val name = "mixed-precision experiment gen"
-  override val shortName = "mixed-exp-gen"
+  override val name = "Mixed-precision experiment gen"
   override val description = "Generates mixed-precision versions of a given benchmark " +
     "as well as a performance measurement harness"
-  override val definedOptions: Set[CmdLineOption[Any]] = Set(
-    StringChoiceOption("mixed-exp-gen-high-precision", Set("Float64", "DoubleDouble"), "Float64",
-      "Which precision to use as the highest precision")
-  )
+  override val definedOptions: Set[CmdLineOption[Any]] = Set()
 
-  implicit val debugSection = DebugSectionExperiment
+  override implicit val debugSection = DebugSectionExperiment
 
   var reporter: Reporter = null
 
@@ -140,7 +136,6 @@ object MixedPrecisionExperimentGenerationPhase extends DaisyPhase with tools.Rou
     MixedPrecisionExperimentGenerationPhase.generateScalabenchCode(
       newProgram, s"MultPost$highPrecision", ctx.specInputRanges(fnc.id), "daisy.bench")
       //newProgram, s"MixedBench", ctx.inputRanges(fnc.id), "daisy.bench.mixed")
-
     (ctx, newProgram)
   }
 

@@ -486,9 +486,11 @@ class Rational private(val n: BigInt, val d: BigInt) extends ScalaNumber with Sc
   with Ordered[Rational] {
 
   assert(d > 0, "Rational denominator negative! " + d)  // number can be negative only through nominator
-  assert(math.abs(gcd(n, d).toLong) == 1, "Rational not reduced %d / %d!".format(n, d))  // fraction is reduced
+  // The below assert can take a lot of time. Since the new Rationals are created very frequently,
+  // we have measured up to 1.8x performance increases by commenting the assert.
+  // assert(math.abs(gcd(n, d).toLong) == 1, "Rational not reduced %d / %d!".format(n, d))  // fraction is reduced
 
-  def unary_-(): Rational = Rational(-n, d)
+  def unary_- = Rational(-n, d)
   def +(other: Rational): Rational = {
     // This improves running time on really big testcases.  This new
     // implementation automatically computes + and - using the
