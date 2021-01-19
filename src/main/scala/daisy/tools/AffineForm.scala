@@ -306,11 +306,16 @@ case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmet
   def arctangent: AffineForm = {
     val (a, b) = (toInterval.xlo, toInterval.xhi)
 
-    // compute the max slope (derivative), will be one of the end points
-    // instead of trying to figure out which one, compute both
-    val slopeLo = abs(1 / (1 + a * a))
-    val slopeHi = abs(1 / (1 + b * b))
-    val alpha = max(slopeLo, slopeHi)
+    val alpha = if (a <= rzero && b >= rzero) {
+      // the largest slope is at zero and it is equal to 1
+      one
+    } else {
+      // compute the max slope (derivative), will be one of the end points
+      // instead of trying to figure out which one, compute both
+      val slopeLo = abs(1 / (1 + a * a))
+      val slopeHi = abs(1 / (1 + b * b))
+      max(slopeLo, slopeHi)
+    }
 
     val dmin = arctanDown(a) - (alpha * a)
     val dmax = arctanUp(b) - (alpha * b)

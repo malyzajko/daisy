@@ -106,7 +106,8 @@ object DecompositionPhase extends DaisyPhase {
   // TODO: duplicate functions from MetalibmPhase, cleanup
   def containsElemFnc(e: Expr): Boolean = {
     lang.TreeOps.exists {
-      case Sin(_) | Cos(_) | Tan(_) | Exp(_) | Log(_) | Sqrt(_) => true
+      case Sin(_) | Cos(_) | Tan(_) | Exp(_) | Log(_) | Sqrt(_) |
+        Atan(_) | Asin(_) | Acos(_) => true
     }(e)
   }
 

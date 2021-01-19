@@ -3,6 +3,9 @@
 package daisy
 package backend
 
+import java.io.FileWriter
+import java.io.BufferedWriter
+
 import scala.collection.immutable.Seq
 import utils.CodePrinter
 import lang.Trees._
@@ -157,7 +160,27 @@ object CodeGenerationPhase extends DaisyPhase {
     val lang = if ((mixedTuning && fixedPrecision) || ctx.hasFlag("apfixed")) "apfixed"
       else ctx.option[String]("lang")
 
-    writeFile(newProgram, lang, ctx)
+
+    // write the program to file
+    val filename = lang match {
+      case "apfixed" => System.getProperty("user.dir")+"/output/" + newProgram.id + ".cpp"
+      case _ =>
+      System.getProperty("user.dir")+"/output/" + newProgram.id + CodePrinter.suffix(lang)
+    }
+    ctx.codegenOutput.append(newProgram.id)
+    val fstream = new FileWriter(filename)
+    val out = new BufferedWriter(fstream)
+    CodePrinter(newProgram, ctx, lang, out)
+
+    // for metalibm generated code, we need to inline the generated functions
+    if (ctx.hasFlag("metalibm")) {
+      out.append("\n// ----- metalibm generated code -----\n")
+      for (file <- ctx.metalibmGeneratedFiles) {
+        val lines = scala.io.Source.fromFile(file).mkString.replace("void", "static inline void")
+        out.append(lines + "\n")
+      }
+    }
+    out.close()
     (ctx, newProgram)
   }
 
@@ -180,21 +203,6 @@ object CodeGenerationPhase extends DaisyPhase {
 
     case Let(_, Variable(id), body) =>
       reconstructTuple(body) :+ Variable(id)
-  }
-
-  private def writeFile(prg: Program, lang: String, ctx: Context): Unit = {
-    import java.io.FileWriter
-    import java.io.BufferedWriter
-
-    val filename = lang match {
-      case "apfixed" => System.getProperty("user.dir")+"/output/" + prg.id + ".cpp"
-      case _ =>
-      System.getProperty("user.dir")+"/output/" + prg.id + CodePrinter.suffix(lang)
-    }
-    ctx.codegenOutput.append(prg.id)
-    val fstream = new FileWriter(filename)
-    val out = new BufferedWriter(fstream)
-    CodePrinter(prg, ctx, lang, out)
   }
 
   private def assignFloatType(e: Expr, tpeMap: Map[Identifier, Precision],

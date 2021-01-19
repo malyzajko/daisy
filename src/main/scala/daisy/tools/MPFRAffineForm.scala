@@ -5,7 +5,7 @@ package tools
 
 import scala.collection.immutable.Seq
 import utils.UniqueCounter
-import MPFRFloat.{zero => fzero,_}
+import MPFRFloat.{zero => fzero, _}
 import MPFRInterval.{zero => izero, _}
 
 private[tools] case class MPFRDeviation(mgnt: MPFRInterval, index: Int) {
@@ -316,9 +316,69 @@ case class MPFRAffineForm(x0: MPFRInterval, noise: Seq[MPFRDeviation]) extends R
     this.sine / this.cosine
   }
 
-  def arccosine: daisy.tools.MPFRAffineForm = ???
-  def arcsine: daisy.tools.MPFRAffineForm = ???
-  def arctangent: daisy.tools.MPFRAffineForm = ???
+  def arcsine: daisy.tools.MPFRAffineForm = {
+    val (a, b) = (toMPFRInterval.xlo, toMPFRInterval.xhi)
+
+    if (a < -one || b > one) {
+      throw new ArcOutOfBoundsException("Trying to compute arcsine of: " + this)
+    }
+
+    // compute the max slope (derivative), will be one of the end points
+    // instead of trying to figure out which one, compute both
+    val slopeLo = abs(one / sqrtDown(one - a * a))
+    val slopeHi = abs(one / sqrtDown(one - b * b))
+    val alpha = max(slopeLo, slopeHi)
+
+    val dmin = MPFRInterval(asinDown(a) - (alpha * a))
+    val dmax = MPFRInterval(asinUp(b) - (alpha * b))
+
+    val zeta = computeZeta(dmin, dmax)
+    val delta = computeDelta(zeta, dmin, dmax)
+    unaryOp(this.x0, this.noise, MPFRInterval(alpha), zeta, delta)
+  }
+
+  def arccosine: daisy.tools.MPFRAffineForm = {
+    val (a, b) = (toMPFRInterval.xlo, toMPFRInterval.xhi)
+
+    if (a < -one || b > one) {
+      throw new ArcOutOfBoundsException("Trying to compute arccosine of: " + this)
+    }
+
+    // compute the max slope (derivative), will be one of the end points
+    // instead of trying to figure out which one, compute both
+    val slopeLo = abs(-one / sqrtDown(one - a * a))
+    val slopeHi = abs(-one / sqrtDown(one - b * b))
+    val alpha = max(slopeLo, slopeHi)
+
+    val dmin = MPFRInterval(acosDown(a) - (alpha * a))
+    val dmax = MPFRInterval(acosUp(b) - (alpha * b))
+
+    val zeta = computeZeta(dmin, dmax)
+    val delta = computeDelta(zeta, dmin, dmax)
+    unaryOp(this.x0, this.noise, MPFRInterval(alpha), zeta, delta)
+  }
+
+  def arctangent: daisy.tools.MPFRAffineForm = {
+    val (a, b) = (toMPFRInterval.xlo, toMPFRInterval.xhi)
+
+    val alpha = if (a <= fzero && b >= fzero) {
+      // the largest slope is at zero and it is equal to 1
+      one
+    } else {
+      // compute the max slope (derivative), will be one of the end points
+      // instead of trying to figure out which one, compute both
+      val slopeLo = abs(one / (one + a * a))
+      val slopeHi = abs(one / (one + b * b))
+      max(slopeLo, slopeHi)
+    }
+
+    val dmin = MPFRInterval(atanDown(a) - (alpha * a))
+    val dmax = MPFRInterval(atanUp(b) - (alpha * b))
+
+    val zeta = computeZeta(dmin, dmax)
+    val delta = computeDelta(zeta, dmin, dmax)
+    unaryOp(this.x0, this.noise, MPFRInterval(alpha), zeta, delta)
+  }
 
   /** Min-range based linear approximation of the exp() function
    */

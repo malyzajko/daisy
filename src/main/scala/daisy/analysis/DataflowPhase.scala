@@ -23,7 +23,7 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
     StringChoiceOption(
       "errorMethod",
       Set("affine", "interval", "intervalMPFR", "affineMPFR"),
-      "affine",
+      "affineMPFR",
       "Method for error analysis"),
     StringChoiceOption(
       "choosePrecision",

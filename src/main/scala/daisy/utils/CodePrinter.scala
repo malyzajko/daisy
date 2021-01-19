@@ -22,7 +22,6 @@ object CodePrinter {
       case "FPCore" => new FPCorePrinter(out, ctx)
     }
     printer.pp(t, None)(0)
-    out.close()
   }
 
 }

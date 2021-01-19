@@ -4,5 +4,5 @@
 name=$1
 
 cd output/
-g++ -Winline -finline-limit=1200 -O2 -fPIC -c ${name}.c ${name}_benchmark.c
+g++ -Winline -O2 -fPIC -c ${name}.c ${name}_benchmark.c
 g++ -o ${name}_exe ${name}.o ${name}_benchmark.o -lm

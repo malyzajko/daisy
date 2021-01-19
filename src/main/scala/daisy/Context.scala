@@ -58,11 +58,13 @@ case class Context(
   intermediateAbsErrors: Map[Identifier, Map[(Expr, Seq[Expr]), Rational]] = Map(),
   // real-valued ranges
   intermediateRanges: Map[Identifier, Map[(Expr, Seq[Expr]), Interval]] = Map(),
-  
+
   seed:  Long = -1,
   // wrapper functions needed to call Metalibm generated approximations
-  wrapperFunctions: Seq[String] = Seq(),
-  originalFunctions: Map[Identifier, lang.Trees.FunDef] = Map() 
+  metalibmWrapperFunctions: Seq[String] = Seq(),
+  metalibmGeneratedFiles: Seq[String] = Seq(),
+
+  originalFunctions: Map[Identifier, lang.Trees.FunDef] = Map()
 ) {
 
   val reporter = new DefaultReporter(

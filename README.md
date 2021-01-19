@@ -5,7 +5,7 @@
 ## News
 
   * Updated to Scala 2.13!
-  
+
   * Roundoff error evaluation now available using interval and affine arithmetic with MPFR bounds with `--errorMethod=intervalMPFR` or `--errorMethod=affineMPFR`! The error bounds are sound (and slightly less tight), but the computation is faster for longer benchmarks.
 
   * Daisy now has [documentation](doc/documentation.md)!
@@ -14,14 +14,14 @@
 
   * Polynomial approximation of floating-point elementary functions is available through the `--metalibm --codegen --lang=C` flags!
 
-  * Daisy now also has an online interface: http://daisy.mpi-sws.org/! 
+  * Daisy now also has an online interface: http://daisy.mpi-sws.org/!
 
 ## First steps
 
-Note you need to have ***at most*** Java 8 and SBT version 0.13.
+Note you need to have ***at most*** Java 8.
 
 Daisy is set up to work with the [simple build tool (sbt)](http://www.scala-sbt.org/).
-Once you have sbt (version 0.13*!), type in daisy's home directory:
+Once you have sbt, type in daisy's home directory:
 ```
 $ sbt
 ```
@@ -65,13 +65,16 @@ To see all command-line options:
 > run --help
 ```
 
+The `/scripts` folder contains a number of example scripts and command-line flag combinations.
+
+
 If you don't want to run in interactive mode, you can also call all of the above
 commands simply with 'sbt' prefixed, e.g.
 ```
 $ sbt compile
 ```
 
-You can also run Daisy outside of sbt. For this use 
+You can also run Daisy outside of sbt. For this use
 ```
 $ sbt script
 ```
@@ -86,53 +89,61 @@ $ ./daisy testcases/rosa/Doppler.scala
 Some features of Daisy require additional software to be installed.
 Currently, this is
 
-* An SMT solver which can be used to improve ranges: [Z3](https://github.com/Z3Prover/z3) \[[Linux](https://github.com/Z3Prover/z3/releases)\] \[[Mac](https://github.com/Z3Prover/z3/releases)\] and/or [dReal](https://github.com/dreal/dreal3) \[[Linux](https://github.com/dreal/dreal3/releases)\]
+* An SMT solver which can be used to improve ranges: [Z3](https://github.com/Z3Prover/z3) and/or [dReal](https://github.com/dreal/dreal3)
 
-* [MPFR](http://www.mpfr.org/) for error under-approximation and transcendental calculations: \[`apt-get install libmpfr4`\]  \[`brew install mpfr`\]. 
+* [MPFR](http://www.mpfr.org/) for error under-approximation and transcendental calculations: \[`apt-get install libmpfr4`\]  \[`brew install mpfr`\].
     (On macOS, if the library installed is not libmpfr.4.dylib, you may have to recompile the [Java bindings](https://github.com/kframework/mpfr-java) and place them in lib/.)
 
 * Metalibm and all additional dependencies:
 
-  1. Install/update dependencies (all but fplll on Mac worked with Homebrew): 
-    mpfr, mpfi, fplll (https://github.com/fplll/fplll.git, you may have to add the installation path to LD_LIBRARY_PATH), automake, libtool, flex, bison, boost
+  1. Install/update dependencies (e.g. on Mac with Homebrew):
+    mpfr, mpfi, fplll, automake, libtool, flex, bison, boost
 
-  2. Install Sollya
-    - check out repository: git clone https://scm.gforge.inria.fr/anonscm/git/sollya/sollya.git 
-    - ./autogen.sh
-    - ./configure
-    - make
-    - make install
+  2. Install Sollya (outside of Daisy home directory)
+    ```
+    git clone https://gitlab.inria.fr/sollya/sollya.git
+    cd sollya
+    ./autogen.sh
+    ./configure
+    make
+    make install
+    ```
 
-  3. Install Gappa
-    - get code: http://gappa.gforge.inria.fr/
-    - ./configure
-    - ./remake
-    - ./remake install
+  3. Install Gappa (outside of Daisy home directory)
+    ```
+    git clone https://gitlab.inria.fr/gappa/gappa.git
+    cd gappa
+    ./autogen.sh
+    ./configure
+    ./remake
+    ./remake install
+    ```
 
-  4. Setup Metalibm 
+  4. add Sollya and Gappa to your PATH
+
+  5. Setup Metalibm
     - extract lib/metalibm.zip to metalibm/ (i.e. in the daisy home directory)
-    - add paths to Sollya and Gappa to your PATH
-    - make gcc and g++ and not clang your default GCC compiler
     - make  (in the metalibm/ directory)
 
-  5. Run Daisy+Metalibm on an example:
+  6. Run Daisy+Metalibm on an example:
     - sbt  (in the home directory)
     - run testcases/transcendentals/TransBenchsErrorBoundsLarge.scala --functions=sinxx10 --metalibm --codegen --lang=C
 
 ## Contributors
 
-In no particular order: Saksham Sharma, Einar Horn, Debasmita Lohar, Heiko Becker, Ezequiel Postan, 
-Fabian Ritter, Anastasiia Izycheva, Raphael Monat, Fariha Nasir, Robert Bastian, Anastasia Volkova.
+In no particular order: Saksham Sharma, Einar Horn, Debasmita Lohar, Heiko Becker, Ezequiel Postan,
+Fabian Ritter, Anastasiia Izycheva, Raphael Monat, Fariha Nasir, Robert Bastian, Anastasia Volkova,
+Ramya Bankanal, Robert Rabe, Joachim Bard, Arpit Gupta.
 
 ## Intellij Idea Setup
-To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins. 
-Choose Scala in the list and select "Install JetBrains Plugin ...". 
+To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins.
+Choose Scala in the list and select "Install JetBrains Plugin ...".
 Then let Idea know where is your Scala (or make sure Scala SDK is already there): Project Structure -> Global Libraries -> New Global Library -> Scala SDK -> select the source folder for the SDK on your machine.
 Also make sure the Java SDK is set up for Idea (Project Structure -> SDKs -> check that your JDK is here or add it here).
 
 Choose File -> New -> Project from Existing Source -> path-to-the-build.sbt-file
 or
-File -> New -> Project from Version Control -> Git -> and put git-rts@gitlab.mpi-sws.org:AVA/daisy.git into the URL field and 
+File -> New -> Project from Version Control -> Git -> and put git-rts@gitlab.mpi-sws.org:AVA/daisy.git into the URL field and
 select the destination folder for source files to be copied.
 
 After the setup run Daisy in the Terminal of Intellij Idea using sbt as described above.

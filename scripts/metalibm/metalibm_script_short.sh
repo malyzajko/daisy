@@ -59,6 +59,7 @@ do
   --lang=C --benchmarking --bound=10000000 --precision=$prec --comp-opts=[cse] \
   --results-csv=mathh_accuracy.csv
 
+  # compile
   ./output/compileScript.sh TranscendentalBenchmarks
   mv ./output/TranscendentalBenchmarks_exe ./output/${outputFolder}/exe_mathh_$fnc
 
@@ -78,9 +79,8 @@ do
   --timeout=300 --comp-opts=[cse] --errorDist=$errorDist --precision=$prec \
   --depth=$depth --tableIndexWidth=$tableWidth
 
-  # run benchmarking
-  chmod +x output/TranscendentalBenchmarks_compileScript.sh
-  ./output/TranscendentalBenchmarks_compileScript.sh    # generated file
+  # compile
+  ./output/compileScript.sh TranscendentalBenchmarks
   mv ./output/TranscendentalBenchmarks_exe ./output/${outputFolder}/exe_metalibm_$fnc
 
   # save generated C code

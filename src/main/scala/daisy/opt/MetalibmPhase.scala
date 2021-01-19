@@ -133,14 +133,9 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
       Program(prg.id, newDefs)
     }
 
-
-    /* When Benchmarking is used we have to link the objects for compilation */
-    if (ctx.hasFlag("benchmarking")) {
-      writeCompileScript(prg.id, approxs)
-    }
-
     val wrappers: Seq[String] = generateWrappers(approxs, precision)
-    (ctx.copy(wrapperFunctions=wrappers), newProgram)
+    (ctx.copy(metalibmWrapperFunctions=wrappers, metalibmGeneratedFiles=approxs.map(_._1)),
+      newProgram)
   }
 
   def getElementaryVariables(e: Expr): Seq[Identifier] = e match {
@@ -189,7 +184,10 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
           val inputRanges = lang.TreeOps.allVariablesOf(bodyForDeriv).map({
             id => (id -> intermRange(Variable(id), emptyPath))
           }).toMap
-          val bound = evalRange[Interval](deriv, inputRanges, Interval.apply)._1
+          //val bound = evalRange[Interval](deriv, inputRanges, Interval.apply)._1
+          val bound = evalRange[SMTRange](deriv,
+            inputRanges.map({ case (id, int) => (id -> SMTRange(Variable(id), int, BooleanLiteral(true))) }),
+            SMTRange.apply(_, BooleanLiteral(true)))._1.toInterval
           val maxDeriv = Interval.maxAbs(bound)
 
           val localError = totalError / maxDeriv
@@ -229,7 +227,8 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
 
   def containsElemFnc(e: Expr): Boolean = {
     lang.TreeOps.exists {
-      case Sin(_) | Cos(_) | Tan(_) | Exp(_) | Log(_) | Sqrt(_) => true
+      case Sin(_) | Cos(_) | Tan(_) | Exp(_) | Log(_) | Sqrt(_) |
+        Atan(_) | Asin(_) | Acos(_) => true
     }(e)
   }
 
@@ -414,35 +413,6 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
     prototypes
   }
 
-  // Generates script so that we can compile the approximations
-  def writeCompileScript(programId: Identifier, generatedFunctions: Seq[(String, String, String)]): Unit = {
-    val script = new PrintWriter(new File(s"output/${programId}_compileScript.sh"))
-
-    script.write("#!/bin/bash --posix\n\n\n")
-
-    script.write("cd ./output/\n")
-    script.write("echo \"#include \\\"expansion.h\\\"\" >> ")
-    script.write(s"${programId}.c \n")
-    script.write(s"echo ' ' >> ${programId}.c \n")
-
-    for ((fileName, fncName, signature) <- generatedFunctions) {
-      script.write(s"cat ${fileName}")
-      script.write("| sed -e 's/void/static inline void/g;' | sed -e \"s/static inline void ")
-      script.write(s"${fncName}(/void ${fncName}")
-      script.write("(/g;\" >> ")
-      script.write(s"${programId}.c \n")
-    }
-
-    if (System.getProperty("os.name") == "Mac OS X") {
-      script.write(s"g++-8 -Winline -finline-limit=1200 -O2 -fPIC -std=c++11 -c ${programId}.c ${programId}_benchmark.c\n")
-      script.write(s"g++-8 -o ${programId}_exe ${programId}.o ${programId}_benchmark.o -lm\n")
-    } else {
-      script.write(s"g++ -Winline -finline-limit=1200 -O2 -fPIC -std=c++11 -c ${programId}.c ${programId}_benchmark.c\n")
-      script.write(s"g++ -o ${programId}_exe ${programId}.o ${programId}_benchmark.o -lm\n")
-    }
-    script.close()
-  }
-
   /**
    * Computes partial derivative w.r.t. passed parameter
    * @param e expression for which derivative is computed
@@ -527,6 +497,17 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
       Division(getDerivative(x, wrt), x)
     case z @ Log(x) => zero
 
+    case z @ Atan(x) if containsVariables(x, wrt) =>
+      Division(getDerivative(x, wrt), Plus(one, Times(x, x)))
+    case z @ Atan(x) => zero
+
+    case z @ Asin(x) if containsVariables(x, wrt) =>
+      Division(getDerivative(x, wrt), Sqrt(Minus(one, Times(x, x))))
+    case z @ Asin(x) => zero
+
+    case z @ Acos(x) if containsVariables(x, wrt) =>
+      UMinus(Division(getDerivative(x, wrt), Sqrt(Minus(one, Times(x, x)))))
+    case z @ Acos(x) => zero
 
     case z @ Let(x, value, body) if containsVariables(body, wrt) =>
       getDerivative(body, wrt)
