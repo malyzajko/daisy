@@ -4,6 +4,8 @@
 
 ## News
 
+  * The 'approx' branch is merged into master! You can now approximate transcendental functions in fixed-point arithmetic code. Check out the script `scripts/optimization_approx_fixed.sh` for the correct command-line options.
+
   * Updated to Scala 2.13!
 
   * Roundoff error evaluation now available using interval and affine arithmetic with MPFR bounds with `--errorMethod=intervalMPFR` or `--errorMethod=affineMPFR`! The error bounds are sound (and slightly less tight), but the computation is faster for longer benchmarks.
@@ -12,7 +14,7 @@
 
   * Mixed-precision tuning is now available through the `--mixed-tuning` flag!
 
-  * Polynomial approximation of floating-point elementary functions is available through the `--metalibm --codegen --lang=C` flags!
+  * Polynomial approximation of floating-point elementary functions is available through the `--metalibm --codegen --lang=C` flags! Check out the script `scripts/optimization_metalibm.sh` for the correct command-line options.
 
   * Daisy now also has an online interface: http://daisy.mpi-sws.org/!
 
@@ -99,7 +101,7 @@ Currently, this is
   1. Install/update dependencies (e.g. on Mac with Homebrew):
     mpfr, mpfi, fplll, automake, libtool, flex, bison, boost
 
-  2. Install Sollya (outside of Daisy home directory)
+  2. Install Sollya (outside of Daisy home directory, known working commit ad49ac94b6d6632fd9076e7c618d830eeeca6d86)
     ```
     git clone https://gitlab.inria.fr/sollya/sollya.git
     cd sollya
@@ -109,7 +111,7 @@ Currently, this is
     make install
     ```
 
-  3. Install Gappa (outside of Daisy home directory)
+  3. Install Gappa (outside of Daisy home directory, known working commit b0d769e66dc907924c09f5b45970fd7059a1e03d)
     ```
     git clone https://gitlab.inria.fr/gappa/gappa.git
     cd gappa
@@ -121,13 +123,12 @@ Currently, this is
 
   4. add Sollya and Gappa to your PATH
 
-  5. Setup Metalibm
-    - extract lib/metalibm.zip to metalibm/ (i.e. in the daisy home directory)
-    - make  (in the metalibm/ directory)
-
-  6. Run Daisy+Metalibm on an example:
-    - sbt  (in the home directory)
-    - run testcases/transcendentals/TransBenchsErrorBoundsLarge.scala --functions=sinxx10 --metalibm --codegen --lang=C
+  5. Setup Metalibm (provided as a submodule)
+   ```
+   git submodule init
+   git submodule update
+   cd metalibm-for-daisy; make
+   ```
 
 ## Contributors
 
@@ -136,6 +137,7 @@ Fabian Ritter, Anastasiia Izycheva, Raphael Monat, Fariha Nasir, Robert Bastian,
 Ramya Bankanal, Robert Rabe, Joachim Bard, Arpit Gupta.
 
 ## Intellij Idea Setup
+
 To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins.
 Choose Scala in the list and select "Install JetBrains Plugin ...".
 Then let Idea know where is your Scala (or make sure Scala SDK is already there): Project Structure -> Global Libraries -> New Global Library -> Scala SDK -> select the source folder for the SDK on your machine.
@@ -148,8 +150,7 @@ select the destination folder for source files to be copied.
 
 After the setup run Daisy in the Terminal of Intellij Idea using sbt as described above.
 
-Acknowledgements
-----
+##Acknowledgements
 
 A big portion of the infrastructure has been inspired by and sometimes
 directly taken from the Leon project (see the LEON_LICENSE).

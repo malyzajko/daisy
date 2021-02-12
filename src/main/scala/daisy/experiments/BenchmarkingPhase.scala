@@ -130,7 +130,7 @@ object BenchmarkingPhase extends DaisyPhase {
     for (fnc <- functionsToConsider(ctx, prg)) {
       benchmark.write(
         s"""    {
-           |        std::ofstream output;
+           |        std::ofstream output(args[1]);
            |        uint64_t before, after, time;
            |""".stripMargin
       )//unsafe! need to check for the argc

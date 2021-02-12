@@ -134,6 +134,8 @@ object Extractors {
       /* Other operators */
       case fi@FunctionInvocation(fdId, params, args, retTpe) =>
         Some((args, FunctionInvocation(fdId, params, _, retTpe)))
+      case ApproxPoly(origin, arg, approxFnc, totalError) =>
+        Some((Seq(arg), (es: Seq[Expr]) => ApproxPoly(origin, es.head, approxFnc, totalError)))
 
       case And(args) => Some((args, and))
       case Or(args) => Some((args, or))
@@ -152,4 +154,19 @@ object Extractors {
     }
   }
 
+  object ElemFnc {
+
+    def unapply(expr: Expr): Option[(Expr, Expr => Expr)] = expr match {
+      case x @ Sqrt(t) => Some((t, (es: Expr) => Sqrt(es)))
+      case x @ Log(t) => Some((t, (es: Expr) => Log(es)))
+      case x @ Sin(t) => Some((t, (es: Expr) => Sin(es)))
+      case x @ Cos(t) => Some((t, (es: Expr) => Cos(es)))
+      case x @ Tan(t) => Some((t, (es: Expr) => Tan(es)))
+      case x @ Exp(t) => Some((t, (es: Expr) => Exp(es)))
+      case x @ Asin(t) => Some((t, (es: Expr) => Asin(es)))
+      case x @ Acos(t) => Some((t, (es: Expr) => Acos(es)))
+      case x @ Atan(t) => Some((t, (es: Expr) => Atan(es)))
+      case _ => None
+    }
+  }
 }

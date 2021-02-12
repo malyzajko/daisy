@@ -168,6 +168,9 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case Sin(expr) => ppMathFun(Seq(expr), "sin")
       case Cos(expr) => ppMathFun(Seq(expr), "cos")
       case Tan(expr) => ppMathFun(Seq(expr), "tan")
+      case Asin(expr) => ppMathFun(Seq(expr), "asin")
+      case Acos(expr) => ppMathFun(Seq(expr), "acos")
+      case Atan(expr) => ppMathFun(Seq(expr), "atan")
       case Exp(expr) => ppMathFun(Seq(expr), "exp")
       case Log(expr) => ppMathFun(Seq(expr), "log")
       case Atan(expr) => ppMathFun(Seq(expr), "atan")
@@ -193,6 +196,10 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
         pp(fdId, p)
 
         ppNary(args, "(", ", ", ")")
+      case ApproxPoly(_, arg, approxFncId, _) =>
+        pp(approxFncId, p)
+
+        ppUnary(arg, "(", ")")
 
       case Lambda(args, body) =>
         ppNary(args, "(", ", ", ")")

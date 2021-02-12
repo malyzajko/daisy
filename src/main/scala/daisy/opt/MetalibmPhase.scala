@@ -42,6 +42,8 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
   val quote = "\""   // there is a bug with Scala's string interpolation
   val dollar = "$"
 
+  val metalibmPath = "metalibm-for-daisy"
+
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     reporter = ctx.reporter
     timeOut      =  ctx.option[Long]("timeout").toInt
@@ -134,6 +136,7 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
     }
 
     val wrappers: Seq[String] = generateWrappers(approxs, precision)
+
     (ctx.copy(metalibmWrapperFunctions=wrappers, metalibmGeneratedFiles=approxs.map(_._1)),
       newProgram)
   }
@@ -331,7 +334,7 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
     /* Write the problem definition */
     val timestamp: Long = System.currentTimeMillis / 1000
     val problemDefName = s"problemdefForDaisy_$timestamp.sollya"
-    val problemdef = new PrintWriter(new File("metalibm/" + problemDefName))
+    val problemdef = new PrintWriter(new File(metalibmPath + "/" + problemDefName))
     problemdef.write(params.map({case (k, v) => s"$k = $v"}).mkString("", ";\n", ";"))
     problemdef.close()
 
@@ -340,7 +343,7 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
 
     val f: Future[Unit] = Future {
       val problemDefRes = Runtime.getRuntime().exec(s"./metalibm.sollya $problemDefName",
-        null, new File("metalibm/"))  //run in metalibm4daisy directory
+        null, new File(metalibmPath))  //run in metalibm4daisy directory
 
       /* Read the problemDefRes */
       val stdInput =  new BufferedReader(new InputStreamReader(problemDefRes.getInputStream))

@@ -4,18 +4,23 @@
 package daisy
 
 import scala.reflect.ClassTag
-
-import lang.Trees.Expr
+import lang.Trees.{Expr, Program, FunDef}
 import lang.Identifiers._
-import tools.{Interval, PartialInterval, Rational, FinitePrecision}
-import FinitePrecision.{Precision, FixedPrecision}
+import tools.{FinitePrecision, Interval, PartialInterval, Rational}
+import FinitePrecision.{FixedPrecision, Precision}
+import daisy.Main.ProgramLanguage
+import daisy.Main.ProgramLanguage._
+
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.immutable.Seq
 
 case class Context(
   file: String,
+  lang: ProgramLanguage.Value = ScalaProgram,
   options: Map[String, Any],
   initReport: ArrayBuffer[String] = new ArrayBuffer[String],
+  originalProgram: Program = null,
+  recomputeAbsErrors: Boolean = false,
 
   timers: TimerStorage = new TimerStorage,
 
@@ -43,6 +48,7 @@ case class Context(
 
   // if Daisy chooses uniform precision, which one it chose
   uniformPrecisions: Map[Identifier, Precision] = Map(),
+  assignedPrecisions: Map[Identifier, Map[Identifier, Precision]] = Map(),
   // the analysed/computed roundoff errors for each function
   resultAbsoluteErrors: Map[Identifier, Rational] = Map(),
   resultRealRanges: Map[Identifier, Interval] = Map(),
@@ -59,12 +65,16 @@ case class Context(
   // real-valued ranges
   intermediateRanges: Map[Identifier, Map[(Expr, Seq[Expr]), Interval]] = Map(),
 
+  // errors reported by Metalibm
+  approxReportedErrors: Map[Identifier, Map[Expr, Rational]] = Map(),
+
   seed:  Long = -1,
   // wrapper functions needed to call Metalibm generated approximations
   metalibmWrapperFunctions: Seq[String] = Seq(),
   metalibmGeneratedFiles: Seq[String] = Seq(),
 
-  originalFunctions: Map[Identifier, lang.Trees.FunDef] = Map()
+  originalFunctions: Map[Identifier, FunDef] = Map()
+
 ) {
 
   val reporter = new DefaultReporter(

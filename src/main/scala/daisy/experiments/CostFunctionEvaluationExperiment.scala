@@ -109,11 +109,8 @@ object CostFunctionEvaluationExperiment extends DaisyPhase with opt.CostFunction
         // assign types
         candidateTypeConfigs.toList.zipWithIndex.map({
           case (typeConfig, index) =>
-            // for info, also the absolute error of this
-            val (absError, returnType) = opt.MixedPrecisionOptimizationPhase.computeAbsError(
-              fnc.body.get, typeConfig, availablePrecisions.last, ctx.intermediateRanges(fnc.id))
-
-            val updatedBody = opt.MixedPrecisionOptimizationPhase.applyFinitePrecision(fnc.body.get, typeConfig)(returnType)
+            val (updatedBody, _) = opt.MixedPrecisionOptimizationPhase.applyFinitePrecision(fnc.body.get, typeConfig,
+              ctx.intermediateRanges(fnc.id))
 
             val updatedParams = fnc.params.map(valDef =>
               ValDef(valDef.id.changeType(FinitePrecisionType(typeConfig(valDef.id)))))
@@ -132,6 +129,13 @@ object CostFunctionEvaluationExperiment extends DaisyPhase with opt.CostFunction
             val opCount = countNumOps(fnc.body.get, typeConfig)
             val opCountString =  s"(${opCount(Float32)},${opCount(Float64)},${opCount(DoubleDouble)})"
 
+            // for info, also the absolute error of this
+            val absError = opt.MixedPrecisionOptimizationPhase.computeAbsError(
+              fnc.body.get, typeConfig, availablePrecisions.last, ctx.intermediateRanges(fnc.id), emptyPath)
+            val resPrecision = (updatedBody.getType: @unchecked) match {
+              case FinitePrecisionType(tpe) => tpe
+            }
+
             //val infoString = s"${fnc.id}_$index ${absError._1} $naiveCost $benchmarkedCost $maxDblVarsCost $maxDblOpsCost $maxDblOpsAndVarsCost"
             val infoString = s"${fnc.id}_$index ${absError} $naiveCost $benchmarkedCost $opCountString"
 
@@ -139,7 +143,7 @@ object CostFunctionEvaluationExperiment extends DaisyPhase with opt.CostFunction
             reporter.info(infoString)
 
             fnc.copy(id = newId,
-              returnType = FinitePrecisionType(returnType),
+              returnType = FinitePrecisionType(resPrecision),
               params = updatedParams,
               body = Some(updatedBody))
 

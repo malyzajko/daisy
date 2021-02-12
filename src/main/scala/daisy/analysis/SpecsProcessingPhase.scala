@@ -214,7 +214,8 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       specInputPrecisions = inputPrecision,
       specResultPrecisions = resultPrecisions,
       specAdditionalConstraints = additionalConst,
-      resultTupleIds = resIds),  
+      resultTupleIds = resIds,
+      originalProgram = Program(prg.id, newDefs)),
       Program(prg.id, newDefs))
   }
 

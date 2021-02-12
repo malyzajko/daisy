@@ -434,6 +434,12 @@ abstract class SMTLibSolver(val ctx: Context) {
           args.map(toSMT))
       }
 
+    case ApproxPoly(_, arg, fncId, _) =>
+      val fncInvoke = FunctionInvocation(fncId, Seq(), Seq(arg), fncId.getType)
+      FunctionApplication(
+        declareFunction(fncInvoke),
+        Seq(toSMT(arg)))
+
     case Sin(a) if (e.getType == RealType) =>
       FunctionApplication(makeFunctionId("sin"), Seq(toSMT(a)))
 

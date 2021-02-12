@@ -90,12 +90,12 @@ trait RangeEvaluators {
         if (path != emptyPath && pathVars.contains(id)) {
           // we can assume the path is feasible
           val xRange = initRange.toInterval
-        
+
           val varsRanges = pathVars.map(id =>
             (id -> intermediateRanges((Variable(id), emptyPath))))
           val varsConstrs = varsRanges.flatMap(x =>
             SMTRange.toConstraints(Variable(x._1), x._2.toInterval))
-          
+
           val newRange = normalizeCond(And.make(path)) match {
 
             case LessEquals(Variable(i), y: Terminal) if (i == id) =>
@@ -123,10 +123,10 @@ trait RangeEvaluators {
               }
 
             // complex condition, use an SMT solver to reduce
-            case _ => 
+            case _ =>
               // TODO: disregards precondition
-              val newInterval = SMTRange.tightenBounds(xRange, x, 
-                BooleanLiteral(true), path.toSet ++ varsConstrs, 
+              val newInterval = SMTRange.tightenBounds(xRange, x,
+                BooleanLiteral(true), path.toSet ++ varsConstrs,
                 SMTRange.lowPrecision, SMTRange.lowLoopThreshold, checkVars = true)
               rangeFromInterval(newInterval)
 
@@ -135,14 +135,14 @@ trait RangeEvaluators {
           // the path condition should be added regardless of how/whether we have reduced the range,
           // we may be able to use it later
           newRange.addConstraint(path.toSet ++ varsConstrs)
-          
+
         } else {
           // empty path
           initRange
         }
 
       case (IfExpr(cond, thenn, elze), path) =>
-      
+
         // check whether if branch is feasible
         val pathVars = lang.TreeOps.allVariablesOf(And.make(path :+ cond))
         // we need constraints on all the free variables in the path
@@ -151,16 +151,16 @@ trait RangeEvaluators {
         val varsConstrs = varsRanges.flatMap(x =>
           SMTRange.toConstraints(Variable(x._1), x._2.toInterval))
         val solverQuery = And((path :+ cond) ++ varsConstrs)
-        
+
         val tmpThen = Solver.checkSat(solverQuery) match {
           case Some(true) =>
             Some(eval(thenn, path :+ cond))
           case Some(false) =>
             _reporter.warning(s"if branch (${cond}) is infeasible")
             None
-          case _ => 
+          case _ =>
             _reporter.warning(s"cannot tell if if-branch (${cond}) is feasible, continuing anyway")
-            Some(eval(thenn, path :+ cond))  
+            Some(eval(thenn, path :+ cond))
         }
 
         val negCond = TreeOps.negate(cond)
@@ -171,25 +171,25 @@ trait RangeEvaluators {
           case Some(false) =>
             _reporter.warning(s"else branch (${cond}) is infeasible")
             None
-          case _ => 
+          case _ =>
             _reporter.warning(s"cannot tell if else-branch (${cond}) is feasible, continuing anyway")
-            Some(eval(elze, path :+ negCond))  
+            Some(eval(elze, path :+ negCond))
         }
 
         (tmpThen, tmpElse) match {
-          case (Some(thenRes), Some(elseRes)) => 
+          case (Some(thenRes), Some(elseRes)) =>
             // take a joint interval
             rangeFromInterval(
               Interval(Rational.min(thenRes.toInterval.xlo, elseRes.toInterval.xlo),
                 Rational.max(thenRes.toInterval.xhi, elseRes.toInterval.xhi)))
-          
+
           case (Some(thenRes), None) => thenRes
           case (None, Some(elseRes)) => elseRes
-          case (None, None) => 
+          case (None, None) =>
             _reporter.error("None of the paths is feasible. Aborting.")
             throw new Exception("Not supported")
         }
-        
+
       case _ =>
         throw new Exception("Not supported")
     })

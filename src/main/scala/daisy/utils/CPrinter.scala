@@ -141,14 +141,11 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
         }
 
       case Cast(expr, t) =>
-        // TODO: check this
-        if (!(ctx.hasFlag("mixed-tuning") && ctx.fixedPoint)) {
-          sb.append("(")
-          pp(t,p)
-          sb.append(") (")
-          pp(expr,p)
-          sb.append(")")
-        }
+        sb.append("(")
+        pp(t,p)
+        sb.append(") (")
+        pp(expr,p)
+        sb.append(")")
 
       case FinitePrecisionType(Float16) => sb.append("half")
       case FinitePrecisionType(Float32) => sb.append("float")
