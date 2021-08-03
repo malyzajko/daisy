@@ -4,6 +4,7 @@ package daisy
 package tools
 
 import lang.Identifiers.Identifier
+import tools.Rational
 
 import scala.collection.immutable.Map
 
@@ -12,6 +13,64 @@ import scala.collection.immutable.Map
  * interval subdivision
  */
 trait Subdivision extends DeltaAbstractionUtils {
+
+  def totalNumberOfSubdivisions(divLimits: Map[Identifier, Int]): Int = {
+    divLimits.values.fold(1)({
+      case (product, next) => product * next
+    })
+  }
+
+  // div limit for optimization
+  def getDivLimit(inputValMap: Map[Identifier, Interval]): Map[Identifier, Int] = {
+
+    // do not count point input intervals
+    val (nontrivial, pointIntervals) = inputValMap.partition(_._2.width > Rational.zero)
+    // sort the list of input vars by width of intervals
+    val nontrivialSorted = nontrivial.toSeq.sortWith(_._2.width > _._2.width)
+
+    val nontrivialSplits: Map[Identifier, Int] = nontrivial.size match {
+      // single variable: 16 splits
+      case 1 => nontrivial.map({case (key, i) => (key -> 16)}).toMap
+
+      // two variables: split each by 5, total 25 splits
+      case 2 => nontrivial.map({case (key, i) => (key -> 5)}).toMap
+
+      // three variables: split each by 3, total 27 splits
+      case 3 => nontrivial.map({case (key, i) => (key -> 3)}).toMap
+
+      // four variables: split 3, 2, 2, 2, total 24 splits
+      case 4 =>
+        nontrivialSorted.tail.map({case (key, i) => (key -> 2)}).toMap +
+          (nontrivialSorted.head._1 -> 3)
+
+      // five and more variables, first 5 vars are split by 2, total of 32 splits
+      case _ =>
+        val firstFive = nontrivialSorted.take(5)
+        val rest = nontrivialSorted.drop(5)
+        firstFive.map({case (key, i) => (key -> 2)}).toMap ++
+          rest.map({case (key, i) => (key -> 1)}).toMap
+    }
+
+    nontrivialSplits ++ pointIntervals.map({case (key, i) => (key -> 1)})
+  }
+
+  // divLimit specifies for each variables how many subdivisions should be performed
+  // does *not* remove deltas
+  def getCustomSubintervals(inputValMap: Map[Identifier, Interval], divLimits: Map[Identifier, Int]): Seq[Map[Identifier, Interval]] = {
+
+   val splits: Map[Identifier, Seq[Interval]] = inputValMap.map({ case (key, interval) =>
+        val numSplits = divLimits(key)
+        if (numSplits > 1) {
+          (key -> interval.divide(numSplits))
+        } else {
+          (key -> Seq(interval))
+        }
+      })
+
+    val result = cartesianProduct(splits)
+    result
+
+  }
 
   // TODO: the divParameter can go I think
   def getEqualSubintervals(inputValMap: Map[Identifier, Interval], divLimit: Int, divParameter: Int = -1,

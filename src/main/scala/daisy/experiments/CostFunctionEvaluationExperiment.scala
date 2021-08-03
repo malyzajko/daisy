@@ -33,7 +33,7 @@ object CostFunctionEvaluationExperiment extends DaisyPhase with opt.CostFunction
   override val description = "Generates random mixed-precision versions of a given benchmark " +
     "as well as a performance measurement harness"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
-    StringChoiceOption("mixed-high-precision", Set("Float64", "DoubleDouble"), "Float64",
+    StringChoiceOption("mixed-high-precision", Set("Float64", "Float128"), "Float64",
       "Which precision to use as the highest precision")
   )
     //ParamOptionDef("mixed-exp-num-post", "number of functions to generate", "10"))
@@ -54,8 +54,8 @@ object CostFunctionEvaluationExperiment extends DaisyPhase with opt.CostFunction
     ctx.option[String]("mixed-high-precision") match {
       case "Float64" =>
         availablePrecisions = List(Float32, Float64)
-      case "DoubleDouble" =>
-        availablePrecisions = List(Float32, Float64, DoubleDouble)
+      case "Float128" =>
+        availablePrecisions = List(Float32, Float64, Float128)
     }
 
     assert(prg.defs.size == 1)
@@ -109,8 +109,11 @@ object CostFunctionEvaluationExperiment extends DaisyPhase with opt.CostFunction
         // assign types
         candidateTypeConfigs.toList.zipWithIndex.map({
           case (typeConfig, index) =>
-            val (updatedBody, _) = opt.MixedPrecisionOptimizationPhase.applyFinitePrecision(fnc.body.get, typeConfig,
-              ctx.intermediateRanges(fnc.id))
+            // for info, also the absolute error of this
+            val (absError, returnType) = opt.MixedPrecisionOptimizationPhase.computeAbsError(
+              fnc.body.get, typeConfig, availablePrecisions.last, ctx.intermediateRanges(fnc.id))
+
+            val updatedBody = opt.MixedPrecisionOptimizationPhase.applyFinitePrecision(fnc.body.get, typeConfig)(returnType)
 
             val updatedParams = fnc.params.map(valDef =>
               ValDef(valDef.id.changeType(FinitePrecisionType(typeConfig(valDef.id)))))
@@ -127,14 +130,7 @@ object CostFunctionEvaluationExperiment extends DaisyPhase with opt.CostFunction
             // val maxDblOpsAndVarsCost = maximizeDoubleOpsAndVars(fnc.body.get, typeConfig, goodPrecision=Float32)
 
             val opCount = countNumOps(fnc.body.get, typeConfig)
-            val opCountString =  s"(${opCount(Float32)},${opCount(Float64)},${opCount(DoubleDouble)})"
-
-            // for info, also the absolute error of this
-            val absError = opt.MixedPrecisionOptimizationPhase.computeAbsError(
-              fnc.body.get, typeConfig, availablePrecisions.last, ctx.intermediateRanges(fnc.id), emptyPath)
-            val resPrecision = (updatedBody.getType: @unchecked) match {
-              case FinitePrecisionType(tpe) => tpe
-            }
+            val opCountString =  s"(${opCount(Float32)},${opCount(Float64)},${opCount(Float128)})"
 
             //val infoString = s"${fnc.id}_$index ${absError._1} $naiveCost $benchmarkedCost $maxDblVarsCost $maxDblOpsCost $maxDblOpsAndVarsCost"
             val infoString = s"${fnc.id}_$index ${absError} $naiveCost $benchmarkedCost $opCountString"
@@ -143,7 +139,7 @@ object CostFunctionEvaluationExperiment extends DaisyPhase with opt.CostFunction
             reporter.info(infoString)
 
             fnc.copy(id = newId,
-              returnType = FinitePrecisionType(resPrecision),
+              returnType = FinitePrecisionType(returnType),
               params = updatedParams,
               body = Some(updatedBody))
 

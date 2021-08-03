@@ -1,8 +1,10 @@
-# Project Daisy
+# Project Daisy - Branch regime inference
 
 <img src="https://people.mpi-sws.org/~eva/daisy_logo.jpg" width="150">
 
 ## News
+
+  * This branch contains the code corresponding to the EMSOFT'21 paper "Regime Inference for Sound Floating-Point Optimizations". See the scripts/regime-inference for how to re-run our evaluation.
 
   * The 'approx' branch is merged into master! You can now approximate transcendental functions in fixed-point arithmetic code. Check out the script `scripts/optimization_approx_fixed.sh` for the correct command-line options.
 

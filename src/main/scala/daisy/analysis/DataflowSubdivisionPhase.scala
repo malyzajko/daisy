@@ -29,16 +29,19 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
   override val name = "Dataflow subdivision"
   override val description = "Forward dataflow with subdivision"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
-    NumOption("divLimit", 3, "Max amount of interval divisions"),
-    NumOption("totalOpt", 32, "Max total amount of analysis runs")
+    //NumOption("divLimit", 4, "Max amount of interval divisions"),
+    //NumOption("totalOpt", 32, "Max total amount of analysis runs")
+    // TODO: for merging with master, this will have to be unified with the rest of the codebase
   )
 
   override implicit val debugSection = DebugSectionAnalysis
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
 
-    val divLimit = ctx.option[Long]("divLimit").toInt
-    val totalOpt = ctx.option[Long]("totalOpt").toInt
+    // val divLimit = ctx.option[Long]("divLimit").toInt
+    // val totalOpt = ctx.option[Long]("totalOpt").toInt
+
+    val uniformPrecision = ctx.option[Precision]("precision")
 
     // for each function, returns (abs error, rel error, result interval)
     val res = analyzeConsideredFunctions(ctx, prg){ fnc =>
@@ -49,11 +52,12 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
       val bodyReal = fnc.body.get
 
       //  Subdivide input ranges
+      // val subIntervals: ParSeq[Map[Identifier, Interval]] =
+      //   getEqualSubintervals(inputValMap, divLimit, -1, totalOpt).par
       val subIntervals: ParSeq[Map[Identifier, Interval]] =
-        getEqualSubintervals(inputValMap, divLimit, -1, totalOpt).par
+        getCustomSubintervals(inputValMap, getDivLimit(inputValMap)).par
 
       val precisionMap: Map[Identifier, Precision] = ctx.specInputPrecisions(fnc.id)
-      val uniformPrecision = ctx.option[Precision]("precision")
 
       // TODO: remove this mutable state
       DataflowPhase.rangeMethod = ctx.option[String]("rangeMethod")
@@ -62,7 +66,8 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
       val addConstr = ctx.specAdditionalConstraints(fnc.id)
 
       // Remove unfeasible intervals from the list of intervals using SMT solvers.
-      val parSubInt = cleanSubIntervals(subIntervals, addConstr)
+      val parSubInt = if (addConstr == BooleanLiteral(true)) subIntervals
+        else cleanSubIntervals(subIntervals, addConstr)
 
       uniformPrecision match {
         case FixedPrecision(_) =>
@@ -168,6 +173,7 @@ object DataflowSubdivisionPhase extends DaisyPhase with Subdivision with Roundof
     }
 
     (ctx.copy(
+      uniformPrecisions = prg.defs.map(fnc => (fnc.id -> uniformPrecision)).toMap, // for code generation
       resultAbsoluteErrors = res.mapValues(_._1).toMap,
       resultRelativeErrors = res.mapValues(_._2).toMap,
       resultRealRanges = res.mapValues(_._3).toMap,

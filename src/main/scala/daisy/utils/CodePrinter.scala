@@ -11,17 +11,23 @@ import lang.Trees._
 
 object CodePrinter {
   val suffix: Map[String, String] = HashMap(
-    "C" -> ".c",
+    "C" -> ".cpp",
     "Scala" -> ".scala",
-    "FPCore" -> ".fpcore")
+    "FPCore" -> ".fpcore",
+    "DaisyInput" -> ".scala",
+    "FPTaylor" -> ".txt")
 
   def apply(t: Program, ctx: Context, lang: String, out: BufferedWriter): Unit = {
     val printer = lang match {
       case "apfixed" | "C" => new CPrinter(out, ctx)
       case "Scala" => new ScalaPrinter(out, ctx)
       case "FPCore" => new FPCorePrinter(out, ctx)
+      case "DaisyInput" => new ScalaPrinter(out, ctx, generateDaisyInput = true,
+        importString = "import daisy.lang._\nimport Real._")
+      case "FPTaylor" => new FPTaylorPrinter(out, ctx)
     }
     printer.pp(t, None)(0)
+    out.close()
   }
 
 }

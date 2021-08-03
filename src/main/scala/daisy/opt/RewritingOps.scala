@@ -449,11 +449,11 @@ trait RewritingOps {
     // let x = c in e => e[c/x]
     case Let(id, c@RealLiteral(_), e) => TreeOps.replace{case Variable(i) if i == id => c} (e)
     // c1 op_f c2 => c1 op c2
-    case RealLiteral(a) Plus RealLiteral(b) => RealLiteral(a + b)
-    case RealLiteral(a) Minus RealLiteral(b) => RealLiteral(a - b)
-    case RealLiteral(a) Times RealLiteral(b) => RealLiteral(a * b)
-    case RealLiteral(a) Division RealLiteral(b) => RealLiteral(a / b)
-    case RealLiteral(a) if a < Rational.zero => UMinus(RealLiteral(-a))
+    case RealLiteral(a) Plus RealLiteral(b) => RealLiteral(a + b, (a+b).toString)
+    case RealLiteral(a) Minus RealLiteral(b) => RealLiteral(a - b, (a-b).toString)
+    case RealLiteral(a) Times RealLiteral(b) => RealLiteral(a * b, (a*b).toString)
+    case RealLiteral(a) Division RealLiteral(b) => RealLiteral(a / b, (a/b).toString)
+    case RealLiteral(a) if a < Rational.zero => UMinus(RealLiteral(-a, (-a).toString))
     // -0 => 0
     case UMinus(`zero`) => zero
   }
@@ -501,7 +501,7 @@ trait RewritingOps {
       }
 
       def multiSetToList(ms: Map[RealExpr, Int]): Iterable[Expr] = ms flatMap {
-        case (RealExpr(RealLiteral(a)), p) => Some(RealLiteral(a ^ p))
+        case (RealExpr(RealLiteral(a)), p) => Some(RealLiteral(a ^ p, (a ^ p).toString))
         case (RealExpr(e), 0) => None
         case (RealExpr(e), 1) => Some(e)
         case (RealExpr(e), p) => Some(e IntPow p)
@@ -518,8 +518,8 @@ trait RewritingOps {
     def multiply(lst: Iterable[Expr]): Expr = {
       val (reals, exprs) = lst.partition { case RealLiteral(_) | UMinus(RealLiteral(_)) => true case _ => false }
       val real = reals.fold(one) {
-        case (RealLiteral(a), RealLiteral(b)) => RealLiteral(a * b)
-        case (RealLiteral(a), UMinus(RealLiteral(b))) => RealLiteral(-a * b)
+        case (RealLiteral(a), RealLiteral(b)) => RealLiteral(a * b, (a*b).toString)
+        case (RealLiteral(a), UMinus(RealLiteral(b))) => RealLiteral(-a * b, (-a * b).toString)
         case _ => sys.error("Unreachable")
       }
 

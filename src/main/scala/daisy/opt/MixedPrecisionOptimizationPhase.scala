@@ -1,6 +1,9 @@
 package daisy
 package opt
 
+import scala.concurrent._
+import ExecutionContext.Implicits.global
+import scala.concurrent.duration._
 import scala.collection.immutable.Seq
 import scala.collection.mutable.{Set => MSet}
 import util.Random
@@ -9,8 +12,9 @@ import lang.Types._
 import lang.Identifiers._
 import tools.FinitePrecision._
 import lang.TreeOps._
-import tools.{AffineForm, Interval, Rational}
-import lang.Extractors.{ArithOperator, ElemFnc}
+import tools.{MPFRAffineForm, Interval, Rational}
+import Rational._
+import lang.Extractors.ArithOperator
 
 /**
  * This phase optimizes and determines a suitable mixed-precision type assignment.
@@ -32,289 +36,224 @@ import lang.Extractors.{ArithOperator, ElemFnc}
 object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
   with search.GeneticSearch[Map[Identifier, Precision]] with tools.RoundoffEvaluators {
 
-  override val name = "mixed-precision optimization"
+  override val name = "Mixed-precision optimization"
   override val description = "determines a suitable mixed-precision type assignment"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     StringChoiceOption("mixed-opt-method", Set("random", "delta", "genetic"), "delta",
-      "Algorithm to use for mixed-precision optimization")
+      "Algorithm to use for mixed-precision optimization"),
+    StringChoiceOption("mixed-cost-function", Set("simple", "area", "benchmark", "benchmarkC", "default"), "default",
+      "Cost function to use for mixed-precision optimization. 'default' chooses the function based on available precisions.")
   )
 
   override implicit val debugSection = DebugSectionOptimization
 
-  var reporter: Reporter = null
-
   type TypeConfig = Map[Identifier, Precision]
-  type RangeMap = Map[(Expr, Seq[Expr]), Interval]
 
   var optimizationMethod: String = ""
 
+  val timeOut: Int = 300
+
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
-    reporter = ctx.reporter
+    val reporter = ctx.reporter
 
     val defaultPrecision = ctx.option[Precision]("precision")
     optimizationMethod = ctx.option[String]("mixed-opt-method")
+    val uniformCostFunction = ctx.option[String]("mixed-cost-function") match {
+      case "default" => None
+      case "simple" => Some(simpleMixedPrecisionCost _)
+      case "area" => Some(areaBasedCostFunction _)
+      case "benchmark" => Some(benchmarkedMixedPrecisionCost _)
+      case "benchmarkC" => Some(benchmarkedMixedPrecisionCostForC _)
+    }
 
     val availablePrecisions = defaultPrecision match {
       case FixedPrecision(b) => // given precision specifies the upper bound
         (1 to b).map(FixedPrecision(_))
       case _ =>
-        Seq(Float32, Float64, DoubleDouble)
+        //Seq(Float32, Float64, Float128)
+        Seq(Float64, Float128)
     }
+
     reporter.info(s"Optimisation method: $optimizationMethod")
 
-    // store updated ranges for each function
+    // store computed absolute errors for each function
     var resAbsoluteErrors: Map[Identifier, Rational] = Map()
     var precisionMap: Map[Identifier, Map[Identifier, Precision]] = Map()
-    var newIntermediateRanges: Map[Identifier, RangeMap] = Map()
-    var newInputErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
 
-    // only consider function which have no assigned types yet
-    val fncsToConsider = if (ctx.hasFlag("approx")) functionsToConsider(ctx, prg).filter(_.returnType == RealType)
-      else functionsToConsider(ctx, prg)
+    val newDefs: Seq[FunDef] = transformConsideredFunctions(ctx, prg) { fnc =>
+      val rangeMap = ctx.intermediateRanges(fnc.id)
+      reporter.info(s"Optimizing mixed-precision for ${fnc.id}...")
+      // val (newDef, resultError, typeConfig) = tuneMixedPrecision(fnc, rangeMap, availablePrecisions,
+      //   defaultPrecision, ctx.specResultErrorBounds.get(fnc.id), reporter, uniformCostFunction)
 
-    val newDefs: Seq[FunDef] = fncsToConsider.map(fnc => {
-      val fullBody = fnc.body.get
-      val _rangeMap = ctx.intermediateRanges(fnc.id)
-
-      // there is an output error to optimize for
-      val (typeConfig, constPrec) = if (ctx.specResultErrorBounds.contains(fnc.id)) {
-        val targetError = ctx.specResultErrorBounds(fnc.id)
-
-        val paths = extractPaths(fullBody, emptyPath, _rangeMap)
-
-        val res: Seq[(TypeConfig, Precision)] = paths.map({ case (pathCond, _body, rangeMap) =>
-          reporter.info(s"Analyzing path: $pathCond")
-          val body = removeUnusedVars(_body)
-
-          // Step 1: find the smallest available precision which satisfies the error bound
-          // TODO: search from the end, the first one which does not satisfy the spec
-          availablePrecisions.find( prec => {
-            try {
-              // path may contain unused variables, which is why use the allIDsOf here
-              // TODO: remove unused variables, as they may produce suboptimal results
-              val rndoff = computeAbsError(body, allIDsOf(body).map(id => (id -> prec)).toMap,
-                prec, rangeMap, pathCond, approximate = false)
-              rndoff <= targetError
-            } catch {  // e.g. overflow when precision is not enough
-              case _ : Throwable => false
-            }
-          }) match {
-            case None =>
-              reporter.warning(s"Highest precision is *not enough* for ${fnc.id}; " +
-                s"generating the highest-precision (${availablePrecisions.last}) version anyway.")
-              (allIDsOf(body).map(v => (v -> availablePrecisions.last)).toMap,
-                availablePrecisions.last)
-
-            case Some(prec) if prec == availablePrecisions.head =>
-              reporter.info(s"No mixed-precision optimization needed for ${fnc.id} - " +
-                s"lowest (${availablePrecisions.head}) is sufficient")
-              (allIDsOf(body).map(v => (v -> prec)).toMap, prec)
-
-            case Some(lowestUniformPrec) =>
-              val indexLowestUniformPrec = availablePrecisions.indexOf(lowestUniformPrec)
-
-              // Step 2: optimize mixed-precision
-              reporter.info(s"Optimizing mixed-precision for ${fnc.id}...")
-              val consideredPrecisions = availablePrecisions.take(indexLowestUniformPrec + 1)
-              reporter.info(s"Lowest possible uniform precision: ${availablePrecisions(indexLowestUniformPrec)}")
-
-              val costFnc = consideredPrecisions.last match {
-                case DoubleDouble | QuadDouble =>
-                  simpleMixedPrecisionCost _
-
-                case FixedPrecision(_) =>
-                  val original = ctx.originalProgram.defs.find(_.id == fnc.id) match {
-                    case Some(x) => x.body.get
-                    case None => throw new Exception(s"Original body of the function ${fnc.id} is not available in the context")
-                  }
-                  ctx.reporter.debug(s"Using ${ctx.option[String]("cost")} cost")
-                  ctx.option[String]("cost") match {
-                    case "area" => areaBasedCostFunction _
-                    case "ml" => mlRegressionCostFunction(original, _:Expr, _:TypeConfig)
-                    case "combined" => combinedCost(original, _:Expr, _:TypeConfig)
-                  } //  simpleMixedPrecisionCost _
-
-                case _ =>
-                  benchmarkedMixedPrecisionCost _
-              }
-
-              optimizationMethod match {
-                case "delta" =>
-
-                  val (tpeconfig, prec) = (deltaDebuggingSearch(body, targetError, fnc.params, costFnc,
-                    computeAbsError(body, _, _, rangeMap, pathCond, approximate = true),
-                    consideredPrecisions),
-                    lowestUniformPrec)
-
-                  (tpeconfig, prec)
-
-                case "random" =>
-
-                  (randomSearch(body, targetError, costFnc,
-                    computeAbsError(body, _, _, rangeMap, pathCond, approximate = true),
-                    consideredPrecisions, maxTries = 1000),
-                    lowestUniformPrec)
-
-                case "genetic" =>
-
-                  (geneticSearch(body, targetError, benchmarkedMixedPrecisionCost,
-                    computeAbsError(body, _, _, rangeMap, pathCond, approximate = true),
-                    consideredPrecisions),
-                  lowestUniformPrec)
-
-              }
-          }
-        })
-
-        val (tpeConfigs, constPrecs) = res.unzip
-
-        (mergeTypeConfigs(tpeConfigs), constPrecs.max)
-
-      } else {
-        // If no error is given in the postcondition, assign default precision
-        reporter.warning(s"No target error bound for ${fnc.id}, " +
-          s"assigning default uniform precision $defaultPrecision.")
-
-        (allVariablesOf(fullBody).map(v => (v -> defaultPrecision)).toMap,
-          defaultPrecision)
+      var newDef: FunDef = null
+      var typeConfig: Map[Identifier, Precision] = Map()
+      var resultError: Rational = zero
+      val future: Future[Unit] = Future {
+        val (nD, rE, tC) = tuneMixedPrecision(fnc, rangeMap, availablePrecisions,
+          defaultPrecision, ctx.specResultErrorBounds.get(fnc.id), reporter, uniformCostFunction)
+        newDef = nD
+        typeConfig = tC
+        resultError = rE
       }
 
-      // final step: apply found type config, and update ranges (mainly due to casts)
-      // types have only been applied to variables used in computation, but not conditionals
-      // assign default precision to those:
-      val _typeConfig = (allIDsOf(fullBody) -- typeConfig.keys).map(id => (id -> constPrec)).toMap
-      val newTypeConfig = typeConfig ++ _typeConfig
-      val (updatedBody, newRangeMap) = applyFinitePrecision(fullBody, newTypeConfig, _rangeMap)
-
-      // this is what computeAbsError does, but we need the intermediate information
-      val inputErrorMap: Map[Identifier, Rational] = freeVariablesOf(fullBody).map({
-        case id => (id -> newTypeConfig(id).absRoundoff(_rangeMap((Variable(id), emptyPath))))
-      }).toMap
-      val (resRoundoff, _) = evalRoundoff[AffineForm](updatedBody, _rangeMap ++ newRangeMap,
-        newTypeConfig, inputErrorMap.mapValues(AffineForm.+/-).toMap, AffineForm.zero, AffineForm.+/-,
-        AffineForm.apply, constPrec, true, false)
-      val resError = Interval.maxAbs(resRoundoff.toInterval)
-
-      resAbsoluteErrors = resAbsoluteErrors + (fnc.id -> resError)
-      precisionMap = precisionMap + (fnc.id -> (newTypeConfig))
-      newIntermediateRanges = newIntermediateRanges + (fnc.id -> newRangeMap)
-      newInputErrors = newInputErrors + (fnc.id -> inputErrorMap)
-
-      val updatedParams = fnc.params.map(valDef =>
-        ValDef(valDef.id.changeType(FinitePrecisionType(typeConfig(valDef.id)))))
-
-      val resPrecision = (updatedBody.getType: @unchecked) match {
-        case FinitePrecisionType(tpe) => tpe
+      try {
+       Await.result(future, timeOut.second)
       }
 
-      fnc.copy(returnType = FinitePrecisionType(resPrecision), params = updatedParams,
-        body = Some(updatedBody))
+      resAbsoluteErrors += (fnc.id -> resultError)
+      precisionMap += (fnc.id -> typeConfig)
 
-    }) // end of newDefs
-
-    (ctx.copy(resultAbsoluteErrors = resAbsoluteErrors,
-      intermediateRanges = ctx.intermediateRanges ++ newIntermediateRanges,
-      specInputPrecisions = ctx.specInputPrecisions ++ precisionMap,
-      assignedPrecisions = ctx.specInputPrecisions ++ precisionMap,
-      specInputErrors = ctx.specInputErrors ++ newInputErrors),
-      Program(prg.id, newDefs ++ (functionsToConsider(ctx, prg).diff(fncsToConsider)))) // todo when fnc to consider is specified add approx ones too
-  }
-
-  /*
-    Computes the roundoff error by first introducing casts into the expressions,
-    based on the typeConfig, and then running the standard roundoff error analysis.
-   */
-  def computeAbsError(expr: Expr, typeConfig: Map[Identifier, Precision],
-    constantsPrecision: Precision, rangeMap: Map[(Expr, PathCond), Interval],
-    path: PathCond, approximate: Boolean = false): Rational = {
-
-    // create finite-precision version
-    val (finitePrecBody, newRangeMap) = applyFinitePrecision(expr, typeConfig, rangeMap)
-
-    // roundoff errors depend on the typeConfig, need to be recomputed
-    val inputErrorMap: Map[Identifier, Rational] = freeVariablesOf(expr).map({
-      case id: Identifier =>
-        (id -> typeConfig(id).absRoundoff(rangeMap((Variable(id), emptyPath))))
-    }).toMap
-
-    // run regular roundoff error analysis
-    val (resRoundoff, _) = evalRoundoff[AffineForm](finitePrecBody, rangeMap ++ newRangeMap,
-      typeConfig,
-      inputErrorMap.mapValues(AffineForm.+/-).toMap,
-      zeroError = AffineForm.zero,
-      fromError = AffineForm.+/-,
-      interval2T = AffineForm.apply,
-      constantsPrecision = constantsPrecision,
-      trackRoundoffErrors = true,
-      approxRoundoff = approximate)
-
-    Interval.maxAbs(resRoundoff.toInterval)
-  }
-
-  // merges type configs from each path by taking the type upper bound
-  // for a variable which has been assigned in different paths
-  private def mergeTypeConfigs(configs: Seq[TypeConfig]): TypeConfig = {
-    val allIDs: Seq[Identifier] = configs.flatMap(_.keys).toSet.toList
-
-    allIDs.map(id => {
-      val allPrec: Seq[Precision] = configs.flatMap(_.get(id))
-
-      if (allPrec.size == 1) {
-        (id -> allPrec.head)
-      } else {
-        (id -> allPrec.tail.fold(allPrec.head)({
-          case (prec, newPrec) => getUpperBound(prec, newPrec)
-        }))
-      }
-    }).toMap
-  }
-
-  // Extracts paths in the program and for each computes
-  // - the path condition
-  // - the path expression
-  // - the new rangeMap for the new path (without the path condition)
-  private def extractPaths(e: Expr, path: PathCond, currRanges: RangeMap): Seq[(PathCond, Expr, RangeMap)] = e match {
-
-    case Let(id, value, body) =>
-      // there shouldn't be any if-expr in the value (at least we don't support it)
-      val (_, _, _rangeMapValue) = extractPaths(value, path, currRanges).head
-      val rangeMapValue = _rangeMapValue + ((Variable(id), emptyPath) -> currRanges((Variable(id), emptyPath)))
-
-      extractPaths(body, path, currRanges).map({
-        case (pCond: PathCond, pathBody: Expr, rangeMapBody) =>
-          (pCond, Let(id, value, pathBody), rangeMapValue ++ rangeMapBody)
-      })
-
-    case IfExpr(cond, thenn, elze) =>
-      val thenPaths = extractPaths(thenn, path :+ cond, currRanges).map({
-        case (pCond: PathCond, pathBody: Expr, rangeMap) => (cond +: pCond, pathBody, rangeMap)
-      })
-      val elsePaths = extractPaths(elze, path :+ negate(cond), currRanges).map({
-        case (pCond: PathCond, pathBody: Expr, rangeMap) => (negate(cond) +: pCond, pathBody, rangeMap)
-      })
-      thenPaths ++ elsePaths
-
-    case x @ ArithOperator(args, recons) =>
-      val rangeMap: RangeMap = args.map( arg => {
-        (arg, emptyPath) -> currRanges(arg, path)
-      }).toMap + ((x, emptyPath) -> currRanges(x, path))
-      Seq((Seq(), e, rangeMap))
-
-    case _ => Seq((Seq(), e, Map((e, emptyPath) -> currRanges(e, path))))
-
-  }
-
-  def removeUnusedVars(body: Expr): Expr = {
-    val unused = allIDsOf(body) -- allVariablesOf(body)
-
-    def remove(e: Expr): Expr = e match {
-      // var is unused, skip
-      case Let(id, v, b) if (unused.contains(id)) => remove(b)
-      case Let(id, v, b) => Let(id, v, remove(b))
-      case _ => e
+      newDef
     }
 
-    remove(body)
+    // update rangeMap with trees with casts
+    val newIntermediateRanges = newDefs.map(fnc => {
+      var newRanges = Map[(Expr, Seq[Expr]), Interval]()
+      val currRanges = ctx.intermediateRanges(fnc.id)
+
+      postTraversal(e => {
+
+        newRanges = newRanges + ((e, Seq()) -> currRanges((exprWithoutCasts(e), Seq())))
+
+      })(fnc.body.get)
+
+      (fnc.id -> newRanges)
+    }).toMap
+
+    val newResultPrecisions = newDefs.map(f => (f.id, f.returnType))
+      .map({ case (id, FinitePrecisionType(prec)) => (id, prec) }).toMap
+
+    val newInputErrors = newDefs.map(fnc => {
+      val inputRanges = ctx.specInputRanges(fnc.id)
+      val precisions = precisionMap(fnc.id)
+
+      fnc.id -> fnc.params.map(p => p.id -> precisions(p.id).absRoundoff(inputRanges(p.id))).toMap
+    }).toMap
+
+    (ctx.copy(resultAbsoluteErrors = resAbsoluteErrors,
+      intermediateRanges = newIntermediateRanges,
+      specInputPrecisions = precisionMap,
+      specInputErrors = newInputErrors,
+      specResultPrecisions = newResultPrecisions), Program(prg.id, newDefs))
+  }
+
+  def tuneMixedPrecision(fnc: FunDef,
+    rangeMap: Map[(Expr, Seq[Expr]), Interval],
+    availablePrecisions: Seq[Precision],
+    defaultPrecision: Precision,
+    errorBound: Option[Rational],
+    reporter: Reporter,
+    uniformCostFunction: Option[(Expr, TypeConfig) => Rational] = None): (FunDef, Rational, Map[Identifier, Precision]) = {
+
+    val body = fnc.body.get
+
+    // TODO: check the errorbound elsewhere
+    val (typeConfig, constPrec) = if (errorBound.nonEmpty) { // there is an output error to optimize for
+      val targetError = errorBound.get
+
+      // Step 1: find the smallest available precision which satisfies the error bound
+      availablePrecisions.find(prec => {
+        try {
+          val rndoff = computeAbsError(body, allVariablesOf(body).map(id => (id -> prec)).toMap,
+            prec, rangeMap)._1
+          rndoff <= targetError
+        } catch { // e.g. overflow when precision is not enough
+          case _: Throwable => false
+        }
+      }) match {
+        case None =>
+          reporter.warning(s"Highest precision is *not enough* for ${fnc.id}; " +
+            s"generating the highest-precision (${availablePrecisions.last}) version anyway.")
+          (allVariablesOf(body).map(v => (v -> availablePrecisions.last)).toMap,
+            availablePrecisions.last)
+
+        case Some(prec) if prec == availablePrecisions.head =>
+          reporter.info(s"No mixed-precision optimization needed for ${fnc.id} - " +
+            s"lowest (${availablePrecisions.head}) is sufficient")
+          (allVariablesOf(body).map(v => (v -> prec)).toMap, prec)
+
+        case Some(lowestUniformPrec) =>
+          val indexLowestUniformPrec = availablePrecisions.indexOf(lowestUniformPrec)
+
+          // Step 2: optimize mixed-precision
+          val consideredPrecisions = availablePrecisions.take(indexLowestUniformPrec + 1)
+          reporter.debug(s"  precisions: $consideredPrecisions")
+
+          val costFnc = uniformCostFunction.getOrElse(
+            consideredPrecisions.last match {
+              case Float128 | Float256 =>
+                simpleMixedPrecisionCost _
+
+              case FixedPrecision(_) =>
+                areaBasedCostFunction _
+
+              case _ =>
+                benchmarkedMixedPrecisionCost _
+            }
+          )
+
+          optimizationMethod match {
+            case "delta" =>
+
+              (deltaDebuggingSearch(body, targetError, fnc.params, costFnc,
+                computeAbsError(body, _, _, rangeMap, approximate = true),
+                consideredPrecisions, reporter),
+                lowestUniformPrec)
+
+            case "random" =>
+
+              (randomSearch(body, targetError, costFnc,
+                computeAbsError(body, _, _, rangeMap, approximate = true),
+                consideredPrecisions, reporter, maxTries = 1000),
+                lowestUniformPrec)
+
+            case "genetic" =>
+
+              (geneticSearch(body, targetError, benchmarkedMixedPrecisionCost,
+                computeAbsError(body, _, _, rangeMap, approximate = true),
+                consideredPrecisions, reporter),
+                lowestUniformPrec)
+
+          }
+      }
+    }
+    else {
+      // If no error is given in the postcondition, assign default precision
+      reporter.warning(s"No target error bound for ${fnc.id}, " +
+        s"assigning default uniform precision $defaultPrecision.")
+
+      (allVariablesOf(body).map(v => (v -> defaultPrecision)).toMap,
+        defaultPrecision)
+    }
+
+    // compute the roundoff error and return precision
+    // this can be ideally cached, but recomputing is cheap enough
+    val (resError, resPrecision) = computeAbsError(body, typeConfig, constPrec, rangeMap)
+
+    if (uniformCostFunction.isDefined) {
+      val finalSimpleCost = uniformCostFunction.get(body, typeConfig)
+      reporter.debug(s"[${fnc.id}] Final uniform mixed precision cost: $finalSimpleCost")
+    }
+
+    // final step: apply found type config
+    val updatedBody = applyFinitePrecision(body, typeConfig)(resPrecision)
+
+    val updatedParams = fnc.params.map(valDef =>
+      ValDef(valDef.id.changeType(FinitePrecisionType(typeConfig(valDef.id)))))
+
+    (fnc.copy(returnType = FinitePrecisionType(resPrecision), params = updatedParams,
+      body = Some(updatedBody)), resError, typeConfig)
+  }
+
+  def exprWithoutCasts(e: Expr): Expr = e match {
+    case Cast(expr, tpe) => exprWithoutCasts(expr)
+    case Variable(id) =>  e
+    case FinitePrecisionLiteral(r, _, _) => RealLiteral(r)
+    case t @ ArithOperator(args, recons) =>
+      recons(args.map(exprWithoutCasts))
+    case Let(id, value, body) =>
+      Let(id, exprWithoutCasts(value), exprWithoutCasts(body))
   }
 
   /**
@@ -329,8 +268,9 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
    */
   def deltaDebuggingSearch(expr: Expr, errorSpec: Rational, params: Seq[ValDef],
     costFnc: (Expr, Map[Identifier, Precision]) => Rational,
-    errorFnc: (Map[Identifier, Precision], Precision) => Rational,
-    availablePrecisions: Seq[Precision]): TypeConfig = {
+    errorFnc: (Map[Identifier, Precision], Precision) => (Rational, Precision),
+    availablePrecisions: Seq[Precision],
+    reporter: Reporter): TypeConfig = {
 
     val highestPrecision = availablePrecisions.last
     val lowestPrecision = availablePrecisions.head
@@ -389,12 +329,14 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
         typeConfig
       } else {
 
+        val typeConfigCost = costFnc(expr, typeConfig)
+
         // 1: lower all variables in varsToOpt
         val loweredTypeConfig = lowerVariables(currentVars, typeConfig)
         candidateTypeConfigs += loweredTypeConfig
 
         // 2: evaluate current config
-        val currentError = errorFnc(loweredTypeConfig, highestPrecision)
+        val (currentError, _) = errorFnc(loweredTypeConfig, highestPrecision)
 
         // 3a: if the error is below threshold, we are done recursing
         if (currentError <= errorSpec) {
@@ -409,21 +351,17 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
             val loweredRight = lowerVariables(fixedVarsRight, loweredTypeConfig)
             candidateTypeConfigs += loweredLeft; candidateTypeConfigs += loweredRight
 
-            val errorLeft = errorFnc(loweredLeft, highestPrecision)
-            val errorRight = errorFnc(loweredRight, highestPrecision)
+            val (errorLeft, _) = errorFnc(loweredLeft, highestPrecision)
+            val (errorRight, _) = errorFnc(loweredRight, highestPrecision)
 
-            // choose the one with lowest cost
-            var currentMinCost = costFnc(expr, loweredTypeConfig)
-            var currentBestConfig = loweredTypeConfig
-            /* TODO: Robert' edit (but unclear why it is correct)
-            val typeConfigCost = costFnc(expr, typeConfig)
             val loweredCost = costFnc(expr, loweredTypeConfig)
+
             // choose the one with lowest cost
             var (currentMinCost, currentBestConfig) = if (lessThanCost(typeConfigCost, loweredCost)) {
               (typeConfigCost, typeConfig)
             } else {
               (loweredCost, loweredTypeConfig)
-            }*/
+            }
 
             if (errorLeft < errorSpec) {
               numValidConfigs = numValidConfigs + 1
@@ -462,7 +400,9 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
             val costLeft = costFnc(expr, configLeft)
             val costRight = costFnc(expr, configRight)
 
-            if (lessThanCost(costLeft, costRight)) {
+            if (lessThanCost(typeConfigCost, costLeft) && lessThanCost(typeConfigCost, costRight)) {
+              typeConfig
+            } else if (lessThanCost(costLeft, costRight)) {
               configLeft
             } else {
               configRight
@@ -510,9 +450,10 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
         currentLowPrecIndex = currentLowPrecIndex - 1
       }
     }
+
     val finalCost = costFnc(expr, currentTypeConfig)
     reporter.info(s"initial Cost: $originalCost - final cost: $finalCost")
-    reporter.info(s"number of valid type configs: ---- $numValidConfigs, out of ${candidateTypeConfigs.size} unique configs seen")
+    reporter.debug(s"number of valid type configs: ---- $numValidConfigs, out of ${candidateTypeConfigs.size} unique configs seen")
     currentTypeConfig
   }
 
@@ -520,137 +461,606 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
     Changes a real-valued program into a finite-precision one according to a given
     type configuration and by inserting necessary (down) casts.
 
-    In addition, this function also computes the updated range map, including
-    expressions with casts.
   */
-  def applyFinitePrecision(expr: Expr, typeConfig: Map[Identifier, Precision],
-    currRanges: RangeMap): (Expr, RangeMap) = {
+  def applyFinitePrecision(expr: Expr, typeConfig: Map[Identifier, Precision])(implicit returnPrec: Precision): Expr = {
 
-    def recurse(e: Expr, path: PathCond): (Expr, RangeMap) = (e: @unchecked) match {
+    def recurse(e: Expr): Expr = (e: @unchecked) match {
 
       case x @ Variable(id) =>
-        val newExpr = Variable(id.changeType(FinitePrecisionType(typeConfig(id))))
-        (newExpr, Map((newExpr, emptyPath) -> currRanges(x, emptyPath)))
-
-      case Let(id, x @ Variable(idV), body) =>
-        val idPrec = typeConfig(id)
-        val newValue = Variable(idV.changeType(FinitePrecisionType(typeConfig(idV))))
-        val (bodyExpr, bodyMap) = recurse(body, path)
-
-        val newExpr = Let(id.changeType(FinitePrecisionType(idPrec)), newValue, bodyExpr)
-
-        (newExpr, bodyMap + ((newValue, path) -> currRanges(x, path)) +
-          ((Variable(id), emptyPath) -> currRanges((Variable(id), emptyPath))))
+        Variable(id.changeType(FinitePrecisionType(typeConfig(id))))
 
       case Let(id, x @ RealLiteral(r), body) =>
         val idPrec = typeConfig(id)
         val newValue = FinitePrecisionLiteral(r, idPrec, x.stringValue)
-        val (bodyExpr, bodyMap) = recurse(body, path)
 
-        val newExpr = Let(id.changeType(FinitePrecisionType(idPrec)), newValue, bodyExpr)
+        Let(id.changeType(FinitePrecisionType(idPrec)), newValue, recurse(body))
 
-        (newExpr, bodyMap + ((newValue, path) -> currRanges(x, path)) +
-          ((Variable(id), emptyPath) -> currRanges((Variable(id), emptyPath))))
+      case Let(id, x @ Variable(t), body) =>
+        val idPrec = typeConfig(id)
+        val tPrec = typeConfig(t)
 
-      case Let(id, x @ ElemFnc(t @ Variable(tId), recons), body) =>
-        val idPrec = typeConfig (id)
+        val newValue = recurse(x)
 
-        val (valueExpr, valueMap) = recurse(t, path)
-        var newValue: Expr = recons(valueExpr)
-        if (idPrec < typeConfig(tId) ) { // need to downcast
-        newValue = Cast(newValue, FinitePrecisionType(idPrec))
+        val withCasts = if (idPrec < tPrec) {
+          Cast(newValue, FinitePrecisionType(idPrec))
+        } else {
+          newValue
         }
 
-        val (bodyExpr, bodyMap) = recurse (body, path)
-
-        val newExpr = Let (id.changeType(FinitePrecisionType(idPrec)), newValue, bodyExpr)
-
-        (newExpr, (bodyMap ++ valueMap) + ((newValue, path) -> currRanges (x, path) ) +
-        ((Variable (id), emptyPath) -> currRanges ((Variable (id), emptyPath) ) ) +
-          ((x, path) -> currRanges (x, path) ) ) // fixes the issue of java.util.NoSuchElementException: key not found: (sin(_tmp),List())
-
+        Let(id.changeType(FinitePrecisionType(idPrec)), withCasts, recurse(body))
 
       case Let(id, x @ ArithOperator(Seq(t @ Variable(tId)), recons), body) =>
         val idPrec = typeConfig(id)
+        val tPrec = typeConfig(tId)
 
-        val (valueExpr, valueMap) = recurse(t, path)
-        var newValue: Expr = recons(Seq(valueExpr))
-        if (idPrec < typeConfig(tId)) { // need to downcast
-          newValue = Cast(newValue, FinitePrecisionType(idPrec))
+        val updatedT = recurse(t)
+        val opPrec = getUpperBound(tPrec, idPrec)
+
+        // We only need to introduce an upcast for the inner operation or a downcast for the outer operation.
+        // It can't happen that both are necessary, since tPrec < opPrec ==> idPrec = opPrec and
+        // idPrec < opPrec ==> tPrec = opPrec.
+        val withCasts: Expr =  if (tPrec < opPrec) { // need to introduce upcast for operation
+          recons(Seq(Cast(updatedT, FinitePrecisionType(idPrec))))
+        } else if (idPrec < opPrec) { // need to downcast for assignment
+          Cast(recons(Seq(updatedT)), FinitePrecisionType(idPrec))
+        } else {
+          recons(Seq(recurse(t)))
         }
 
-        val (bodyExpr, bodyMap) = recurse(body, path)
+        Let(id.changeType(FinitePrecisionType(idPrec)), withCasts, recurse(body))
 
-        val newExpr = Let(id.changeType(FinitePrecisionType(idPrec)), newValue, bodyExpr)
-
-        (newExpr, (bodyMap ++ valueMap) + ((newValue, path) -> currRanges(x, path)) +
-          ((Variable(id), emptyPath) -> currRanges((Variable(id), emptyPath))))
 
       case Let(id, x @ ArithOperator(Seq(y @ Variable(lhs), z @ Variable(rhs)), recons), body) =>
+        var left = recurse(y)
+        var right = recurse(z)
+
         val idPrec = typeConfig(id)
         val lPrec = typeConfig(lhs)
         val rPrec = typeConfig(rhs)
         val opPrec = getUpperBound(getUpperBound(lPrec, rPrec), idPrec)
 
-        val leftExpr = Variable(lhs.changeType(FinitePrecisionType(opPrec)))
-        val rightExpr = Variable(rhs.changeType(FinitePrecisionType(opPrec)))
-
-        val leftMap: RangeMap = Map((leftExpr, emptyPath) -> currRanges(y, emptyPath))
-        val rightMap = Map((rightExpr, emptyPath) -> currRanges(z, emptyPath))
-
-        var newValue = recons(Seq(leftExpr, rightExpr))
-
-        val rangeMap = (leftMap ++ rightMap) + ((newValue, path) -> currRanges(x, path))
-        if (idPrec < opPrec) { //need to downcast
-          newValue = Cast(newValue, FinitePrecisionType(idPrec))
+        // forced upcasts
+        if (lPrec != opPrec) {
+          left = Cast(left, FinitePrecisionType(opPrec))
+        }
+        if (rPrec != opPrec) {
+          right = Cast(right, FinitePrecisionType(opPrec))
         }
 
-        val (bodyExpr, bodyMap) = recurse(body, path)
+        var tmp = recons(Seq(left, right))
 
-        val newExpr = Let(id.changeType(FinitePrecisionType(idPrec)), newValue, bodyExpr)
-
-        (newExpr, (rangeMap ++ bodyMap) +
-          ((newValue, path) -> currRanges(x, path)) +
-          ((leftExpr, path) -> currRanges(y, path)) +
-          ((rightExpr, path) -> currRanges(z, path)) +
-          ((Variable(id), emptyPath) -> currRanges((Variable(id), emptyPath))))
-
+        if (idPrec < opPrec) { //need to downcast
+          tmp = Cast(tmp, FinitePrecisionType(idPrec))
+        }
+        Let(id.changeType(FinitePrecisionType(idPrec)), tmp, recurse(body))
 
       case x @ ArithOperator(Seq(t @ Variable(_)), recons) =>
-        val (newExpr, newMap) = recurse(t, path)
-        val tmp = recons(Seq(newExpr))
-        (tmp, newMap + ((tmp, path) -> currRanges(x, path)))
+        recons(Seq(recurse(t)))
 
       case x @ ArithOperator(Seq(y @ Variable(_), z @ Variable(_)), recons) =>
-        val (lhsExpr, lhsMap) = recurse(y, path)
-        val (rhsExpr, rhsMap) = recurse(z, path)
-        val tmp = recons(Seq(lhsExpr, rhsExpr))
-        (tmp, (lhsMap ++ rhsMap) + ((tmp, path) -> currRanges(x, path)))
+        val lPrec = typeConfig(y.id)
+        val rPrec = typeConfig(z.id)
+        val opPrec = getUpperBound(getUpperBound(lPrec, rPrec), returnPrec)
 
-      case x @ IfExpr(cond, thenn, elze) =>
-        val (condExpr, condMap) = recurse(cond, path)
-        val (thenExpr, thenMap) = recurse(thenn, path :+ cond)
-        val (elseExpr, elseMap) = recurse(elze, path :+ lang.TreeOps.negate(cond))
-        val tmp = IfExpr(condExpr, thenExpr, elseExpr)
+        var left = recurse(y)
+        var right = recurse(z)
 
-        (tmp, (condMap ++ thenMap ++ elseMap) + ((tmp, path) -> currRanges(x, path)))
+        // forced upcasts
+        if (lPrec != opPrec) {
+          left = Cast(left, FinitePrecisionType(opPrec))
+        }
+        if (rPrec != opPrec) {
+          right = Cast(right, FinitePrecisionType(opPrec))
+        }
 
-      case LessThan(lhs, rhs) =>
-        (LessThan(recurse(lhs, path)._1, recurse(rhs, path)._1), Map())
-
-      case GreaterThan(lhs, rhs) =>
-        (GreaterThan(recurse(lhs, path)._1, recurse(rhs, path)._1), Map())
-
-      case LessEquals(lhs, rhs) =>
-        (LessEquals(recurse(lhs, path)._1, recurse(rhs, path)._1), Map())
-
-      case GreaterEquals(lhs, rhs) =>
-        (GreaterEquals(recurse(lhs, path)._1, recurse(rhs, path)._1), Map())
-
-
+        recons(Seq(left, right))
     }
-    recurse(expr, emptyPath)
+    recurse(expr)
   }
+
+  /*
+    Computes the roundoff error for a finite-precision expression
+    using the annotated ranges and the types from the given map.
+
+    Note: this method uses different semantics than RoundoffEvaluators
+    in that for x: Double = y: Float + z: Float, the operation will be done in
+    the highest precision, i.e. Double.
+
+    @return (absolute roundoff error of result, precision of result)
+    TODO: I don't think we need to return the return precision any more
+  */
+  def computeAbsError(expr: Expr, precMap: Map[Identifier, Precision],
+    constantsPrecision: Precision, rangeMap: Map[(Expr, PathCond), Interval],
+    approximate: Boolean = false): (Rational, Precision) = {
+
+    var valMap: Map[Identifier, MPFRAffineForm] = Map.empty
+
+    // computes the new roundoff error for let statements
+    // assuming the operation has been done in the highest precision around
+    def addNewErrorLet(lhs: Identifier, rhs: Identifier, letID: Identifier, e: Expr,
+      path: PathCond, propError: MPFRAffineForm): MPFRAffineForm = {
+
+      val lPrec = precMap(lhs)
+      val rPrec = precMap(rhs)
+      val assignPrec = precMap(letID)
+      val realRange = rangeMap(e, path)
+
+      val opPrec = getUpperBound(getUpperBound(lPrec, rPrec), assignPrec)
+      val actualRange = realRange + propError.toInterval
+
+      var rndoff = opPrec.absRoundoff(actualRange)
+
+      if (assignPrec < opPrec) { // we need to cast down
+        rndoff = rndoff + assignPrec.absRoundoff(actualRange +/- rndoff)
+      }
+      if (approximate) {
+        rndoff = Rational.limitSize(rndoff)
+      }
+
+      propError :+ rndoff.toMPFRInterval  // only add one roundoff term
+    }
+
+    def addNewErrorLetUnary(t: Identifier, letID: Identifier, e: Expr, path: PathCond, propError: MPFRAffineForm,
+      trans: Boolean = false): MPFRAffineForm = {
+
+      val assignPrec = precMap(letID)
+      val tPrec = precMap(t)
+      val realRange = rangeMap(e, path)
+
+      val opPrec = getUpperBound(assignPrec, tPrec)
+      val actualRange = realRange + propError.toInterval
+
+      var rndoff = if (trans) {
+        opPrec.absTranscendentalRoundoff(actualRange)
+      } else {
+        opPrec.absRoundoff(actualRange)
+      }
+
+      if (assignPrec < opPrec) { // we need to cast down
+        rndoff = rndoff + assignPrec.absRoundoff(actualRange +/- rndoff)
+      }
+      if (approximate) {
+        rndoff = Rational.limitSize(rndoff)
+      }
+
+      propError :+ rndoff.toMPFRInterval
+    }
+
+    def addNewError(lhs: Identifier, rhs: Identifier, e: Expr, path: PathCond, propError: MPFRAffineForm): (MPFRAffineForm, Precision) = {
+      val lPrec = precMap(lhs)
+      val rPrec = precMap(rhs)
+
+      val opPrec = getUpperBound(lPrec, rPrec)
+      var rndoff = opPrec.absRoundoff(rangeMap(e, path) + propError.toInterval)
+      if (approximate) {
+        rndoff = Rational.limitSize(rndoff)
+      }
+      (propError :+ rndoff.toMPFRInterval, opPrec)
+    }
+
+    def addNewErrorUnary(t: Identifier, e: Expr, path: PathCond, propError: MPFRAffineForm,
+      trans: Boolean = false): (MPFRAffineForm, Precision) = {
+      val opPrec = precMap(t)
+      var rndoff = if (trans) {
+        opPrec.absTranscendentalRoundoff(rangeMap(e, path) + propError.toInterval)
+      } else {
+        opPrec.absRoundoff(rangeMap(e, path) + propError.toInterval)
+      }
+      if (approximate) {
+        rndoff = Rational.limitSize(rndoff)
+      }
+      (propError :+ rndoff.toMPFRInterval, opPrec)
+    }
+
+    // returns the error and the type, since the types are not attached to the node,
+    // we need to propagate them
+    def eval(e: Expr, path: PathCond): (MPFRAffineForm, Precision) = e match {
+
+      // if x has been evaluated before (via let, or inside the expression)
+      // we need to cache the errors, or else we are loosing correlations
+      case x @ Variable(id) if (valMap.isDefinedAt(id)) =>
+        val aform = valMap(id)
+        (aform, precMap(id))
+
+      // haven't seen this variable yet
+      case x @ Variable(id) =>
+        // new error based on interval and data type/precision
+        val prec = precMap(id)
+        val rndoff = prec.absRoundoff(rangeMap(x, path))
+        val aform = MPFRAffineForm.+/-(rndoff)
+        valMap  = valMap + (id -> aform)
+        (aform, prec)
+
+      // since mixed-precision operates over SSA form, all RealLiterals should show up like this
+      // without treating them separately, we do double rounding
+      case Let(id, RealLiteral(r), body) =>
+        val prec = precMap(id)
+        val aformValue = if (prec.canRepresent(r)) {
+          MPFRAffineForm.zero
+        } else {
+          MPFRAffineForm.+/-(prec.absRoundoff(r))
+        }
+        valMap = valMap + (id -> aformValue)
+        eval(body, path)
+
+      case x @ RealLiteral(r) =>
+        if (constantsPrecision.canRepresent(r)) {
+          (MPFRAffineForm.zero, constantsPrecision)
+        } else {
+          (MPFRAffineForm.+/-(constantsPrecision.absRoundoff(r)), constantsPrecision)
+        }
+
+      case Let(id, x @ Plus(l @ Variable(lhs), r @ Variable(rhs)), body) =>
+        val (lAform, _) = eval(l, path)
+        val (rAform, _) = eval(r, path)
+
+        // propagated error
+        val aform: MPFRAffineForm = lAform + rAform
+
+        val newError = addNewErrorLet(lhs, rhs, id, x, path, aform)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ Minus(l @ Variable(lhs), r @ Variable(rhs)), body) =>
+        val (lAform, _) = eval(l, path)
+        val (rAform, _) = eval(r, path)
+
+        // propagated error
+        val aform: MPFRAffineForm = lAform - rAform
+
+        val newError = addNewErrorLet(lhs, rhs, id, x, path, aform)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ Times(l @ Variable(lhs), r @ Variable(rhs)), body) =>
+        val (lAform, _) = eval(l, path)
+        val (rAform, _) = eval(r, path)
+
+        // propagated error
+        val lAA = MPFRAffineForm(rangeMap(l, path))
+        val rAA = MPFRAffineForm(rangeMap(r, path))
+        val lErr = lAform
+        val rErr = rAform
+        val aform: MPFRAffineForm = lAA*rErr + rAA*lErr + lErr*rErr
+
+        val newError = addNewErrorLet(lhs, rhs, id, x, path, aform)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ Division(l @ Variable(lhs), r @ Variable(rhs)), body) =>
+        val (errorLhs, _) = eval(l, path)
+        val (errorRhs, _) = eval(r, path)
+
+        // propagated error
+
+        val rangeRhs = rangeMap(r, path)
+        val rangeLhs = rangeMap(l, path)
+
+        val rightInterval = rangeRhs + errorRhs.toInterval // the actual interval, incl errors
+
+        if (rightInterval.includes(Rational.zero)) {
+          throw tools.DivisionByZeroException("trying to divide by error interval containing 0")
+        }
+
+        val a = Interval.minAbs(rightInterval)
+        val errorMultiplier = -one / (a*a)
+
+        val invErr = errorRhs * errorMultiplier
+
+        val inverse: Interval = rangeRhs.inverse
+
+        // multiplication with inverse
+        val aform = MPFRAffineForm(rangeLhs) * invErr +
+          MPFRAffineForm(inverse) * errorLhs +
+          errorLhs * invErr
+
+        val newError = addNewErrorLet(lhs, rhs, id, x, path, aform)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ UMinus(y @ Variable(t)), body) =>
+        // propagated error
+        var newError = - eval(y, path)._1
+
+        // no additional roundoff error, but we could have a downcast
+        val assignPrec = precMap(id)
+        if (assignPrec < precMap(t)) { // we need to cast down
+          val castRoundoff = assignPrec.absRoundoff(rangeMap(x, path) + newError.toInterval)
+          newError = newError :+ castRoundoff.toMPFRInterval
+        }
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ Sqrt(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val a = min(abs(rangeT.xlo), abs(rangeT.xhi))
+        val errorMultiplier = Rational(1L, 2L) / sqrtDown(a)
+        val aform = errorT * errorMultiplier
+
+        val newError = addNewErrorLetUnary(t, id, x, path, aform)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ Sin(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val deriv =  rangeT.cosine
+        val errorMultiplier = if (abs(deriv.xlo) > abs(deriv.xhi)) deriv.xlo else deriv.xhi
+        val propError = errorT * errorMultiplier
+
+        val newError = addNewErrorLetUnary(t, id, x, path, propError, trans = true)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ Cos(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val deriv = -rangeT.sine
+        val errorMultiplier = if (abs(deriv.xlo) > abs(deriv.xhi)) deriv.xlo else deriv.xhi
+        val propError = errorT * errorMultiplier
+
+        val newError = addNewErrorLetUnary(t, id, x, path, propError, trans = true)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ Tan(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val intCosine = rangeT.cosine
+        val deriv = (intCosine * intCosine).inverse
+
+        val errorMultiplier = if (abs(deriv.xlo) > abs(deriv.xhi)) deriv.xlo else deriv.xhi
+        val propError = errorT * errorMultiplier
+
+        val newError = addNewErrorLetUnary(t, id, x, path, propError, trans = true)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ Atan(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        // d/dx(atan(x)) = 1 / (x**2 + 1)
+        val Interval(a, b) = rangeT
+
+        val errorMultiplier = if (a >= Rational.zero) {
+          // The interval is fully above zero, so the maximum derivative is at 1 / (a**2 + 1)
+          1 / (a * a + Rational.one)
+        } else if (b <= Rational.zero) {
+          // The interval is fully below zero, so the maximum derivative is at 1 / (b**2 + 1), since b is the closest to
+          // zero.
+          1 / (b * b + Rational.one)
+        } else {
+          // The interval contains zero, so the maximum value is 1 / (0**2 + 1) = 1
+          Rational.one
+        }
+
+        val propError = errorT * errorMultiplier
+
+        val newError = addNewErrorLetUnary(t, id, x, path, propError, trans = true)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case Let(id, x @ Exp(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val b = rangeT.xhi
+        val errorMultiplier = expUp(b)
+        val propError = errorT * errorMultiplier
+
+        val newError = addNewErrorLetUnary(t, id, x, path, propError, trans = true)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+
+      case Let(id, x @ Log(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val a = rangeT.xlo
+        val errorMultiplier = Rational.one / a
+        val propError = errorT * errorMultiplier
+
+        val newError = addNewErrorLetUnary(t, id, x, path, propError, trans = true)
+
+        valMap = valMap + (id -> newError)
+        eval(body, path)
+
+      case x @ Plus(l @ Variable(lhs), r @ Variable(rhs)) =>
+        val (lAform, _) = eval(l, path)
+        val (rAform, _) = eval(r, path)
+
+        // propagated error
+        val aform: MPFRAffineForm = lAform + rAform
+
+        addNewError(lhs, rhs, x, path, aform)
+
+      case x @ Minus(l @ Variable(lhs), r @ Variable(rhs)) =>
+        val (lAform, _) = eval(l, path)
+        val (rAform, _) = eval(r, path)
+
+        // propagated error
+        val aform: MPFRAffineForm = lAform - rAform
+
+        addNewError(lhs, rhs, x, path, aform)
+
+      case x @ Times(l @ Variable(lhs), r @ Variable(rhs)) =>
+        val (lAform, _) = eval(l, path)
+        val (rAform, _) = eval(r, path)
+
+        // propagated error
+        val lAA = MPFRAffineForm(rangeMap(l, path))
+        val rAA = MPFRAffineForm(rangeMap(r, path))
+        val lErr = lAform
+        val rErr = rAform
+
+        val aform: MPFRAffineForm = lAA*rErr + rAA*lErr + lErr*rErr
+
+        addNewError(lhs, rhs, x, path, aform)
+
+      case x @ Division(l @ Variable(lhs), r @ Variable(rhs)) =>
+        val (errorLhs, _) = eval(l, path)
+        val (errorRhs, _) = eval(r, path)
+
+        // propagated error
+
+        val rangeRhs = rangeMap(r, path)
+        val rangeLhs = rangeMap(l, path)
+
+        val rightInterval = rangeRhs + errorRhs.toInterval // the actual interval, incl errors
+
+        val a = Interval.minAbs(rightInterval)
+        val errorMultiplier = -one / (a*a)
+
+        val invErr = errorRhs * errorMultiplier
+
+        val inverse: Interval = rangeRhs.inverse
+
+        // multiplication with inverse
+        val aform = MPFRAffineForm(rangeLhs) * invErr +
+          MPFRAffineForm(inverse) * errorLhs +
+          errorLhs * invErr
+
+        addNewError(lhs, rhs, x, path, aform)
+
+      case x @ Sqrt(y @ Variable(t)) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val a = min(abs(rangeT.xlo), abs(rangeT.xhi))
+        val errorMultiplier = Rational(1L, 2L) / sqrtDown(a)
+        val aform = errorT * errorMultiplier
+
+        addNewErrorUnary(t, x, path, aform)
+
+      case Let(id, x @ Sin(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val deriv =  rangeT.cosine
+        val errorMultiplier = if (abs(deriv.xlo) > abs(deriv.xhi)) deriv.xlo else deriv.xhi
+        val propError = errorT * errorMultiplier
+
+        addNewErrorUnary(t, x, path, propError, trans = true)
+
+      case Let(id, x @ Cos(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val deriv = -rangeT.sine
+        val errorMultiplier = if (abs(deriv.xlo) > abs(deriv.xhi)) deriv.xlo else deriv.xhi
+        val propError = errorT * errorMultiplier
+
+        addNewErrorUnary(t, x, path, propError, trans = true)
+
+      case Let(id, x @ Tan(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val intCosine = rangeT.cosine
+        val deriv = (intCosine * intCosine).inverse
+
+        val errorMultiplier = if (abs(deriv.xlo) > abs(deriv.xhi)) deriv.xlo else deriv.xhi
+        val propError = errorT * errorMultiplier
+
+        addNewErrorUnary(t, x, path, propError, trans = true)
+
+      case x @ Atan(y @ Variable(t)) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        // d/dx(atan(x)) = 1 / (x**2 + 1)
+        val Interval(a, b) = rangeT
+
+        val errorMultiplier = if (a >= Rational.zero) {
+          // The interval is fully above zero, so the maximum derivative is at 1 / (a**2 + 1)
+          1 / (a * a + Rational.one)
+        } else if (b <= Rational.zero) {
+          // The interval is fully below zero, so the maximum derivative is at 1 / (b**2 + 1), since b is the closest to
+          // zero.
+          1 / (b * b + Rational.one)
+        } else {
+          // The interval contains zero, so the maximum value is 1 / (0**2 + 1) = 1
+          Rational.one
+        }
+
+        val propError = errorT * errorMultiplier
+
+        addNewErrorUnary(t, x, path, propError, trans = true)
+
+      case Let(id, x @ Exp(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val b = rangeT.xhi
+        val errorMultiplier = expUp(b)
+        val propError = errorT * errorMultiplier
+
+        addNewErrorUnary(t, x, path, propError, trans = true)
+
+      case Let(id, x @ Log(y @ Variable(t)), body) =>
+        val rangeT = rangeMap(y, path)
+
+        val errorT = eval(y, path)._1
+
+        val a = rangeT.xlo
+        val errorMultiplier = Rational.one / a
+        val propError = errorT * errorMultiplier
+
+        addNewErrorUnary(t, x, path, propError, trans = true)
+
+      case x @ UMinus(t) =>
+        val (aform, prec) = eval(t, path)   // no additional roundoff error
+        ( - aform, prec)
+
+      case Let(binder, x @ Variable(t), body) =>
+        val (aform, _) = eval(x, path)
+
+        val error = if (precMap(binder) < precMap(t)) { // we need to cast down
+          MPFRAffineForm(precMap(binder).absRoundoff(rangeMap(x, path) + aform.toInterval))
+        } else {
+          aform
+        }
+
+        valMap  = valMap + (binder -> error)
+        eval(body, path)
+
+      // TODO: case x @ IfExpr(cond, thenn, elze) =>
+    }
+    val (aform, prec) = eval(expr, emptyPath)
+    (Interval.maxAbs(aform.toInterval), prec)
+  }
+
+
 
   /**
    * Generates maxTries random type configurations and returns the one which
@@ -665,8 +1075,8 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
    * TODO: the cost function does not need to return Rationals, perhaps Double will do?
    */
   def randomSearch(expr: Expr, errorSpec: Rational, costFnc: (Expr, Map[Identifier, Precision]) => Rational,
-    errorFnc: (Map[Identifier, Precision], Precision) => Rational,
-    availablePrecisions: Seq[Precision], maxTries: Int = 1000): TypeConfig = {
+    errorFnc: (Map[Identifier, Precision], Precision) => (Rational, Precision),
+    availablePrecisions: Seq[Precision], reporter: Reporter, maxTries: Int = 1000): TypeConfig = {
 
     val rand = new Random(4789)
 
@@ -682,7 +1092,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
     // the factor is to accommodate random assignment to pick the same
     val maxIterCount = 15 * maxCandTypeConfigs
 
-    var iterCount = 0l
+    var iterCount = 0L
 
     val candidateTypeConfigs = MSet[TypeConfig]()
 
@@ -699,7 +1109,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
       s"exhaustive search would need: $maxUniqueTypeConfigs")
 
     // test all of them, and keep track of best (only)
-    //val veryLargeRational = Rational(100000l, 1l)
+    //val veryLargeRational = Rational(100000L, 1L)
     var numValidConfigs = 0
 
     // default is the highest precision, since we know that that must work
@@ -709,7 +1119,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
 
     candidateTypeConfigs.foreach(tpeConfig => {
 
-      val error = errorFnc(tpeConfig, highestPrecision)
+      val (error, _) = errorFnc(tpeConfig, highestPrecision)
 
       if (error <= errorSpec) {
         // hard-constraint error spec is satisfied, so the cost function decides
@@ -725,8 +1135,10 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
       }
     })
     reporter.info(s"number of valid type configs: ---- $numValidConfigs ----")
+    //logNumValid ++= s"$numValidConfigs/${candidateTypeConfigs.size} "
+    //logMinCost ++= s"$bestCost "
 
-    bestCandidate
+    bestCandidate //, bestReturnPrec)
   }
 
 
@@ -756,7 +1168,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
     val newType = (currentType: @unchecked) match {
       case Float32 => Float32     // TODO: perhaps we want to move it up again (with some prob?)
       case Float64 => Float32
-      case DoubleDouble => Float64
+      case Float128 => Float64
     }
 
     // update tpeConfig
@@ -787,8 +1199,8 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
    */
   def geneticSearch(expr: Expr, errorSpec: Rational,
     costFnc: (Expr, Map[Identifier, Precision]) => Rational,
-    errorFnc: (Map[Identifier, Precision], Precision) => Rational,
-    availablePrecisions: Seq[Precision]): TypeConfig = {
+    errorFnc: (Map[Identifier, Precision], Precision) => (Rational, Precision),
+    availablePrecisions: Seq[Precision], reporter: Reporter): TypeConfig = {
 
     reporter.info("-----Starting genetic search----")
 
@@ -812,15 +1224,16 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
 
         // the fitness is a combination of the error and the cost
         val error = if (cache.contains(tpeConfig)) {
-            numUsedCache = numUsedCache + 1
-            cache(tpeConfig)
-          } else {
-            val tmp = errorFnc(tpeConfig, highestPrecision)
-            cache += (tpeConfig -> tmp)
-            tmp
-          }
+          numUsedCache = numUsedCache + 1
+          cache(tpeConfig)
+        } else {
+          val (tmp, _) = errorFnc(tpeConfig, highestPrecision)
+          cache += (tpeConfig -> tmp)
+          tmp
+        }
 
         val cost = if (error <= errorSpec) {
+          //numValidConfigs += 1
           validConfigs += tpeConfig
           costFnc(expr, tpeConfig)
 
@@ -837,8 +1250,9 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
 
     reporter.info(s"number of valid type configs: ---- $numValidConfigs, unique: ${validConfigs.size}----")
     reporter.info(s"# used cache: $numUsedCache")
+    //val bestCost = costFnc(expr, newTypeConfig)
 
-    newTypeConfig
+    newTypeConfig //, computeReturnPrecision(expr, newTypeConfig, highestPrecision))
   }
 
 }

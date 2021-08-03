@@ -24,7 +24,7 @@ libraryDependencies ++= Seq(
     "com.storm-enroute" %% "scalameter" % "0.19",
     "org.fusesource.hawtjni" % "hawtjni-runtime" % "1.9",  //for JNI
     "org.scala-lang.modules" %% "scala-parser-combinators" % "1.1.2",
-    "org.scala-lang.modules" %% "scala-parallel-collections" % "0.2.0"
+    "org.scala-lang.modules" %% "scala-parallel-collections" % "1.0.1"
 )
 
 envVars := Map("LC_NUMERIC" -> "en_US.UTF-8")
@@ -32,7 +32,7 @@ envVars := Map("LC_NUMERIC" -> "en_US.UTF-8")
 Keys.fork in run := true
 
 javaOptions in run ++= Seq(
-    "-Xms256M", "-Xmx2G", "-XX:+UseConcMarkSweepGC")
+    "-Xms256M", "-Xmx4G", "-XX:+UseConcMarkSweepGC")
 
 Keys.fork in Test := true   //for native libraries to be on correct path
 
@@ -96,7 +96,7 @@ script := {
                     |TMP=$$LC_NUMERIC
                     |LC_NUMERIC=en_US.UTF-8
                     |
-                    |java -Xmx2G -Xms512M -Xss64M -classpath "$${SCALACLASSPATH}" -Dscala.usejavacp=false scala.tools.nsc.MainGenericRunner -classpath "$${SCALACLASSPATH}" daisy.Main $$@ 2>&1 | tee -i last.log
+                    |java -Xmx4G -Xms512M -Xss64M -classpath "$${SCALACLASSPATH}" -Dscala.usejavacp=false scala.tools.nsc.MainGenericRunner -classpath "$${SCALACLASSPATH}" daisy.Main $$@ 2>&1 | tee -i last.log
                     |
                     |LC_NUMERIC=$$TMP
                     |""".stripMargin)

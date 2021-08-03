@@ -144,11 +144,11 @@ object FinitePrecision {
 
   }
 
-  case object DoubleDouble extends FloatPrecision(128) {
+  case object Float128 extends FloatPrecision(128) {
 
-    override val toString = "Quad"
+    override val toString = "Float128"
 
-    override val machineEpsilon: Rational = Rational.powerTwo(-113)
+    override val machineEpsilon: Rational = Rational.fromString("1.92594e-34") // rounded up
 
     lazy override val (mantissa_bits, exponent_bits): (Int, Int) = ???
 
@@ -159,7 +159,7 @@ object FinitePrecision {
     // override val minNormal: Rational = Rational.powerTwo(-969)
   }
 
-  case object QuadDouble extends FloatPrecision(256) {
+  case object Float256 extends FloatPrecision(256) {
 
     override val machineEpsilon: Rational = Rational.powerTwo(-211)
 
@@ -192,7 +192,7 @@ object FinitePrecision {
     override val toString = "Fixed" + bitlength
 
     override def _absRoundoff(i: Interval): Rational = Rational.powerTwo(-fractionalBits(i))
-    override def _absTranscendentalRoundoff(i: Interval): Rational = Rational.two * _absRoundoff(i) // todo smarter computation // changed from: Rational.two *
+    override def _absTranscendentalRoundoff(i: Interval): Rational = ???
 
     def fractionalBits(i: Interval): Int = fractionalBits(Interval.maxAbs(i))
     def fractionalBits(r: Rational): Int = bitlength - integerBitsNeeded(r)

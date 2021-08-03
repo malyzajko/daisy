@@ -51,7 +51,7 @@ object Main {
     ChoiceOption(
       "analysis",
       Map("dataflow" -> analysis.DataflowPhase, "opt" -> analysis.TaylorErrorPhase,
-          "relative" -> analysis.RelativeErrorPhase),
+        "relative" -> analysis.RelativeErrorPhase),
       "dataflow",
       "Which analysis method to use"),
     FlagOption(
@@ -61,11 +61,13 @@ object Main {
     ChoiceOption(
       "precision",
       Map("Float16" -> Float16, "Float32" -> Float32, "Float64" -> Float64,
-        "Quad" -> DoubleDouble, "QuadDouble" -> QuadDouble,
+        "Float128" -> Float128, "Float256" -> Float256,
         "Fixed8" -> FixedPrecision(8), "Fixed16" -> FixedPrecision(16),
         "Fixed32" -> FixedPrecision(32), "Fixed64" -> FixedPrecision(64)),
       "Float64",
       "(Default, uniform) precision to use"),
+
+
     StringChoiceOption(
       "rangeMethod",
       Set("affine", "interval", "smt", "intervalMPFR", "affineMPFR"),
@@ -104,19 +106,11 @@ object Main {
 
     FlagOption("mixed-cost-eval", "Mixed-precision cost function evaluation experiment"),
     FlagOption("mixed-exp-gen", "Mixed-precision experiment generation"),
+    FlagOption("branch-benchmarking-gen", "Branch benchmarking generation"),
+    FlagOption("regime-inf", "Regime inference"),
+    FlagOption("fptuner", "Use FPTuner"),
+    FlagOption("fptunerDaisy", "Use FPTuner after Daisy's regime inference"),
     FlagOption("mixed-tuning", "Perform mixed-precision tuning"),
-    FlagOption(
-      "approx",
-      "Replaces expensive transcendental function calls with its approximations"
-    ),
-    StringOption(
-      "spec",
-      "Specification file with intervals for input variables and target error."),
-    StringChoiceOption(
-      "cost",
-      Set("area", "ml", "combined"),
-      "area",
-      "Cost function for mixed-tuning and approximation phases."),
 
     FlagOption("metalibm", "approximate an elementary function from Metalibm"),
     FlagOption("benchmarking", "generates the benchmark file")
@@ -140,13 +134,16 @@ object Main {
     opt.MixedPrecisionOptimizationPhase,
     experiment.MixedPrecisionExperimentGenerationPhase,
     experiment.CostFunctionEvaluationExperiment,
+    experiment.BranchBenchmarkingGenerationPhase,
+    opt.RegimeInferencePhase,
+    opt.FPTunerPhase,
+    transform.RegimeBodyTransformingPhase,
     backend.InfoPhase,
     frontend.ExtractionPhase,
-    frontend.CExtractionPhase,
-    opt.ApproxPhase,
     opt.MetalibmPhase,
     //transform.ReassignElemFuncPhase,
     experiment.BenchmarkingPhase,
+    //experiment.BenchmarkingJVMPhase,
     transform.DecompositionPhase
   )
 
@@ -178,9 +175,13 @@ object Main {
             ctx.reporter.warning(msg)
           case tools.ArcOutOfBoundsException(msg) =>
             ctx.reporter.warning(msg)
-          // case e: DaisyFatalError =>
+          case tools.AtanNotSupportedException(msg) =>
+            ctx.reporter.warning(msg)
+          case e: java.util.concurrent.TimeoutException =>
+            ctx.reporter.warning(s"Timeout")
+          // case _: DaisyFatalError =>
           //   ctx.reporter.info("Something really bad happened. Cannot continue.")
-          // case _ : Throwable =>
+          // case _: Throwable =>
           //   ctx.reporter.info("Something really bad happened. Cannot continue.")
         }
         ctx.timers.get("total").stop()
@@ -198,8 +199,7 @@ object Main {
 
   private def computePipeline(ctx: Context): Pipeline[Program, Program] = {
 
-    var pipeline: Pipeline[Program, Program] =
-      if (ctx.lang == ProgramLanguage.ScalaProgram) frontend.ExtractionPhase else frontend.CExtractionPhase
+    var pipeline: Pipeline[Program, Program] = frontend.ExtractionPhase
 
     pipeline >>= analysis.SpecsProcessingPhase
 
@@ -223,22 +223,70 @@ object Main {
         analysis.RangePhase >>
         experiment.CostFunctionEvaluationExperiment
 
-    } else if (ctx.hasFlag("mixed-exp-gen")) {
-      pipeline >>= experiment.MixedPrecisionExperimentGenerationPhase
 
-    } else if (ctx.hasFlag("approx")) {
+    /*} else if (ctx.hasFlag("regime-inf") && ctx.hasFlag("fptuner")) {
+
       pipeline >>= transform.TACTransformerPhase >>
-        transform.ConstantTransformerPhase
-
-      if (ctx.hasFlag("mixed-tuning")) {
-        pipeline >>= analysis.RangePhase >>
-          opt.MixedPrecisionOptimizationPhase
-      } else
-        pipeline >>= analysis.DataflowPhase
-
-      pipeline >>= opt.ApproxPhase >>
-        analysis.AbsErrorPhase >>
+        transform.ConstantTransformerPhase >>
+        analysis.RegimeInferencePhase >>
+        opt.FPTuner >>
+        transform.RegimeBodyTransformingPhase >>
         backend.InfoPhase >>
+        backend.CodeGenerationPhase*/
+
+    } else if (ctx.hasFlag("regime-inf") && ctx.hasFlag("fptunerDaisy")) {
+      // computing baseline comparison using FPTuner
+
+      pipeline >>= transform.TACTransformerPhase >>
+        transform.ConstantTransformerPhase >>
+        opt.RegimeInferencePhase >>
+        opt.FPTunerPhase >>
+        transform.RegimeBodyTransformingPhase >>
+        backend.InfoPhase >>
+        backend.CodeGenerationPhase
+
+    } else if (ctx.hasFlag("regime-inf") && ctx.hasFlag("fptuner")) {
+      // computing baseline comparison using FPTuner
+
+      pipeline >>= transform.TACTransformerPhase >>
+        transform.ConstantTransformerPhase >>
+        opt.RegimeInferencePhase >>
+        //opt.FPTunerPhase >>
+        transform.RegimeBodyTransformingPhase >>
+        backend.InfoPhase >>
+        backend.CodeGenerationPhase
+
+    } else if (ctx.hasFlag("mixed-tuning") && ctx.hasFlag("fptuner")) {
+      // computing baseline comparison using FPTuner
+
+      pipeline >>= transform.TACTransformerPhase >>
+        transform.ConstantTransformerPhase >>
+        opt.FPTunerPhase >>
+        backend.InfoPhase >>
+        backend.CodeGenerationPhase
+
+    } else if (ctx.hasFlag("regime-rewriting")) {
+
+      pipeline >>= opt.RegimeInferencePhase >>
+      transform.RegimeBodyTransformingPhase >>
+      backend.InfoPhase >>
+      backend.CodeGenerationPhase
+
+    } else if (ctx.hasFlag("regime-inf")) {
+
+      pipeline >>= transform.TACTransformerPhase >>
+        transform.ConstantTransformerPhase >>
+        opt.RegimeInferencePhase >>
+        transform.RegimeBodyTransformingPhase >>
+        backend.InfoPhase >>
+        backend.CodeGenerationPhase
+
+    } else if (ctx.hasFlag("mixed-exp-gen")) {
+      pipeline >>= experiment.MixedPrecisionExperimentGenerationPhase //>>
+      //backend.CodeGenerationPhase
+
+    }  else if (ctx.hasFlag("branch-benchmarking-gen")) {
+      pipeline >>= experiment.BranchBenchmarkingGenerationPhase >>
         backend.CodeGenerationPhase
 
     } else if (ctx.hasFlag("metalibm") && ctx.hasFlag("mixed-tuning")){
@@ -254,7 +302,6 @@ object Main {
         backend.CodeGenerationPhase
 
     } else if (ctx.hasFlag("mixed-tuning")) {
-
       val rangePhase = if (ctx.hasFlag("subdiv")) {
         analysis.DataflowSubdivisionPhase
       } else {
@@ -265,7 +312,6 @@ object Main {
         transform.ConstantTransformerPhase >>
         rangePhase >>
         opt.MixedPrecisionOptimizationPhase >>
-        //analysis.AbsErrorPhase >>
         backend.InfoPhase >>
         backend.CodeGenerationPhase
 
@@ -305,6 +351,7 @@ object Main {
       pipeline >>= experiment.BenchmarkingPhase
     }
 
+
     pipeline
   }
 
@@ -320,7 +367,7 @@ object Main {
     for (c <- Main.allPhases.toSeq.sortBy(_.name) if c.definedOptions.nonEmpty) {
       reporter.info("")
       reporter.info(s"${c.name} Phase")
-      for (opt <- c.definedOptions.toSeq.sortBy(_.name)) {
+      for(opt <- c.definedOptions.toSeq.sortBy(_.name)) {
         reporter.info(opt.helpLine)
       }
     }
@@ -390,25 +437,17 @@ object Main {
       }
     }).toMap
 
-    def inputInfo: (String, ProgramLanguage.Value) = args.filterNot(_.startsWith("-")) match {
+    val inputFile: String = args.filterNot(_.startsWith("-")) match {
       case Seq() => initReporter.fatalError("No input file")
-      case Seq(f) if new File(f).exists && f.endsWith(".c") => (f, ProgramLanguage.CProgram)
-      case Seq(f) if new File(f).exists => (f, ProgramLanguage.ScalaProgram)
+      case Seq(f) if new File(f).exists => f
       case Seq(f) => initReporter.fatalError(s"File $f does not exist")
       case fs => initReporter.fatalError("More than one input file: " + fs.mkString(", "))
     }
 
-    val (inputFile, programLanguage) = inputInfo
     Option(Context(
       initReport = initReporter.report,
       file = inputFile,
-      lang = programLanguage,
       options = opts
     ))
   }
-
-  object ProgramLanguage extends Enumeration {
-    val CProgram, ScalaProgram = Value
-  }
-
 }

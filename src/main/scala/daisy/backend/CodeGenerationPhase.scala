@@ -3,15 +3,10 @@
 package daisy
 package backend
 
-import java.io.FileWriter
-import java.io.BufferedWriter
-
 import scala.collection.immutable.Seq
 import utils.CodePrinter
 import lang.Trees._
-import tools.FinitePrecision
-import FinitePrecision._
-import daisy.lang.TreeOps.containsApproxNode
+import tools.FinitePrecision._
 import lang.Types._
 import lang.Extractors.ArithOperator
 import tools.{Interval, Rational}
@@ -23,7 +18,7 @@ object CodeGenerationPhase extends DaisyPhase {
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     StringChoiceOption(
       "lang",
-      Set("C", "Scala", "FPCore"),
+      Set("C", "Scala", "FPCore", "DaisyInput", "FPTaylor"),
       "Scala",
       "Language for which to generate code"),
     FlagOption(
@@ -43,12 +38,13 @@ object CodeGenerationPhase extends DaisyPhase {
 
     reporter = ctx.reporter
 
-    val mixedTuning = ctx.hasFlag("mixed-tuning") || (ctx.hasFlag("approx") && ctx.hasFlag("polyMixed"))
+    val mixedTuning = ctx.hasFlag("mixed-tuning")
     val fixedPrecision = ctx.fixedPoint
     val apfixedFormat = ctx.hasFlag("apfixed")
+    val lang = if ((mixedTuning && fixedPrecision) || ctx.hasFlag("apfixed")) "apfixed"
+      else ctx.option[String]("lang")
 
-    val ctxCopy = if (ctx.hasFlag("approx")) ctx.copy(options = ctx.options + ("approx" -> false)) else ctx
-    val newDefs = transformConsideredFunctions(ctxCopy, prg){ fnc =>
+    val newDefs = transformConsideredFunctions(ctx, prg){ fnc =>
 
       // if the function returns tuples, we need to re-tuple them
       val _body = fnc.returnType match {
@@ -60,62 +56,36 @@ object CodeGenerationPhase extends DaisyPhase {
 
       // CASE: mixed-tuning for fixed-point arithmetic, necessarily with apfixed
       if (mixedTuning && fixedPrecision) {
-        // CASE: approx only: 1) fnc is polynomial approximation and has uniform precision; 2) fnc is top-level and has uniform precision
-        if (ctx.hasFlag("approx") &&
-          ((ctx.hasFlag("polyUniform") && !containsApproxNode(fnc.body.get)) ||
-          (ctx.hasFlag("polyMixed") && containsApproxNode(fnc.body.get)))){
-          val b = (uniformPrecisions(fnc.id): @unchecked) match { case FixedPrecision(a) => a}
-          val newBody = toAPFixedCode(_body, b, ctx.intermediateRanges(fnc.id),
-            ctx.intermediateAbsErrors(fnc.id))
-          val fncParams = fnc.params.map({
-            case ValDef(id) =>
-              val actualRange = ctx.intermediateRanges(fnc.id)(Variable(id), emptyPath) +/- ctx.intermediateAbsErrors(fnc.id)(Variable(id), emptyPath)
-              val intBits = FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRange))
-              ValDef(id.changeType(APFixedType(b, intBits)))
-          })
-          val actualRangeResult = ctx.resultRealRanges(fnc.id) +/- ctx.resultAbsoluteErrors(fnc.id)
-          val intBitsResult = FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRangeResult))
-
-          // TODO: C code with tuples???
-          val retType = APFixedType(b, intBitsResult)
-
-          fnc.copy(
-            params = fncParams,
-            body = Some(newBody),
-            returnType = retType)
-
-        } else {
-          // number of bits given in precision flag
-          val b = (ctx.option[Precision]("precision"): @unchecked) match {
-            case FixedPrecision(a) => a
-          }
-
-          val newBody = toAPFixedCode(_body, b, ctx.intermediateRanges(fnc.id),
-            ctx.intermediateAbsErrors(fnc.id))
-          val fncParams = fnc.params.map({
-            case ValDef(id) =>
-              val actualRange = ctx.intermediateRanges(fnc.id)(Variable(id),
-                emptyPath) +/- ctx.intermediateAbsErrors(fnc.id)(Variable(id), emptyPath)
-              val parTotal = id.getType match {
-                case FinitePrecisionType(FixedPrecision(a)) => a
-              }
-              val intBits = FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRange))
-              ValDef(id.changeType(APFixedType(parTotal, intBits)))
-          })
-          // TODO: duplication here, refactor to compute return type given ranges and abs errors
-          val actualRangeResult = ctx.resultRealRanges(fnc.id) +/- ctx.resultAbsoluteErrors(fnc.id)
-          val intBitsResult = FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRangeResult))
-          val retTotal = fnc.returnType match {
-            case FinitePrecisionType(FixedPrecision(a)) => a
-          }
-          val retType = APFixedType(retTotal, intBitsResult)
-
-          fnc.copy(
-            params = fncParams,
-            body = Some(newBody),
-            returnType = retType)
-
+        // number of bits given in precision flag
+        val b = (ctx.option[Precision]("precision"): @unchecked) match {
+          case FixedPrecision(a) => a
         }
+
+        val newBody = toAPFixedCode(_body, b, ctx.intermediateRanges(fnc.id),
+          ctx.intermediateAbsErrors(fnc.id))
+        val fncParams = fnc.params.map({
+          case ValDef(id) =>
+            val actualRange = ctx.intermediateRanges(fnc.id)(Variable(id),
+              emptyPath) +/- ctx.intermediateAbsErrors(fnc.id)(Variable(id), emptyPath)
+            val parTotal = id.getType match {
+              case FinitePrecisionType(FixedPrecision(a)) => a
+            }
+            val intBits = FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRange))
+            ValDef(id.changeType(APFixedType(parTotal, intBits)))
+        })
+        // TODO: duplication here, refactor to compute return type given ranges and abs errors
+        val actualRangeResult = ctx.resultRealRanges(fnc.id) +/- ctx.resultAbsoluteErrors(fnc.id)
+        val intBitsResult = FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRangeResult))
+        val retTotal = fnc.returnType match {
+          case FinitePrecisionType(FixedPrecision(a)) => a
+        }
+        val retType = APFixedType(retTotal, intBitsResult)
+
+        fnc.copy(
+          params = fncParams,
+          body = Some(newBody),
+          returnType = retType)
+
       // CASE: mixed-tuning with floats
       } else if (mixedTuning) {
         // types are changed before, since the semantics of type assignments is special
@@ -164,6 +134,10 @@ object CodeGenerationPhase extends DaisyPhase {
           body = Some(newBody),
           returnType = newReturnType)
 
+      } else if (lang == "DaisyInput"){
+        // keep Reals for Daisy input
+        fnc
+
       // floats
       } else {
         val defaultPrec = uniformPrecisions.getOrElse(fnc.id, Float64)
@@ -186,39 +160,9 @@ object CodeGenerationPhase extends DaisyPhase {
 
     val newProgram = Program(prg.id, newDefs)
 
-    val lang = if ((mixedTuning && fixedPrecision) || ctx.hasFlag("apfixed")) "apfixed"
-      else ctx.option[String]("lang")
 
 
-    // write the program to file
-    val filename = lang match {
-      case "apfixed" => System.getProperty("user.dir")+"/output/" + newProgram.id + ".cpp"
-      case _ =>
-      System.getProperty("user.dir")+"/output/" + newProgram.id + CodePrinter.suffix(lang)
-    }
-    ctx.codegenOutput.append(newProgram.id)
-    val fstream = new FileWriter(filename)
-    val out = new BufferedWriter(fstream)
-    CodePrinter(newProgram, ctx, lang, out)
-
-    // for metalibm generated code, we need to inline the generated functions
-    if (ctx.hasFlag("metalibm")) {
-      out.append("\n// ----- metalibm generated code -----\n")
-      for (file <- ctx.metalibmGeneratedFiles) {
-        val lines = scala.io.Source.fromFile(file).mkString.replace("void", "static inline void")
-        out.append(lines + "\n")
-      }
-
-      // delete intermediate files
-      val metalibmFolder = new java.io.File(opt.MetalibmPhase.metalibmPath)
-      if (metalibmFolder.isDirectory) { // always a dir
-        metalibmFolder.listFiles.filter(f =>
-          f.getName.contains("_id_sollya_git_devel_") || f.getName.contains("__gappa.gappa") ||
-          f.getName.contains("problemdefForDaisy_")
-        ).foreach(_.delete())
-      }
-    }
-    out.close()
+    writeFile(newProgram, lang, ctx)
     (ctx, newProgram)
   }
 
@@ -241,6 +185,21 @@ object CodeGenerationPhase extends DaisyPhase {
 
     case Let(_, Variable(id), body) =>
       reconstructTuple(body) :+ Variable(id)
+  }
+
+  def writeFile(prg: Program, lang: String, ctx: Context, folder: String = "output"): Unit = {
+    import java.io.FileWriter
+    import java.io.BufferedWriter
+
+    val filename = lang match {
+      case "apfixed" => System.getProperty("user.dir")+"/output/" + prg.id + ".cpp"
+      case _ =>
+      System.getProperty("user.dir")+"/" + folder + "/" + prg.id + CodePrinter.suffix(lang)
+    }
+    ctx.codegenOutput.append(prg.id)
+    val fstream = new FileWriter(filename)
+    val out = new BufferedWriter(fstream)
+    CodePrinter(prg, ctx, lang, out)
   }
 
   private def assignFloatType(e: Expr, tpeMap: Map[Identifier, Precision],
@@ -283,7 +242,7 @@ object CodeGenerationPhase extends DaisyPhase {
       (IfExpr(eCond, eThen, eElse), prec)
 
     case Tuple(args) =>
-      (Tuple(args.map(assignFloatType(_, tpeMap, defaultPrecision)).unzip._1),
+      (Tuple(args.map(assignFloatType(_, tpeMap, defaultPrecision)).map(_._1)),
         defaultPrecision)
         // tuples can only occur at the very end, hence the returned precision
         // doesn't matter
@@ -315,6 +274,24 @@ object CodeGenerationPhase extends DaisyPhase {
 
       val prec = getUpperBound(Seq(leftPrec, rightPrec): _*)
       (LessEquals(eLeft, eRight), prec)
+
+    case And(exprs) =>
+      val assigned = exprs.map(assignFloatType(_, tpeMap, defaultPrecision))
+      val updatedExpressions = assigned.map(_._1)
+      // And is a boolean expression and as such does not have a finite precision type that we are
+      // interested in.
+      (And(updatedExpressions), null)
+
+    case Or(exprs) =>
+      val assigned = exprs.map(assignFloatType(_, tpeMap, defaultPrecision))
+      val updatedExpressions = assigned.map(_._1)
+      // Or is a boolean expression and as such does not have a finite precision type that we are
+      // interested in.
+      (Or(updatedExpressions), null)
+
+    case Not(expr) =>
+      val (updatedExpression, _) = assignFloatType(expr, tpeMap, defaultPrecision)
+      (Not(updatedExpression), null)
   }
 
   /*
@@ -327,7 +304,6 @@ object CodeGenerationPhase extends DaisyPhase {
       case FixedPrecision(x) if x <= 8 => Int16Type
       case FixedPrecision(x) if 8 < x && x <= 16 => Int32Type
       case FixedPrecision(x) if 16 < x && x <= 32 => Int64Type
-      //case FixedPrecision(x) if x > 32 => Long // todo ???
     }
 
     @inline
@@ -455,12 +431,10 @@ object CodeGenerationPhase extends DaisyPhase {
 
       case Tuple(args) => Tuple(args.map(_toFPCode(_, path)))
 
-      case GreaterThan(l, r) => GreaterThan(_toFPCode(l, path), _toFPCode(r, path))
-      case GreaterEquals(l, r) => GreaterEquals(_toFPCode(l, path), _toFPCode(r, path))
-      case LessThan(l, r) => LessThan(_toFPCode(l, path), _toFPCode(r, path))
-      case LessEquals(l, r) => LessEquals(_toFPCode(l, path), _toFPCode(r, path))
-
-      case ApproxPoly(original, arg, approxFncId, errBudget) => ApproxPoly(original, arg, approxFncId.changeType(newType), errBudget)
+      case x @ GreaterThan(l, r) => GreaterThan(_toFPCode(l, path), _toFPCode(r, path))
+      case x @ GreaterEquals(l, r) => GreaterEquals(_toFPCode(l, path), _toFPCode(r, path))
+      case x @ LessThan(l, r) => LessThan(_toFPCode(l, path), _toFPCode(r, path))
+      case x @ LessEquals(l, r) => LessEquals(_toFPCode(l, path), _toFPCode(r, path))
     }
 
     _toFPCode(expr, emptyPath)
@@ -476,46 +450,23 @@ object CodeGenerationPhase extends DaisyPhase {
     @inline
     def getIntegerBits(e: Expr, path: PathCond): Int = {
       // the overall interval is the real-valued range +/- absolute errors
-
-      var actualRange = intermRanges.getOrElse((e, path), e match
-      {
-        case FinitePrecisionLiteral(r, _, stringVal) => intermRanges(RealLiteral(r, stringVal), path)
-        case x => throw new Exception(s"No range computed for $x")
-      })
-      val absError = intermAbsErrors.getOrElse((e, path), e match
-        {
-          case FinitePrecisionLiteral(r, _, stringVal) => intermAbsErrors(RealLiteral(r, stringVal), path)
-          case x => throw new Exception(s"No absolute roundoff error computed for $x")
-        })
-      actualRange = actualRange +/- absError
+      var actualRange = intermRanges(e, path)
+      actualRange = actualRange +/- intermAbsErrors(e, path)
       FixedPrecision.integerBitsNeeded(Interval.maxAbs(actualRange))
     }
 
     def _toFPCode(e: Expr, path: PathCond): Expr = (e: @unchecked) match {
-      case x @ Variable(id) => x
+      case x @ Variable(id) => x //Variable(id.changeType(newType))
 
       case x @ RealLiteral(r) => x  // constants are handled automatically?
 
       case x @ FinitePrecisionLiteral(r,prec,s)  => x
 
-      case x @ Cast(ex,typ) =>
-        val bits = typ match {
-            case FinitePrecisionType(FixedPrecision(a)) => a
-            case _ => totalBits
-        }
-        ex match {
-          case Variable(_) => Cast(ex, APFixedType(bits,getIntegerBits(x, path)))
-          case UMinus(Variable(_)) => Cast(ex, APFixedType(bits,getIntegerBits(x, path)))
-          case _ => Cast(_toFPCode(ex, path), APFixedType(bits,getIntegerBits(ex, path)))
-        }
+      case x @ Cast(ex,typ) => ex
 
-      case x @ ArithOperator(Seq(t: Expr), recons) =>
-        recons(Seq(_toFPCode(t, path)))
 
-      case x @ ArithOperator(Seq(lhs: Expr, rhs: Expr), recons) =>
-        val rhsFP = _toFPCode(rhs, path)
-        val lhsFP = _toFPCode(lhs, path)
-        recons(Seq(lhsFP, rhsFP))
+      case x @ ArithOperator(Seq(t: Expr), recons) => x
+      case x @ ArithOperator(Seq(lhs: Expr, rhs: Expr), recons) => x
 
       case Let(id, value, body) =>
         val bits = id.getType match {
@@ -535,10 +486,6 @@ object CodeGenerationPhase extends DaisyPhase {
       case x @ LessThan(l, r) => LessThan(_toFPCode(l, path), _toFPCode(r, path))
       case x @ LessEquals(l, r) => LessEquals(_toFPCode(l, path), _toFPCode(r, path))
 
-      case x @ ApproxPoly(original, arg, approxFncId, errBudget) =>
-        val funType = APFixedType(totalBits, getIntegerBits(x, path))
-        ApproxPoly(original, arg, approxFncId.changeType(funType), errBudget)
-
     }
     _toFPCode(expr, emptyPath)
   }
@@ -557,6 +504,19 @@ object CodeGenerationPhase extends DaisyPhase {
       case FinitePrecisionType(FixedPrecision(x)) if 16 < x && x <= 32 => Variable(id.changeType(Int64Type))
     }
 
+    // case Let(id, x @ RealLiteral(r), body) =>
+    //   val tpe = id.getType.asInstanceOf[Fixed]
+    //   val f = tpe.fractionalBits(r)
+    //   tpe match {
+    //     case FixedPrecision(16) =>
+    //       val tmp = Int32Literal((r * Rational.fromDouble(math.pow(2, f))).roundToInt)
+    //       Let(id.changeType(Int32Type), tmp, toMixedFixedPointCode(body))
+
+    //     case FixedPrecision(32) =>
+    //       val tmp = Int64Literal((r * Rational.fromDouble(math.pow(2, f))).roundToLong)
+    //       Let(id.changeType(Int64Type), tmp, toMixedFixedPointCode(body))
+    //   }
+
     case FinitePrecisionLiteral(r, prec @ FixedPrecision(_), strVal) =>
       val f = prec.fractionalBits(r)
       prec match {
@@ -573,6 +533,15 @@ object CodeGenerationPhase extends DaisyPhase {
     // necessarily an up cast from 16 bit, and not redundant (if all went well in mixed-opt)
     case Cast(e, FinitePrecisionType(FixedPrecision(32))) =>
       Cast(LeftShift(toMixedFixedPointCode(e, path, rangeMap), 16), Int64Type)
+
+    // case Let(id, x @ UMinus(y @ Variable(t)), body) =>
+    //   if (id.getType == t.getType) {
+    //     UMinus(toMixedFixedPointCode(t))
+    //   } else {
+    //     assert(id.getType < t.getType)
+    //     //downcast
+    //     RightShift(UMinus(toMixedFixedPointCode(t)), 16)
+    //   }
 
     case UMinus(t) => UMinus(toMixedFixedPointCode(t, path, rangeMap))
 
@@ -681,13 +650,6 @@ object CodeGenerationPhase extends DaisyPhase {
         case FinitePrecisionType(FixedPrecision(x)) if 16 < x && x <= 32 => Int64Type
       })
       Let(newId, toMixedFixedPointCode(value, path, rangeMap), toMixedFixedPointCode(body, path, rangeMap))
-
-    case x @ ApproxPoly(original, arg, approxFncId, errBudget) =>
-      val newType = approxFncId.getType match {
-        case FinitePrecisionType(FixedPrecision(x)) if 8 < x && x <= 16 => Int32Type
-        case FinitePrecisionType(FixedPrecision(x)) if 16 < x && x <= 32 => Int64Type
-      }
-      ApproxPoly(original, arg, approxFncId.changeType(newType), errBudget)
   }
 
 }

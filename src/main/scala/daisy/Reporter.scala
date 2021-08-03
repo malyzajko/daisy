@@ -156,8 +156,8 @@ abstract class Reporter(val debugSections: Set[DebugSection], silent: Boolean, v
     if(oldCtx.seed != newCtx.seed){
       debug("new seed "+newCtx.seed)(section)
     }
-    if(oldCtx.metalibmWrapperFunctions != newCtx.metalibmWrapperFunctions){
-      debug("New wrapper functions "+newCtx.metalibmWrapperFunctions)(section)
+    if(oldCtx.wrapperFunctions != newCtx.wrapperFunctions){
+      debug("New wrapper functions "+newCtx.wrapperFunctions)(section)
     }
     if(oldCtx.originalFunctions != newCtx.originalFunctions){
       debug("New original functions "+newCtx.originalFunctions)(section)

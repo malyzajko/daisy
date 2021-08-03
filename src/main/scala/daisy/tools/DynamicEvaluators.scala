@@ -105,7 +105,8 @@ trait DynamicEvaluators {
   def errorDynamicWithInputRoundoff(
     expr: Expr,
     inputValMap: Map[Identifier, Interval],
-    dynamicSamples: Int = dynamicSamplesDefault): Rational = {
+    dynamicSamples: Int = dynamicSamplesDefault,
+    seed: Int = 485793): Rational = {
 
     val inputRanges: Map[Identifier, Interval] = inputValMap.map({
       case (id, i) =>
@@ -113,7 +114,7 @@ trait DynamicEvaluators {
           i.mid + inputRangeFactor * i.radius))
     })
 
-    val sampler = new Uniform(inputRanges, 485793)  // no seed = System millis
+    val sampler = new Uniform(inputRanges, seed)  // no seed = System millis
     // TODO: no need for the ErrorMeasurer
     val measurer = new ErrorMeasurerMPFR()
     var currentMaxAbsMPFR = measurer.maxAbsError
@@ -192,7 +193,8 @@ trait DynamicEvaluators {
   def generalErrorDynamicWithInputRoundoff(
     expr: Expr,
     inputValMap: Map[Identifier, Interval],
-    dynamicSamples: Int = dynamicSamplesDefault): ErrorMeasurerMPFR = {
+    dynamicSamples: Int = dynamicSamplesDefault,
+    seed: Int = 485793): ErrorMeasurerMPFR = {
 
     val inputRanges: Map[Identifier, Interval] = inputValMap.map({
       case (id, i) =>
@@ -200,7 +202,7 @@ trait DynamicEvaluators {
           i.mid + inputRangeFactor * i.radius))
     })
 
-    val sampler = new Uniform(inputRanges, 485793)  //no seed = System millis
+    val sampler = new Uniform(inputRanges, seed)  //no seed = System millis
     val measurer = new ErrorMeasurerMPFR()
     //var currentAvrgAbsMPFR = measurer.avrgError
     //var currentAvrgAbs: Double = measurer.maxAvrgError.doubleValue
@@ -263,7 +265,7 @@ trait DynamicEvaluators {
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
       case Division(x, y) => eval(x) / eval(y)
-//      case Pow(x, y) => math.pow(eval(x), eval(y))
+      // case Pow(x, y) => math.pow(eval(x), eval(y))
       case IntPow(x, y) => math.pow(eval(x), y)
       case UMinus(x) => - eval(x)
       case Sqrt(x) => math.sqrt(eval(x))
@@ -278,6 +280,14 @@ trait DynamicEvaluators {
       case Let(id, v, b) =>
         valMap += (id -> eval(v))
         eval(b)
+      case IfExpr(LessEquals(lhs, rhs), thenn, elze) =>
+        val lhsCond = eval(lhs)
+        val rhsCond = eval(rhs)
+        if (lhsCond <= rhsCond) {
+          eval(thenn)
+        } else {
+          eval(elze)
+        }
 
     }
     eval(expr)
@@ -290,7 +300,9 @@ trait DynamicEvaluators {
     def eval(e: Expr): MPFRFloat = (e: @unchecked) match {
 
       case Variable(id) => valMap(id)
-      case r: RealLiteral => MPFRFloat.fromString(r.stringValue)
+      case r: RealLiteral =>
+        MPFRFloat.fromString(r.toString)
+        //MPFRFloat.fromString(r.stringValue)
       case Plus(x, y) => eval(x) + eval(y)
       case Minus(x, y) => eval(x) - eval(y)
       case Times(x, y) => eval(x) * eval(y)
@@ -310,6 +322,15 @@ trait DynamicEvaluators {
       case Let(id, v, b) =>
         valMap += (id -> eval(v))
         eval(b)
+
+      case IfExpr(LessEquals(lhs, rhs), thenn, elze) =>
+        val lhsCond = eval(lhs)
+        val rhsCond = eval(rhs)
+        if (lhsCond <= rhsCond) {
+          eval(thenn)
+        } else {
+          eval(elze)
+        }
 
     }
     eval(expr)

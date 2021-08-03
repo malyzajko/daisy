@@ -3,32 +3,40 @@
 package daisy
 package experiment
 
-import lang.Trees.Program
+import java.io.{BufferedWriter, FileWriter}
+
+import daisy.analysis.{DataflowPhase, DataflowSubdivisionPhase}
+import daisy.lang.Identifiers._
+import daisy.lang.TreeOps
+import daisy.lang.Trees.{Program, _}
+import daisy.lang.Types.RealType
+import daisy.tools.FinitePrecision._
+import daisy.tools.Interval
+import daisy.utils.ScalaPrinter
+import scala.collection.parallel.CollectionConverters._
+
 import scala.collection.immutable.Seq
-import java.io.FileWriter
-import java.io.BufferedWriter
-
-
-import tools.FinitePrecision._
-import lang.Trees._
-import tools.{Rational, Interval}
-import lang.Identifiers._
-import lang.Types.RealType
 
 /**
-  Generates benchmarks for mixed-precision optimization by creating copies
-  of a given benchmark with different postconditions.
-
-
-  Prerequisites:
-    - SpecsProcessingPhase
+ * Generates benchmarks for mixed-precision optimization by creating copies
+ * of a given benchmark with different postconditions.
+ * *
+ *
+ * Prerequisites:
+ *- SpecsProcessingPhase
  */
-object MixedPrecisionExperimentGenerationPhase extends DaisyPhase with tools.RoundoffEvaluators {
+object MixedPrecisionExperimentGenerationPhase extends DaisyPhase with tools.RoundoffEvaluators with tools. Subdivision {
 
   override val name = "Mixed-precision experiment gen"
   override val description = "Generates mixed-precision versions of a given benchmark " +
     "as well as a performance measurement harness"
-  override val definedOptions: Set[CmdLineOption[Any]] = Set()
+  override val definedOptions: Set[CmdLineOption[Any]] = Set(
+    StringOption("outputFolder", "output folder name"),
+    MultiStringOption(
+      "bench-precisions",
+      List("Float16", "Float32", "Float64", "Float128"),
+      "Which precisions to consider as basis")
+  )
 
   override implicit val debugSection = DebugSectionExperiment
 
@@ -37,106 +45,92 @@ object MixedPrecisionExperimentGenerationPhase extends DaisyPhase with tools.Rou
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     reporter = ctx.reporter
 
-    val lowPrecision = Float32
-    var highPrecision: Precision = Float64
+    //val totalOpt = ctx.option[Long]("totalOpt")
 
-    // if this is 2, then it will just postconditions, which should make the
-    // mixed-precision optimization generate the high-precision uniform and
-    // low-precision uniform versions.
-    val numPostconditions = 10
+    val precisions = ctx.option[Seq[String]]("bench-precisions").map({
+      case "Float16" => Float16
+      case "Float32" => Float32
+      case "Float64" => Float64
+      case "Float128" => Float128
+      case str if str.startsWith("Fixed") => FixedPrecision(str.replace("Fixed", "").toInt)
+    })
+    //println(precisions)
+    val scaleFactor = tools.Rational.fromString("10.0")      // which factor to apply to the computed error
 
-    ctx.option[String]("mixed-high-precision") match {
-      case "Float64" =>
-        highPrecision = Float64
-      case "DoubleDouble" =>
-        highPrecision = DoubleDouble
+    val definedFncs = prg.defs.filter(fnc => fnc.precondition.isDefined && fnc.body.isDefined)
+    val newDefs: Seq[FunDef] = definedFncs.flatMap({ fnc =>
+      if (benchmarkSupported(fnc.body.get)) {
+        reporter.info(s"Skipping ${fnc.id} because it contains an if-expression")
+        Seq()
+      } else {
+        val inputValMap = ctx.specInputRanges(fnc.id)
+
+        // generate one function/postcondition for each precision
+        precisions.flatMap(prec => {
+          // we only take into account roundoff errors, and no input errors
+          val allIDs = fnc.params.map(_.id)
+          val inputErrorMap =  allIDs.map(id => (id -> prec.absRoundoff(inputValMap(id)))).toMap
+
+          val precisionMap = Map[Identifier, Precision]().withDefaultValue(prec)
+
+          // this is a very hacky way of running subdivisions with the right options
+          val tempContext = ctx.copy(
+            specInputErrors = Map(fnc.id -> inputErrorMap),
+            specInputPrecisions = Map(fnc.id -> precisionMap))
+
+          try {
+            val (context, _) = DataflowSubdivisionPhase.runPhase(tempContext, prg.copy(defs = Seq(fnc)))
+
+            val postconditionError = context.resultAbsoluteErrors(fnc.id) / scaleFactor
+
+            val suffix = "order"//prec.toString.replace("Float", "")
+            val newFncName = s"${fnc.id.toString}_${suffix}" //_${scaleFactor.toString.replace(".", "_")}"
+
+            val resVar = FreshIdentifier("res", RealType)
+            val errLiteral = RealLiteral(postconditionError, postconditionError.toString)
+
+            // for some reason, having the result assigned to a variable changes the result
+            // find out why
+            val newBody = TreeOps.updateLastExpression({
+              case v @ Variable(_) => v
+                case e =>
+                  val resultIdentifier = FreshIdentifier("_ret", RealType, alwaysShowUniqueID = true)
+                  Let(resultIdentifier, e, Variable(resultIdentifier))
+              })(fnc.body.get)
+
+            Some(fnc.copy(id = FreshIdentifier(newFncName),
+              body = Some(newBody),
+              postcondition = Some(Lambda(Seq(ValDef(resVar)), AbsError(Variable(resVar), errLiteral)))))
+
+          } catch {
+            case e: Throwable =>
+              reporter.info(s"Error for prec ${fnc.id}: $e")
+              None
+          }
+        })
+      }
+    })
+
+    val folderName = ctx.option[Option[String]]("outputFolder") match {
+      case Some(name) => name
+      case None => "output"
+    }
+    // need to print here and not in CodeGenerationPhase as we need the benchmarks separately
+    for(fnc <- newDefs) {
+      val tmpProgram = Program(FreshIdentifier(fnc.id.toString), Seq(fnc))
+      backend.CodeGenerationPhase.writeFile(tmpProgram, "DaisyInput", ctx, folderName)
     }
 
-    assert(prg.defs.size == 1)
-    // "original" benchmark
-    val fnc = prg.defs.head
-
-    val newDefs: Seq[FunDef] =
-      if (!fnc.precondition.isEmpty && !fnc.body.isEmpty) {
-
-        reporter.info("function: " + fnc.id)
-
-        val inputValMap = ctx.specInputRanges(fnc.id)
-        val inputErrorMapLowPrec = {
-          // we only take into account roundoff errors, and no input errors
-          val allIDs = fnc.params.map(_.id)
-          allIDs.map( id => (id -> lowPrecision.absRoundoff(inputValMap(id)))).toMap
-        }
-        val inputErrorMapHighPrec = {
-          // we only take into account roundoff errors, and no input errors
-          val allIDs = fnc.params.map(_.id)
-          allIDs.map( id => (id -> highPrecision.absRoundoff(inputValMap(id)))).toMap
-        }
-
-        val lowPrecError = uniformRoundoff_IA_AA(fnc.body.get,
-          inputValMap, inputErrorMapLowPrec, lowPrecision)._1
-        val highPrecError = uniformRoundoff_IA_AA(fnc.body.get,
-          inputValMap, inputErrorMapHighPrec, highPrecision)._1
-
-        reporter.info("low  prec error: " + lowPrecError)
-        reporter.info("high prec error: " + highPrecError)
-
-        // logarithmic
-        val minVal = lowPrecError.toDouble
-        val maxVal = highPrecError.toDouble
-        val postconditionErrors: Seq[Rational] = {
-
-          val minValLog = math.log(minVal)
-          val maxValLog = math.log(maxVal)
-
-          val increment = (maxValLog - minValLog)/(numPostconditions - 1)
-
-          for(i <- 0 until numPostconditions) yield {
-            val dbl = math.exp(minValLog + (increment * i))
-            Rational.fromString(roundDouble(dbl))
-          }
-        }
-
-        reporter.info("generated postcondition errors: " + postconditionErrors)
-
-        postconditionErrors.zipWithIndex.map({
-          case (err, index) =>
-            // copy fnc and attach new postcondition
-            val resVar = FreshIdentifier("res", RealType)
-            val errLiteral = RealLiteral(err, err.toString)
-            fnc.copy(id = FreshIdentifier(fnc.id.toString + "_" + index), postcondition =
-              Some(Lambda(Seq(ValDef(resVar)), AbsError(Variable(resVar), errLiteral))))
-
-        })
-
-      } else {
-        throw new Exception("Precondition and body cannot be empty")
-      }
-
     val newProgram = Program(prg.id, newDefs)
-    println(utils.BenchmarkPrinter(newProgram))
 
-    // val suffixes = Seq("_Float", "_Double", "_DblDouble", "_32", "_32_05", "_32_01", "_32_001", "_64", "_64_05", "_64_01", "_64_001", "_dbldbl")
-    // val newDefs: Seq[FunDef] =
-    //   if (!fnc.precondition.isEmpty && !fnc.body.isEmpty) {
-    //     suffixes.map(suffix => {
-    //       fnc.copy(id = FreshIdentifier(fnc.id.toString + suffix))
-    //       })
-    //   } else Seq()
-    // val newProgram = Program(prg.id, newDefs)
-    // println(lang.BenchmarkPrinter(newProgram))
-
-    val fileName = s"src/test/resources/mixed-precision/${prg.id}MultPost$highPrecision.scala"
-    val fstream = new FileWriter(fileName)
-    val outProgram = new BufferedWriter(fstream)
-    outProgram.write(utils.BenchmarkPrinter(newProgram))
-    outProgram.close
-
-
-    MixedPrecisionExperimentGenerationPhase.generateScalabenchCode(
-      newProgram, s"MultPost$highPrecision", ctx.specInputRanges(fnc.id), "daisy.bench")
-      //newProgram, s"MixedBench", ctx.inputRanges(fnc.id), "daisy.bench.mixed")
     (ctx, newProgram)
+  }
+
+  def benchmarkSupported(body: Expr) = {
+    TreeOps.exists({
+      case IfExpr(_, _, _) => true
+      case _ => false
+    })(body)
   }
 
   def generateScalabenchCode(prg: Program, suffix: String, inputRanges: Map[Identifier, Interval], packageName: String): Unit = {

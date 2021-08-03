@@ -5,12 +5,11 @@ package daisy
 package backend
 
 import java.io.{BufferedWriter, File, FileWriter}
-
 import scala.collection.immutable.Seq
-import lang.Trees.{Expr, Program, Variable}
+
+import lang.Trees.{Program, Variable, Expr}
 import tools.{Interval, Rational}
 import Rational._
-import daisy.lang.TreeOps
 
 /**
   ??? Description goes here
@@ -19,7 +18,7 @@ import daisy.lang.TreeOps
   Prerequisites:
     -
  */
-object InfoPhase extends DaisyPhase with opt.CostFunctions {
+object InfoPhase extends DaisyPhase {
   override val name = "Info"
   override val description = "Prints interesting information"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
@@ -45,8 +44,7 @@ object InfoPhase extends DaisyPhase with opt.CostFunctions {
         o
       }
 
-    val funs = functionsToConsider(ctx, prg)// for ApproxPhase functions to consider only contain real valued functions
-    for (fnc <- funs){
+    for (fnc <- functionsToConsider(ctx, prg)){
 
       ctx.reporter.result(fnc.id)
       fnc.returnType match {
@@ -76,11 +74,7 @@ object InfoPhase extends DaisyPhase with opt.CostFunctions {
           range.foreach(r => ctx.reporter.result(s"  Real range:     $r"))
 
           relError.foreach(re => ctx.reporter.result(s"  Relative error: $re"))
-
-          if (ctx.hasFlag("approx") && !TreeOps.containsApproxNode(fnc.body.get)) {
-            val numOps = countOps(fnc.body.get)
-            ctx.reporter.result(s"  Number of arithmetic operations in generated code: $numOps")
-          }
+          
           val numSamples = ctx.resultNumberSamples.get(fnc.id)
 
           if (out.isDefined) {
@@ -91,7 +85,7 @@ object InfoPhase extends DaisyPhase with opt.CostFunctions {
                 relError.map(_.toString).getOrElse("") + "," +
                 range.map(_.xlo.toString).getOrElse("") + "," +
                 range.map(_.xhi.toString).getOrElse("") + "," +
-                ctx.seed.toString + "," +
+                ctx.seed.toString + "," + 
                 numSamples.map(_.toString).getOrElse("") + "\n"
               )
             } else {

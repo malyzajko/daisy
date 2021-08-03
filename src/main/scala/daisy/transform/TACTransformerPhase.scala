@@ -28,10 +28,8 @@ object TACTransformerPhase extends DaisyPhase {
 
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     // need to replace function bodies, create a copy of the whole program
-    val fncsToConsider = if (ctx.hasFlag("approx")) functionsToConsider(ctx, prg).filter(_.returnType == RealType)
-    else functionsToConsider(ctx, prg)
-    val newDefs = fncsToConsider.map(fnc => fnc.copy(body = Some(toSSA(fnc.body.get))))
-    (ctx, Program(prg.id, newDefs ++ functionsToConsider(ctx, prg).diff(fncsToConsider)))
+    val newDefs = transformConsideredFunctions(ctx, prg){ fnc => fnc.copy(body = Some(toSSA(fnc.body.get)))}
+    (ctx, Program(prg.id, newDefs))
   }
 
   def fresh(): Identifier = FreshIdentifier("_tmp", RealType, true)
@@ -73,8 +71,6 @@ object TACTransformerPhase extends DaisyPhase {
     case x @ GreaterEquals(_, _) => x
     case x @ LessThan(_, _) => x
     case x @ LessEquals(_, _) => x
-
-    case x @ ApproxPoly(_, _, _, _) => x
   }
 
   private def replaceBody(expr: Expr, nextId: Identifier, nextBody: Expr): Expr = (expr: @unchecked) match {

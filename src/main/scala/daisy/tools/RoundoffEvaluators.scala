@@ -46,6 +46,29 @@ trait RoundoffEvaluators extends RangeEvaluators {
     (Interval.maxAbs(resRoundoff.toInterval), resRange)
   }
 
+  def uniformRoundoff_IA_AA_MPFR(
+    expr: Expr,
+    inputValMap: Map[Identifier, Interval],
+    inputErrorMap: Map[Identifier, Rational],
+    uniformPrecision: Precision,
+    trackRoundoffErrors: Boolean = true,
+    approxRoundoff: Boolean = false): (Rational, Interval) = {
+
+    val (resRange, intermediateRanges) = evalRange[Interval](expr, inputValMap, Interval.apply)
+
+    val (resRoundoff, _) = evalRoundoff[MPFRAffineForm](expr, intermediateRanges,
+      Map.empty.withDefaultValue(uniformPrecision),
+      inputErrorMap.mapValues(MPFRAffineForm.+/-).toMap,
+      zeroError = MPFRAffineForm.zero,
+      fromError = MPFRAffineForm.+/-,
+      interval2T = MPFRAffineForm.apply,
+      constantsPrecision = uniformPrecision,
+      trackRoundoffErrors,
+      approxRoundoff)
+
+    (Interval.maxAbs(resRoundoff.toInterval), resRange)
+  }
+
   /**
    * Calculates the roundoff error for a given uniform precision
    * using affine arithmetic for ranges and affine arithmetic for errors.
@@ -147,9 +170,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
     interval2T: Interval => T,
     constantsPrecision: Precision,
     trackRoundoffErrors: Boolean, // if false, propagate only initial errors
-    approxRoundoff: Boolean = false,
-    resultAbsErrors: Map[Identifier, Rational] = Map(),
-    resultErrorsMetalibm: Map[Expr, Rational] = Map()
+    approxRoundoff: Boolean = false
     ): (T, Map[(Expr, PathCond), T]) = {
 
 
@@ -318,7 +339,6 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorT * errorMultiplier
 
         // TODO: check that this operation exists for this precision
-        //println("range map is " + range)
         computeNewError(range(x), propagatedError, prec)
 
       case x @ (Sin(t), path) =>
@@ -505,27 +525,8 @@ trait RoundoffEvaluators extends RangeEvaluators {
       case x @ (Cast(t, FinitePrecisionType(prec)), path) =>
         val (errorT, precT) = eval(t, path)
 
-        if (prec > precT) {
-          // upcast does not lead to roundoff error
-          (errorT, prec)
-        } else {
-          // add new roundoff error corresponding to the cast precision
-          computeNewError(range(x), errorT, prec)
-        }
-
-      case x @ (ApproxPoly(orig, _, fncId, totalError), path) =>
-        val approxPrec = (fncId.getType: @unchecked) match {
-          case FinitePrecisionType(a) => Some(a)
-          case _ =>
-            // approx fnc must already have finite precision assignedinf
-            throw new Exception(s"Approximation must have precision assigned ${x._1}")
-        }
-
-        // TODO: store resultAbsError directly in ApproxNode?
-        if (resultAbsErrors.contains(fncId))
-          (fromError(resultErrorsMetalibm(x._1) + resultAbsErrors(fncId)), approxPrec.get)
-        else
-          (fromError(totalError), approxPrec.get) // for another Metalibm phase (not ApproxPhase)
+        // add new roundoff error corresponding to the cast precision
+        computeNewError(range(x), errorT, prec)
 
       case _ => throw new Exception("Not supported")
 

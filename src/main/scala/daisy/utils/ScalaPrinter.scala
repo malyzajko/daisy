@@ -4,20 +4,34 @@
 package daisy
 package utils
 
-import lang.Trees._
-import lang.Types._
-import tools.FinitePrecision.{DoubleDouble, Float32, Float64}
+import daisy.lang.Identifiers.Identifier
+import daisy.lang.Trees._
+import daisy.lang.Types._
+import daisy.tools.FinitePrecision.{Float128, Float32, Float64}
+
+import scala.collection.immutable.Seq
 
 
 class ScalaPrinter(buffer: Appendable, ctx: Context,
   val generateDaisyInput: Boolean = false, val importString: String = "") extends CodePrinter(buffer) {
 
-  override val mathPrefix: String = "Math."
+  override val mathPrefix: String = if (!generateDaisyInput) {
+    "Math."
+  } else {
+    ""
+  }
 
   override def pp(tree: Tree, parent: Option[Tree])(implicit lvl: Int): Unit = {
     implicit val p = Some(tree)
 
     tree match {
+
+      case id: Identifier =>
+        if (id.toString.matches("[0-9a-zA-Z_][0-9a-zA-Z_]*")) {
+          sb.append(id.toString)
+        } else {
+          sb.append(s"`${id.toString}`")
+        }
 
       case Let(b,d,e) =>
         sb.append("val ")
@@ -29,17 +43,40 @@ class ScalaPrinter(buffer: Appendable, ctx: Context,
         nl(lvl)
         pp(e, p)(lvl)
 
-      case Sqrt(x) => if (generateDaisyInput || x.getType == FinitePrecisionType(DoubleDouble)) {
+      case Sqrt(x) => if (generateDaisyInput || x.getType == FinitePrecisionType(Float128)) {
         ppUnary(x, "sqrt(", ")")
       } else {
         ppUnary(x, "math.sqrt(", ")")
+
+        if (x.getType == FinitePrecisionType(Float32)) {
+          sb.append(".toFloat")
+        }
       }
 
-      case FinitePrecisionType(DoubleDouble) => sb.append("DblDouble")
+      case Sin(expr) if (expr.getType == FinitePrecisionType(Float32)) =>
+        ppMathFun(Seq(expr), "sin")
+        sb.append(".toFloat")
+      case Cos(expr) if (expr.getType == FinitePrecisionType(Float32)) =>
+        ppMathFun(Seq(expr), "cos")
+        sb.append(".toFloat")
+      case Tan(expr) if (expr.getType == FinitePrecisionType(Float32)) =>
+        ppMathFun(Seq(expr), "tan")
+        sb.append(".toFloat")
+      case Atan(expr) if (expr.getType == FinitePrecisionType(Float32)) =>
+        ppMathFun(Seq(expr), "atan")
+        sb.append(".toFloat")
+      case Exp(expr) if (expr.getType == FinitePrecisionType(Float32)) =>
+        ppMathFun(Seq(expr), "exp")
+        sb.append(".toFloat")
+      case Log(expr) if (expr.getType == FinitePrecisionType(Float32)) =>
+        ppMathFun(Seq(expr), "log")
+        sb.append(".toFloat")
+
+      case FinitePrecisionType(Float128) => sb.append("DblDouble")
 
       case Cast(expr, FinitePrecisionType(Float32)) => ppUnary(expr, "", ".toFloat")
       case Cast(expr, FinitePrecisionType(Float64)) => ppUnary(expr, "", ".toDouble")
-      case Cast(expr, FinitePrecisionType(DoubleDouble)) => ppUnary(expr, "DblDouble(", ")")
+      case Cast(expr, FinitePrecisionType(Float128)) => ppUnary(expr, "DblDouble(", ")")
       case Cast(expr, Int32Type) => ppUnary(expr, "", ".toInt")
       case Cast(expr, Int64Type) => ppUnary(expr, "", ".toLong")
 
@@ -82,8 +119,7 @@ class ScalaPrinter(buffer: Appendable, ctx: Context,
             sb.append("/* ")
             sb.append("@pre: ")
             pp(prec, p)(lvl)
-            sb.append(" */")
-            sb.append("\n")
+            sb.append(" */\n")
           }}
 
           fd.postcondition.foreach{ post => {
@@ -92,13 +128,11 @@ class ScalaPrinter(buffer: Appendable, ctx: Context,
             sb.append("@post: ")
             pp(post, p)(lvl)
             sb.append(" */")
-            sb.append("\n")
           }}
         }
 
         nl(lvl)
 
-        ind
         sb.append("def ")
         pp(fd.id, p)
         sb.append("(")
@@ -120,6 +154,7 @@ class ScalaPrinter(buffer: Appendable, ctx: Context,
         pp(fd.returnType, p)
         sb.append(" = {")
         nl(lvl+1)
+
         if (generateDaisyInput){
           sb.append("require(")
           fd.precondition.foreach{ prec => {
@@ -127,7 +162,15 @@ class ScalaPrinter(buffer: Appendable, ctx: Context,
           }}
           sb.append(")")
           nl(lvl+1)
+        } else {
+          sb.append("assert(")
+          fd.precondition.foreach{ prec => {
+            pp(prec, p)(lvl)
+          }}
+          sb.append(")")
+          nl(lvl+1)
         }
+
         fd.body match {
           case Some(body) =>
             pp(body, p)(lvl + 1)
@@ -140,7 +183,7 @@ class ScalaPrinter(buffer: Appendable, ctx: Context,
         if (ctx.resultRealRanges.get(fd.id).isDefined) {
           sb.append(s" // ${ctx.resultRealRanges(fd.id)} +/- ${ctx.resultAbsoluteErrors(fd.id)}")
         }
-        if (generateDaisyInput){
+        if (generateDaisyInput && !fd.postcondition.isEmpty){
           sb.append(" ensuring(")
           fd.postcondition.foreach{ post => {
             pp(post, p)(lvl)
@@ -149,7 +192,6 @@ class ScalaPrinter(buffer: Appendable, ctx: Context,
         }
         nl(lvl - 1)
         nl(lvl - 1)
-
 
       case _ => super.pp(tree, parent)
     }

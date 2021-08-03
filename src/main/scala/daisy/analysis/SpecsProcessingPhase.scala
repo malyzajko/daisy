@@ -196,11 +196,11 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       // if the function returns a tuple, untuple it
       fnc.returnType match {
         case lang.Types.TupleType(_) =>
-          fnc.copy(body = Some(lang.TreeOps.replace { 
-            case Tuple(args) => 
+          fnc.copy(body = Some(lang.TreeOps.replace {
+            case Tuple(args) =>
               val (newBody, resIdsTmp) = untuple(args)
               resIds += (fnc.id -> resIdsTmp)
-              newBody 
+              newBody
           } (fnc.body.get)))
         case _ => fnc
       }
@@ -214,8 +214,7 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       specInputPrecisions = inputPrecision,
       specResultPrecisions = resultPrecisions,
       specAdditionalConstraints = additionalConst,
-      resultTupleIds = resIds,
-      originalProgram = Program(prg.id, newDefs)),
+      resultTupleIds = resIds),
       Program(prg.id, newDefs))
   }
 
@@ -226,7 +225,7 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
       (Let(fresh, args.head, Variable(fresh)), Seq(fresh))
     } else {
       val fresh = FreshIdentifier("#res" + args.size, args.last.getType)
-      val (tmp, list) = untuple(args.init) 
+      val (tmp, list) = untuple(args.init)
       (Let(fresh, args.last, tmp), list :+ fresh)
     }
   }
@@ -373,8 +372,8 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
 trait PrecisionsParser extends RegexParsers with JavaTokenParsers {
   def identifier: Parser[String] = """[a-zA-Z_][a-zA-Z0-9_]*""".r ^^ {x: String => x }
 
-  def float256: Parser[Precision] = "QuadDouble" ^^ { case _ => QuadDouble }
-  def float128: Parser[Precision] = ("DoubleDouble" ||| "Quad") ^^ { case _ => DoubleDouble }
+  def float256: Parser[Precision] = "Float256" ^^ { case _ => Float256 }
+  def float128: Parser[Precision] = ("Float128" ||| "Quad") ^^ { case _ => Float128 }
   def float64: Parser[Precision] = ("Float64" ||| "Double") ^^ { case _ => Float64 }
   def float32: Parser[Precision] = ("Float32" ||| "Float") ^^ { case _ => Float32 }
   def float16: Parser[Precision] = "Float16" ^^ { case _ => Float16 }

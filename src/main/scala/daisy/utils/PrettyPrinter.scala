@@ -158,24 +158,17 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case Sqrt(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "sqrtf")
       case Cos(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "cosf")
       case Tan(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "tanf")
+      case Atan(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "atanf")
       case Exp(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "expf")
       case Log(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "logf")
-      case Atan(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "atanf")
-      case Asin(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "asinf")
-      case Acos(expr) if (expr.getType == FinitePrecisionType(Float32)) => ppMathFun(Seq(expr), "acosf")
 
       case Sqrt(expr) => ppMathFun(Seq(expr), "sqrt")
       case Sin(expr) => ppMathFun(Seq(expr), "sin")
       case Cos(expr) => ppMathFun(Seq(expr), "cos")
       case Tan(expr) => ppMathFun(Seq(expr), "tan")
-      case Asin(expr) => ppMathFun(Seq(expr), "asin")
-      case Acos(expr) => ppMathFun(Seq(expr), "acos")
       case Atan(expr) => ppMathFun(Seq(expr), "atan")
       case Exp(expr) => ppMathFun(Seq(expr), "exp")
       case Log(expr) => ppMathFun(Seq(expr), "log")
-      case Atan(expr) => ppMathFun(Seq(expr), "atan")
-      case Asin(expr) => ppMathFun(Seq(expr), "asin")
-      case Acos(expr) => ppMathFun(Seq(expr), "acos")
       case Approx(_, expr, _, _, fName, _) => ppMathFun(Seq(expr), fName)
       case Equals(l,r) => ppBinary(l, r, " == ")
       case Int16Literal(v) => sb.append(v.toString)
@@ -196,10 +189,6 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
         pp(fdId, p)
 
         ppNary(args, "(", ", ", ")")
-      case ApproxPoly(_, arg, approxFncId, _) =>
-        pp(approxFncId, p)
-
-        ppUnary(arg, "(", ")")
 
       case Lambda(args, body) =>
         ppNary(args, "(", ", ", ")")
@@ -229,15 +218,21 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
         nl(lvl + 1)
         pp(t, p)(lvl + 1)
         nl
-        sb.append("} else {")
+        sb.append("}")
+        nl
+        sb.append("else {")
         nl(lvl + 1)
         pp(e, p)(lvl + 1)
+        nl(lvl)
         sb.append("}")
 
       case Tuple(args) => ppNary(args, "(", ", ", ")")
 
       case Error(tpe, desc) =>
-        sb.append(s"""error[$tpe]("$desc""")
+        sb.append(s"error[$tpe](")
+        sb.append("\"")
+        sb.append(desc)
+        sb.append("\")")
 
       // Types
       case Untyped => sb.append("<untyped>")
@@ -250,8 +245,8 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case FinitePrecisionType(Float16) => sb.append("Float16")
       case FinitePrecisionType(Float32) => sb.append("Float")
       case FinitePrecisionType(Float64) => sb.append("Double")
-      case FinitePrecisionType(DoubleDouble) => sb.append("DoubleDouble")
-      case FinitePrecisionType(QuadDouble) => sb.append("QuadDouble")
+      case FinitePrecisionType(Float128) => sb.append("Float128")
+      case FinitePrecisionType(Float256) => sb.append("Float256")
       case FinitePrecisionType(FixedPrecision(b)) => sb.append(s"Fixed($b)")
       case FunctionType(fts, tt) =>
         if (fts.size > 1) {

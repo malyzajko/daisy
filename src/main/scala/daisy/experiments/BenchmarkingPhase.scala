@@ -13,7 +13,7 @@ object BenchmarkingPhase extends DaisyPhase {
   override val description = "generates the benchmark file"
   override val definedOptions: Set[CmdLineOption[Any]] = Set(
     NumOption("bound", 100000, "number of benchmarking runs"),
-    FlagOption("RDTSC", "generates the benchmark file with RDTSC counter")
+    FlagOption("x86", "generates the benchmark file using RDTSC counter")
   )
   override implicit val debugSection = DebugSectionExperiment
   var reporter: Reporter = null
@@ -23,15 +23,15 @@ object BenchmarkingPhase extends DaisyPhase {
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
 
     val bound = ctx.option[Long]("bound").toInt
-    val rdtsc_flag = ctx.hasFlag("RDTSC")
+    val rdtsc_flag = ctx.hasFlag("x86")
     reporter  = ctx.reporter
 
-    fileNameBenchmark = System.getProperty("user.dir") +"/output/" + prg.id + "_benchmark.c"
+    fileNameBenchmark = System.getProperty("user.dir") +"/output/" + prg.id + "_benchmark.cpp"
     val benchmark = new PrintWriter(new File(fileNameBenchmark))
     benchmark.write(
       """#include <stdio.h>
         |#include <stdlib.h>
-        |#include <chrono>
+        |#include <quadmath.h>
         |""".stripMargin)
 
     if (rdtsc_flag){
@@ -41,9 +41,6 @@ object BenchmarkingPhase extends DaisyPhase {
           |#include <fstream>
           |#include <math.h>
           |#include <sys/time.h>
-          |using namespace std;
-          |using namespace std::chrono;
-          |
           |""".stripMargin)
 
       writefRandFunction(benchmark)
@@ -56,9 +53,10 @@ object BenchmarkingPhase extends DaisyPhase {
     }
     else {
       benchmark.write(
-        s"""|using namespace std;
-           |using namespace std::chrono;
-           |""".stripMargin)
+        s"""|#include <chrono>
+          |using namespace std;
+          |using namespace std::chrono;
+          |""".stripMargin)
 
       writefRandFunction(benchmark)
 
@@ -80,6 +78,7 @@ object BenchmarkingPhase extends DaisyPhase {
   def typeToString(arg: TypeTree): String = arg match {
     case FinitePrecisionType(Float32) => "float"
     case FinitePrecisionType(Float64) => "double"
+    case FinitePrecisionType(Float128) => "__float128"
   }
 
   def writefRandFunction(benchmark: PrintWriter): Unit ={
@@ -91,20 +90,21 @@ object BenchmarkingPhase extends DaisyPhase {
          |}
          |""".stripMargin)
   }
+
   def defineReadTimeCounter(benchmark: PrintWriter): Unit = {
     benchmark.write(
-      s"""
-        |#define READ_TIME_COUNTER(time) \\
-        |__asm__ __volatile__(            \\
-        |"xorl %%eax,%%eax\\n\\t\"        \\
-        |"cpuid\\n\\t "                   \\
-        |"rdtsc\\n\\t "                   \\
-        |"movl %%eax,(%0)\\n\\t"          \\
-        |"movl %%edx,4(%0)\\n\\t"         \\
-        |"xorl %%eax,%%eax\\n\\t"         \\
-        |"cpuid\\n\\t"                    \\
-        |: /* nothing */                  \\
-        |: "S"((time))                    \\
+      """
+        |#define READ_TIME_COUNTER(time) \
+        |__asm__ __volatile__(           \
+        |"xorl %%eax,%%eax\n\t"          \
+        |"cpuid\n\t "                    \
+        |"rdtsc\n\t "                    \
+        |"movl %%eax,(%0)\n\t"           \
+        |"movl %%edx,4(%0)\n\t"          \
+        |"xorl %%eax,%%eax\n\t"          \
+        |"cpuid\n\t"                     \
+        |: /* nothing */                 \
+        |: "S"((time))                   \
         |: "eax", "ebx", "ecx", "edx", "memory")
         |
         |
@@ -119,6 +119,7 @@ object BenchmarkingPhase extends DaisyPhase {
 
     benchmark.write(prototypes.mkString("\n"))
   }
+
   def writeMainFunctionForRDTSC(benchmark: PrintWriter,ctx: Context,prg: Program,bound: Long): Unit = {
     benchmark.write(
       s"""
@@ -130,12 +131,12 @@ object BenchmarkingPhase extends DaisyPhase {
     for (fnc <- functionsToConsider(ctx, prg)) {
       benchmark.write(
         s"""    {
-           |        std::ofstream output(args[1]);
+           |        std::ofstream output;
            |        uint64_t before, after, time;
            |""".stripMargin
       )//unsafe! need to check for the argc
 
-      val ranges     =  ctx.specInputRanges(fnc.id)
+      val ranges  =  ctx.specInputRanges(fnc.id)
       val errors  =  ctx.specInputErrors(fnc.id)
 
       val params = fnc.params.map(p => {
@@ -143,7 +144,9 @@ object BenchmarkingPhase extends DaisyPhase {
         s"fRand(${actualRange.xlo}, ${actualRange.xhi})"
       })
 
-      val kind = if (ctx.hasFlag("metalibm")) "metalibm" else "math.h"
+      val kind = if (ctx.hasFlag("metalibm")) "metalibm"
+        else if (ctx.hasFlag("mixed-tuning")) "mixed-tuning"
+        else "math.h"
 
       benchmark.write(
         s"""        double res = 0.0;
@@ -186,15 +189,6 @@ object BenchmarkingPhase extends DaisyPhase {
     )
 
     for (fnc <- functionsToConsider(ctx, prg)) {
-      benchmark.write(
-        s"""    {
-           |        high_resolution_clock::time_point _t1 = high_resolution_clock::now();
-           |        double res = 0.0;
-           |        long i = 0;
-           |        while(i < bound) {
-           |""".stripMargin
-      )
-
       val ranges = ctx.specInputRanges(fnc.id)
       val errors = ctx.specInputErrors(fnc.id)
 
@@ -202,7 +196,26 @@ object BenchmarkingPhase extends DaisyPhase {
         val actualRange = ranges(p.id) +/- errors(p.id)
         s"fRand(${actualRange.xlo}, ${actualRange.xhi})"
       })
-      val kind = if (ctx.hasFlag("metalibm")) "metalibm" else "math.h"
+
+      benchmark.write(
+        s"""    {
+           |        double res = 0.0;
+           |        long i = 0;
+           |        while(i < bound) {
+           |            res += ${fnc.id}(${params.mkString(",")});
+           |            i++;
+           |        }
+           |
+           |        res = 0.0;
+           |        i = 0;
+           |        high_resolution_clock::time_point _t1 = high_resolution_clock::now();
+           |        while(i < bound) {
+           |""".stripMargin
+      )
+
+      val kind = if (ctx.hasFlag("metalibm")) "metalibm"
+        else if (ctx.hasFlag("mixed-tuning")) "mixed-tuning"
+        else "math.h"
 
       benchmark.write(
         s"""
@@ -211,7 +224,7 @@ object BenchmarkingPhase extends DaisyPhase {
            |        }
            |        high_resolution_clock::time_point _t2 = high_resolution_clock::now();
            |        duration<double> time_span = duration_cast<duration<double> >(_t2 - _t1);
-           |        printf("$kind , ${fnc.id }");
+           |        printf("$kind, ${fnc.id }");
            |        printf(", %f\\n", time_span.count());
            |    }
            |""".stripMargin

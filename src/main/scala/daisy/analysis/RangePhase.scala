@@ -3,10 +3,9 @@
 package daisy
 package analysis
 
-import daisy.lang.Types.RealType
 import lang.Identifiers._
 import lang.Trees._
-import tools.{AffineForm, Interval, SMTRange}
+import tools.{Interval, AffineForm, SMTRange}
 
 
 /**
@@ -37,14 +36,11 @@ object RangePhase extends DaisyPhase with tools.RangeEvaluators {
   override def runPhase(ctx: Context, prg: Program): (Context, Program) = {
     val rangeMethod = ctx.option[String]("rangeMethod")
 
-    val fncsToConsider = if (ctx.hasFlag("approx")) functionsToConsider(ctx, prg).filter(_.returnType == RealType)
-    else functionsToConsider(ctx, prg)
-
-    val res: Map[Identifier, (Interval, Map[(Expr, PathCond), Interval])] = fncsToConsider.map(fnc => {
+    val res: Map[Identifier, (Interval, Map[(Expr, PathCond), Interval])] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
       val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id)
 
-      val ranges = rangeMethod match {
+      rangeMethod match {
         case "interval" =>
           val (resRange, intermediateRanges) =
             evalRange[Interval](fnc.body.get, inputValMap, Interval.apply)
@@ -70,11 +66,11 @@ object RangePhase extends DaisyPhase with tools.RangeEvaluators {
         //   evaluateSubdiv(fnc.body.get, ctx.specInputRanges(fnc.id), Map.empty)
 
       }
-      fnc.id -> ranges
-    }).toMap
 
-    (ctx.copy(resultRealRanges = ctx.resultRealRanges ++ res.mapValues(_._1).toMap,
-      intermediateRanges = ctx.intermediateRanges ++ res.mapValues(_._2).toMap),
+    }
+
+    (ctx.copy(resultRealRanges = res.mapValues(_._1).toMap,
+      intermediateRanges = res.mapValues(_._2).toMap),
       prg)
   }
 

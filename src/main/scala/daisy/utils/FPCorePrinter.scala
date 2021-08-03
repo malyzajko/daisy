@@ -3,6 +3,7 @@
 package daisy
 package utils
 
+import daisy.lang.Types.FinitePrecisionType
 import daisy.tools.Rational
 import lang.Trees._
 import tools.FinitePrecision._
@@ -140,6 +141,12 @@ class FPCorePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
           pp(prec, p)(lvl)
           sb.append("\n")
         }}
+
+        fd.returnType match {
+          case FinitePrecisionType(FloatPrecision(b)) if b == 32 => sb.append(s":precision binary32\n")
+          case FinitePrecisionType(FloatPrecision(b)) if b == 64 => sb.append(s":precision binary64\n")
+          case _ => ;
+        }
 
         fd.postcondition.foreach{ post => {
           ind

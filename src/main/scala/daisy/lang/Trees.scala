@@ -207,20 +207,7 @@ object Trees {
 
   /** $encodingof `if(...) ... else ...` */
   case class IfExpr(cond: Expr, thenn: Expr, elze: Expr) extends Expr {
-    val getType = {
-      val thenPrec = (thenn.getType: @unchecked) match {
-        case FinitePrecisionType(x) => Some(x)
-        case _ => None
-      }
-      val elsePrec = (elze.getType: @unchecked) match {
-        case FinitePrecisionType(x) => Some(x)
-        case _ => None
-      }
-      if (thenPrec.isDefined && elsePrec.isDefined)
-        FinitePrecisionType(getUpperBound(thenPrec.get, elsePrec.get))
-      else
-        leastUpperBound(thenn.getType, elze.getType).getOrElse(Untyped).unveilUntyped // todo better solution for other tree types?
-    }
+    val getType = leastUpperBound(thenn.getType, elze.getType).getOrElse(Untyped).unveilUntyped
   }
 
   case class Tuple(args: Seq[Expr]) extends Expr {
@@ -481,11 +468,7 @@ object Trees {
     val getType = t.getType
   }
 
-  case class ApproxPoly(original: Expr, arg: Expr, approxFncId: Identifier, totalError: Rational) extends Expr {
-    val getType = arg.getType
-  }
-
-  case class Approx(original: Expr, t: Expr, relImplError: Rational,
+  case class Approx(original: Expr, t: Expr, relImplError: Rational, 
     errorMultiplier: Rational, implName: String, dblDbl: Boolean = false) extends Expr {
     val getType = t.getType
   }
