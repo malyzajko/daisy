@@ -4,6 +4,8 @@
 
 ## News
 
+  * The 'regimes' branch has the code corresponding to the EMSOFT'21 paper "Regime Inference for Sound Floating-Point Optimizations"!
+
   * The 'approx' branch is merged into master! You can now approximate transcendental functions in fixed-point arithmetic code. Check out the script `scripts/optimization_approx_fixed.sh` for the correct command-line options.
 
   * Updated to Scala 2.13!
