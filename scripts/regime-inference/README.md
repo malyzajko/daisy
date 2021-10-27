@@ -46,7 +46,8 @@
   * genetic method: --regime-strategy=genetic
 
   * bottom-top method: --regime-strategy=bottomTop
-
+  
+  * bottom-genetic method: --regime-strategy=bottomGenetic
 
 ## Generate Regime-Inference for Mixed-Precision Tuning with FPTuner
 
