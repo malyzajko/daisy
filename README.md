@@ -95,8 +95,8 @@ Currently, this is
 
 * An SMT solver which can be used to improve ranges: [Z3](https://github.com/Z3Prover/z3) and/or [dReal](https://github.com/dreal/dreal3)
 
-* [MPFR](http://www.mpfr.org/) for error under-approximation and transcendental calculations: \[`apt-get install libmpfr4`\]  \[`brew install mpfr`\].
-    (On macOS, if the library installed is not libmpfr.4.dylib, you may have to recompile the [Java bindings](https://github.com/kframework/mpfr-java) and place them in lib/.)
+* [MPFR](http://www.mpfr.org/) for fast analysis, transcendental calculations and error under-approximation: \[`apt-get install libmpfr4`\]  \[`brew install mpfr`\].
+    (On macOS, if the library installed is not libmpfr.4.dylib, you may have to recompile the [Java bindings](https://github.com/kframework/mpfr-java) and place them in lib/. On Linux, you can also download libmpfr.so.4 and install it manually with dpkg -i.)
 
 * Metalibm and all additional dependencies:
 
