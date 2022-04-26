@@ -51,6 +51,7 @@ object Types {
   case object Int32Type extends TypeTree
   case object Int64Type extends TypeTree
   case object RealType extends TypeTree
+
   case class FinitePrecisionType(prec: Precision) extends TypeTree
 
   // arbitrary-precision fixed-point types for Vivado HLS

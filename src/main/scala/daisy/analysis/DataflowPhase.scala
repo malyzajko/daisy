@@ -64,7 +64,11 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
 
       val fncBody = fnc.body.get
 
-      if (choosePrecision != "no") {
+      if (choosePrecision != "no" && !ctx.specResultErrorBounds.contains(fnc.id)) {
+        reporter.warning(s"Function ${fnc.id} does not have target error bound, cannot choose precision.")
+      }
+
+      if (choosePrecision != "no" && ctx.specResultErrorBounds.contains(fnc.id)) {
         reporter.info("analyzing fnc: " + fnc.id)
 
         // the max tolerated error
@@ -125,8 +129,9 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
         }
         val inputErrorMap: Map[Identifier, Rational] = ctx.specInputErrors(fnc.id)
 
+        // add variables from let statements that do not have any explicit type assignment
         val precisionMap: Map[Identifier, Precision] = ctx.specInputPrecisions(fnc.id) ++
-          allIDsOf(fnc.body.get).intersect(ctx.specInputPrecisions(fnc.id).keySet).map(id => (id -> uniformPrecision)).toMap // add variables from let statements
+          allIDsOf(fnc.body.get).diff(ctx.specInputPrecisions(fnc.id).keySet).map(id => (id -> uniformPrecision)).toMap
         uniformPrecisions = uniformPrecisions + (fnc.id -> uniformPrecision) // so that this info is available in codegen
 
         val precond = fnc.precondition.get // replaced ctx.specAdditionalConstraints(fnc.id)

@@ -264,10 +264,20 @@ object Main {
       pipeline >>= transform.TACTransformerPhase >>
         transform.ConstantTransformerPhase >>
         rangePhase >>
-        opt.MixedPrecisionOptimizationPhase >>
-        //analysis.AbsErrorPhase >>
-        backend.InfoPhase >>
-        backend.CodeGenerationPhase
+        opt.MixedPrecisionOptimizationPhase
+
+      ctx.option[Precision]("precision") match {
+        case FixedPrecision(_) =>
+          pipeline >>=
+            analysis.AbsErrorPhase >> // needed to get intermediate ranges for fixed-points
+            backend.InfoPhase >>
+            backend.CodeGenerationPhase
+
+        case _ =>
+          pipeline >>=
+            backend.InfoPhase >>
+            backend.CodeGenerationPhase
+      }
 
     } else if (ctx.hasFlag("metalibm")){
       pipeline >>= transform.DecompositionPhase >>

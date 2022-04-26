@@ -379,7 +379,7 @@ trait PrecisionsParser extends RegexParsers with JavaTokenParsers {
   def float32: Parser[Precision] = ("Float32" ||| "Float") ^^ { case _ => Float32 }
   def float16: Parser[Precision] = "Float16" ^^ { case _ => Float16 }
 
-  def typeVar: Parser[TypeAssign] = identifier ~ ":" ~ (float256 | float128 | float64 | float32) ^^ {
+  def typeVar: Parser[TypeAssign] = identifier ~ ":" ~ (float16 | float256 | float128 | float64 | float32) ^^ {
     case i ~ _ ~ p => TypeAssign(i, p)
   }
   def typemapFunction: Parser[FunAssign] = identifier ~ "=" ~ "{" ~ rep1(typeVar) ~ "}" ^^ {

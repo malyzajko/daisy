@@ -36,7 +36,7 @@ object InfoPhase extends DaisyPhase with opt.CostFunctions {
         val append = f.exists
         val o = new BufferedWriter(new FileWriter(f, append))
         if (!append) {
-          if(ctx.hasFlag("dynamic") || ctx.hasFlag("bgrtdynamic")){
+          if(ctx.hasFlag("dynamic")){
             o.write("Function name, Absolute error, Relative error, Real range low, Real range high, Seed, numSamples, \n")
           } else {
             o.write("Function name, Absolute error, Relative error, Real range low, Real range high, \n")
@@ -84,7 +84,7 @@ object InfoPhase extends DaisyPhase with opt.CostFunctions {
           val numSamples = ctx.resultNumberSamples.get(fnc.id)
 
           if (out.isDefined) {
-            if(ctx.hasFlag("dynamic") || ctx.hasFlag("bgrtdynamic")){
+            if(ctx.hasFlag("dynamic")){
               out.get.write(
                 fnc.id + ","+
                 absError.map(_.toString).getOrElse("") + "," +

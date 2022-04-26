@@ -15,7 +15,7 @@ scalacOptions ++= Seq(
     "-Ywarn-dead-code",
     "-Xlint:_,-adapted-args")
 
-resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/"
+resolvers += "Typesafe Repository" at "https://repo.typesafe.com/typesafe/releases/"
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/releases"
 
 libraryDependencies ++= Seq(

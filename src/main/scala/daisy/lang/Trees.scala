@@ -294,6 +294,18 @@ object Trees {
     val neg_one = RealLiteral(-Rational.one)
   }
 
+  case class FloatLiteral(value: Float) extends Literal[Float]{
+    val getType = FinitePrecisionType(Float32)
+    protected var _stringValue: String = null
+    def stringValue = _stringValue
+  }
+
+  case class DoubleLiteral(value: Double) extends Literal[Double] {
+    val getType = FinitePrecisionType(Float64)
+    protected var _stringValue: String = null
+    def stringValue = _stringValue
+  }
+
   case class FinitePrecisionLiteral(value: Rational, prec: Precision, stringValue: String) extends Literal[Rational] {
     val getType = FinitePrecisionType(prec)
   }
