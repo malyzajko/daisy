@@ -18,8 +18,6 @@
 
   * Polynomial approximation of floating-point elementary functions is available through the `--metalibm --codegen --lang=C` flags! Check out the script `scripts/optimization_metalibm.sh` for the correct command-line options.
 
-  * Daisy now also has an online interface: http://daisy.mpi-sws.org/!
-
 ## First steps
 
 Note you need to have ***at most*** Java 8.
