@@ -51,7 +51,8 @@ ivyLoggingLevel in Test := UpdateLogging.Quiet
 
 logBuffered := false
 
-lazy val smtlib = RootProject(uri("git://github.com/regb/scala-smtlib"))
+//lazy val smtlib = RootProject(uri("git://github.com/regb/scala-smtlib"))
+lazy val smtlib = RootProject(uri("https://github.com/regb/scala-smtlib.git"))
 
 lazy val basic = Project("daisy", file(".")
 ) dependsOn (smtlib
@@ -96,7 +97,7 @@ script := {
                     |TMP=$$LC_NUMERIC
                     |LC_NUMERIC=en_US.UTF-8
                     |
-                    |java -Xmx2G -Xms512M -Xss64M -classpath "$${SCALACLASSPATH}" -Dscala.usejavacp=false scala.tools.nsc.MainGenericRunner -classpath "$${SCALACLASSPATH}" daisy.Main $$@ 2>&1 | tee -i last.log
+                    |java -Xmx2G -Xms1G -Xss1G -classpath "$${SCALACLASSPATH}" -Dscala.usejavacp=false scala.tools.nsc.MainGenericRunner -classpath "$${SCALACLASSPATH}" daisy.Main $$@ 2>&1 | tee -i last.log
                     |
                     |LC_NUMERIC=$$TMP
                     |""".stripMargin)
