@@ -33,13 +33,42 @@ object MPFRInterval {
 
   val pi = MPFRInterval(MPFRFloat.fromString("3.141592653589793238"),
                     MPFRFloat.fromString("3.141592653589793239"))
+
+  def union(ints: Set[MPFRInterval]): MPFRInterval = MPFRInterval(ints.minBy(_.xlo).xlo, ints.maxBy(_.xhi).xhi) //.tail.foldLeft(ints.head)({case (acc, x) => acc.union(x)})
+
+  /**
+   * Returns a set of integers that lay inside a rational interval. By default rounds outwards
+   * @param x interval
+   * @return set of integers
+   */
+  def integersIn(x: MPFRInterval, outwards:Boolean = true): Set[Int] = {
+    // if the bounds are integers, take their exact values, otherwise round outwards
+    if (outwards) {
+      val from = x.xlo.intValue()
+      val tto = if (x.xhi.isWhole()) x.xhi.intValue() else x.xhi.intValue() + 1
+      Set.from(from to tto)
+    } else {
+      // round inwards // todo ever needed?
+      val from = if (x.xlo.isWhole()) x.xlo.intValue() else x.xlo.intValue() + 1
+      val tto = if (x.xhi.isWhole()) x.xhi.intValue() else x.xhi.intValue() // todo ?? - 1
+      Set.from(from to tto)
+    }
+  }
+
+  def intersect(es: Seq[MPFRInterval]): Option[MPFRInterval] = {
+    val head: Option[MPFRInterval] = Some(es.head)
+    es.tail.foldLeft(head)({
+      case (None, _) => None
+      case (Some(acc), i) => acc.intersect(i)
+    })
+  }
 }
 
 case class PartialMPFRInterval(xlo: Option[MPFRFloat], xhi: Option[MPFRFloat])
 
 
 case class MPFRInterval(xlo: MPFRFloat, xhi: MPFRFloat) extends RangeArithmetic[MPFRInterval] {
-  assert(xlo <= xhi, "interval lower bound cannot be bigger than upper bound")
+  assert(xlo <= xhi, f"interval lower bound cannot be bigger than upper bound ${xlo.toLongString} > ${xhi.toLongString}")
 
   import MPFRInterval.pi
 
@@ -356,6 +385,15 @@ case class MPFRInterval(xlo: MPFRFloat, xhi: MPFRFloat) extends RangeArithmetic[
   def includes(r: MPFRFloat): Boolean = xlo <= r && r <= xhi
 
   def isNonNegative: Boolean = this.xlo >= fzero
+
+  def intersect(that: MPFRInterval): Option[MPFRInterval] = {
+    val newLo = max(that.xlo, this.xlo)
+    val newHi = min(that.xhi, this.xhi)
+    if (newLo > newHi)
+      None
+    else
+      Some(MPFRInterval(newLo, newHi))
+  }
 
   // def isPowerOf2: Boolean = this.xlo.equals(this.xhi) && this.xhi.isPowerOf2
 

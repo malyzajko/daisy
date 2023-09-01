@@ -682,7 +682,7 @@ object MixedPrecisionOptimizationPhase extends DaisyPhase with CostFunctions
     // the factor is to accommodate random assignment to pick the same
     val maxIterCount = 15 * maxCandTypeConfigs
 
-    var iterCount = 0l
+    var iterCount = 0L
 
     val candidateTypeConfigs = MSet[TypeConfig]()
 

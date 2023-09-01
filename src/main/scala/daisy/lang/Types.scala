@@ -61,6 +61,15 @@ object Types {
 
   case class TupleType(args: Seq[TypeTree]) extends TypeTree
 
+  case class VectorType(args: Seq[TypeTree]) extends TypeTree {
+    override def toString: String = s"List[${args.head.toString}]" // todo what about other args?
+    def elementType(): TypeTree = args.head.getType
+  }
+  case class MatrixType(args: Seq[TypeTree]) extends TypeTree {
+    override def toString: String = s"List[List[${args.head.toString}]]" // todo what about other args?
+    def elementType(): TypeTree = args.head.getType
+  }
+
   object NAryType {
     def unapply(t: TypeTree): Option[(Seq[TypeTree], Seq[TypeTree] => TypeTree)] = t match {
       case t => Some(Nil, _ => t)
