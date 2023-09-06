@@ -4,6 +4,7 @@
 package daisy
 package utils
 
+import daisy.lang.TreeOps.{isDsExpr, isMatrix, isScalar, isVector}
 import daisy.tools.Rational
 import lang.Identifiers.Identifier
 import lang.Trees._
@@ -49,12 +50,88 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
     sb.append(op2)
   }
 
+  def ppUnaryVector(expr: Tree, op: String)(implicit parent: Option[Tree], lvl: Int): Unit = {
+    pp(expr, parent)
+    sb.append(s".map(_tmpi => $op(_tmpi))")
+  }
+
+  def ppUnaryMatrix(expr: Tree, op: String)(implicit parent: Option[Tree], lvl: Int): Unit = {
+    pp(expr, parent)
+    sb.append(s".map(_r_ => _r_.map(_tmpi => $op(_tmpi)))")
+  }
+
   def ppBinary(left: Tree, right: Tree, op: String)(implicit parent: Option[Tree], lvl: Int): Unit = {
     sb.append("(")
     pp(left, parent)
     sb.append(op)
     pp(right, parent)
     sb.append(")")
+  }
+
+  def ppBinaryVectors(left: Tree, right: Tree, op: String)(implicit parent: Option[Tree], lvl: Int): Unit = {
+    // a.zip(b).map(ab => ab._1 + ab._2)
+    pp(left, parent)
+    sb.append(s".zip(")
+    pp(right, parent)
+    sb.append(s").map(tmp_lr => tmp_lr._1")
+    sb.append(op)
+    sb.append(s"tmp_lr._2)")
+  }
+
+  def ppBinaryMatrix(left: Tree, right: Tree, op: String)(implicit parent: Option[Tree], lvl: Int): Unit = {
+    // m1.zip(m2).map({case (m1row, m2row) => m1row.zip(m2row).map({case (l,r) => l + r})})
+    pp(left, parent)
+    sb.append(s".zip(")
+    pp(right, parent)
+    sb.append(s").map({")
+    nl(lvl+1)
+    sb.append("case (_m1row_, _m2row_) => ") // todo make sure these are unique
+    nl(lvl+2)
+    sb.append("_m1row_.zip(_m2row_).map({")
+    nl(lvl+3)
+    sb.append("case (_ltmp_, _rtmp_) => _ltmp_ ") // todo make sure these are unique
+    sb.append(op)
+    sb.append(" _rtmp_ ")
+    nl(lvl+2)
+    sb.append("})")
+    nl(lvl+1)
+    sb.append(s"})")
+    nl(lvl)
+  }
+
+  def ppVectorAndScalar(left: Tree, right: Tree, op: String)(implicit parent: Option[Tree], lvl: Int): Unit = {
+    // a.map(ab => ab op b)
+    pp(left, parent)
+    val tmpName = left match {
+      case VectorLiteral(id) => id.name
+      case MatrixLiteral(id) => id.name // shouldn't happen
+      case _ => "_tmp_op_scalar_"
+    }
+    sb.append(s".map(_${tmpName}_ =>")
+    nl(lvl + 1)
+    sb.append(s"_${tmpName}_ ")
+    sb.append(op)
+    sb.append(s"$right )")
+    nl(lvl)
+  }
+
+  def ppMatrixAndScalar(left: Tree, right: Tree, op: String)(implicit parent: Option[Tree], lvl: Int): Unit = {
+    // m.map(row => row.map(el=> el op scalar))
+    pp(left, parent)
+    val tmpName = left match {
+      case VectorLiteral(id) => id.name // shouldn't happen
+      case MatrixLiteral(id) => id.name
+      case _ => "_tmp_row_" // todo make sure it's unique (i.e. no nested shadowing)
+    }
+    sb.append(s".map(_${tmpName}_ =>")
+    nl(lvl + 1)
+    sb.append(s"_${tmpName}_.map( _${tmpName}_elt =>")
+    nl(lvl + 2)
+    sb.append(s"_${tmpName}_elt ")
+    sb.append(op)
+    pp(right, parent)
+    sb.append(s" ))")
+    nl(lvl)
   }
 
   def ppNary(exprs: Seq[Tree], pre: String, op: String, post: String)(
@@ -65,6 +142,25 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
 
     exprs.foreach(ex => {
       pp(ex, parent);
+      c += 1;
+      if (c < sz) {
+        sb.append(op)
+      }
+    })
+
+    sb.append(post)
+  }
+
+  def ppNaryWithType(exprs: Seq[ValDef], pre: String, op: String, post: String)(
+    implicit  parent: Option[Tree], lvl: Int): Unit = {
+    sb.append(pre)
+    val sz = exprs.size
+    var c = 0
+
+    exprs.foreach(ex => {
+      pp(ex, parent)
+      sb.append(": ")
+      pp(ex.getType, parent)
       c += 1;
       if (c < sz) {
         sb.append(op)
@@ -126,6 +222,54 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
 
       case ValDef(id) =>
         pp(id, p)
+
+      case VectorElement(v, index) =>
+        pp(v, p)
+        sb.append("[")
+        pp(index, p)
+        sb.append("]")
+
+      case MatrixElement(m, irow, icol) =>
+        pp(m, p)
+        sb.append("[")
+        pp(irow, p)
+        sb.append(",")
+        pp(icol, p)
+        sb.append("]")
+
+      case RowOfMatrix(m, index) =>
+        pp(m, p)
+        sb.append("(")
+        pp(index, p)
+        sb.append(")")
+
+      case VectorFromList(list, _) =>
+        sb.append("Vector(")
+        list.dropRight(1).foreach(v => {
+          pp(v, p)
+          sb.append(",")
+        })
+        pp(list.last, p)
+        sb.append(")")
+
+      case MatrixFromLists(list, _, _) =>
+        sb.append("Matrix(")
+        list.dropRight(1).foreach(v => {
+          sb.append("List(")
+          v.dropRight(1).foreach( el => {
+            pp(el, p)
+            sb.append(",")
+          })
+          pp(v.last, p)
+          sb.append("),\n")
+        })
+        sb.append("List(")
+        list.last.dropRight(1).foreach( el => {
+          pp(el, p)
+          sb.append(",")
+        })
+        pp(list.last.last, p)
+        sb.append("))")
 
       case Let(b,d,e) =>
         sb.append("(let (")
@@ -209,6 +353,7 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case Plus(l,r) => ppBinary(l, r, " + ")
       case Minus(l,r) => ppBinary(l, r, " - ")
       case Times(l,r) => ppBinary(l, r, " * ")
+
       case FMA(l,m,r) => ppMathFun(Seq(l,m,r), "fma")
       case Division(l,r) => ppBinary(l, r, " / ")
 //      case Pow(l,r) => ppBinary(l, r, " ^ ")
@@ -239,6 +384,127 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case Error(tpe, desc) =>
         sb.append(s"""error[$tpe]("$desc""")
 
+      // DS Expressions
+      case SizeLessEquals(v, rowNum, _) if isVector(v) =>
+        pp(v, p)
+        sb.append(s".($rowNum)")
+
+      case SizeLessEquals(v, rowNum, colNum) if isMatrix(v) =>
+        pp(v, p)
+        sb.append(s".($rowNum, $colNum)")
+
+      case ZipVectors(v1, v2) =>
+        sb.append("zip(")
+        pp(v1, p)
+        sb.append(", ")
+        pp(v2, p)
+        sb.append(")")
+
+      case MapIter(ds, fnc) =>
+        pp(ds, p)
+        sb.append(".map(")
+        pp(fnc, p)
+        sb.append(")")
+
+      case MapElemsIter(ds, fnc) =>
+        pp(ds, p)
+        sb.append(".mapElements(")
+        pp(fnc, p)
+        sb.append(")")
+
+      case FilterIter(ds, fnc) =>
+        pp(ds, p)
+        sb.append(".filter(")
+        pp(fnc, p)
+        sb.append(")")
+
+      case FoldIter(ds, init, fnc) =>
+        pp(ds, p)
+        sb.append(".fold(")
+        pp(init, p)
+        sb.append(")(")
+        pp(fnc, p)
+        sb.append(")")
+
+      case FoldElemsIter(ds, init, fnc) =>
+        pp(ds, p)
+        sb.append(".foldElements(")
+        pp(init, p)
+        sb.append(")(")
+        pp(fnc, p)
+        sb.append(")")
+
+      case SlideReduceIter(ds, size, step, fnc) =>
+        pp(ds, p)
+        sb.append(".slideReduce(")
+        pp(size, p)
+        sb.append(",")
+        pp(step, p)
+        sb.append(")(")
+        pp(fnc, p)
+        sb.append(")")
+
+      case SizeLength(ds) =>
+        pp(ds, p)
+        sb.append(".length()")
+
+      case SizeNumRows(ds) =>
+        pp(ds, p)
+        sb.append(".numRows()")
+
+      case SizeNumCols(ds) =>
+        pp(ds, p)
+        sb.append(".numCols()")
+
+      case Concat(ds1, ds2) =>
+        pp(ds1, p)
+        sb.append(" ++ ")
+        pp(ds2, p)
+
+      case EveryNthVector(v, n, from) =>
+        pp(v, p)
+        sb.append(".everyNth(")
+        pp(n, p)
+        sb.append(")(")
+        pp(from, p)
+        sb.append(")")
+
+      case EnumSlideFlatMap(v, n, fnc) =>
+        pp(v, p)
+        sb.append(".enumSlideFlatMap(")
+        pp(n, p)
+        sb.append(")(")
+        pp(fnc, p)
+        sb.append(")")
+
+      case PadVector(v, n) =>
+        pp(v, p)
+        sb.append(".pad(")
+        pp(n, p)
+        sb.append(")")
+
+      case PadMatrix(v, ni, nj) =>
+        pp(v, p)
+        sb.append(".pad(")
+        pp(ni, p)
+        sb.append(",")
+        pp(nj, p)
+        sb.append(")")
+
+      case FlipUpsideDown(m) =>
+        pp(m, p)
+        sb.append(".flipud()")
+      case FlipLeftToRight(m) =>
+        pp(m, p)
+        sb.append(".fliplr()")
+
+      case MaxOf(m) =>
+        pp(m, p)
+        sb.append(".max()")
+      //case MinOf(m) =>
+      //  pp(m, p)
+      //  sb.append(".min()")
+
       // Types
       case Untyped => sb.append("<untyped>")
       case UnitType => sb.append("Unit")
@@ -247,6 +513,12 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case Int64Type => sb.append("Long")
       case BooleanType => sb.append("Boolean")
       case RealType => sb.append("Real")
+      case VectorType(seq) =>
+        sb.append(s"List[${seq.head}]")
+        //ppNary(seq, pre = "[",op = ",", post = "]") // won't compile if seq has >1 element
+      case MatrixType(seq) =>
+        sb.append(s"List[List[${seq.head}]]")
+        //ppNary(seq, pre = "[",op = ",", post = "]]") // won't compile if seq has >1 element
       case FinitePrecisionType(Float16) => sb.append("Float16")
       case FinitePrecisionType(Float32) => sb.append("Float")
       case FinitePrecisionType(Float64) => sb.append("Double")

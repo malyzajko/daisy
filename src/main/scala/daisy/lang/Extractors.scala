@@ -151,6 +151,7 @@ object Extractors {
       /* Expr's not handled here should implement this trait */
       // case e: Extractable =>
       //  e.extract
+      case DSOperations(t) => Some(t)
     }
   }
 
@@ -166,6 +167,62 @@ object Extractors {
       case x @ Asin(t) => Some((t, (es: Expr) => Asin(es)))
       case x @ Acos(t) => Some((t, (es: Expr) => Acos(es)))
       case x @ Atan(t) => Some((t, (es: Expr) => Atan(es)))
+      case _ => None
+    }
+  }
+  
+  object DSOperations {
+    // todo determine what should DSOperation be deconstructed to
+    def unapply(expr: Expr): Option[(Seq[Expr], Seq[Expr] => Expr)] = expr match {
+      case VectorLiteral(t) => Some(Seq[Expr](), (_: Seq[Expr]) => VectorLiteral(t))
+      case MatrixLiteral(t) => Some(Seq[Expr](), (_: Seq[Expr]) => MatrixLiteral(t))
+      case VectorFromList(t, _) => Some(t, (es: Seq[Expr]) => VectorFromList(es, es.size))
+      //case VectorFromExpr(t) => Some(expr)
+      case MatrixFromLists(t,numRows,numCols) => Some(t.flatten, (es: Seq[Expr]) => MatrixFromLists(es.sliding(numCols,numCols).toSeq, numRows, numCols))
+      //case MatrixFromExpr(t) => Some(expr)
+      //case FlatVector(t) => Some(expr)
+      //case VectorRange(t,_,_,_,_) => Some(expr)
+      //case MatrixRange(t,_,_,_) => Some(expr)
+      //case SizeLessEquals(t,_,_) => Some(expr)
+      case SizeLength(t) => Some(Seq(t), (es: Seq[Expr]) => SizeLength(es.head))
+      case SizeNumRows(t) => Some(Seq(t), (es: Seq[Expr]) => SizeNumRows(es.head))
+      case SizeNumCols(t) => Some(Seq(t), (es: Seq[Expr]) => SizeNumCols(es.head))
+      case SubVector(v,from,to) => Some(Seq(v, from, to), (es: Seq[Expr]) => SubVector(es.head, es(1), es(2)))
+      case EveryNthVector(ds,n,from) => Some(Seq(ds, n, from), (es: Seq[Expr]) => EveryNthVector(es.head, es(1), es(2)))
+      //case SubMatrix(t,_) => Some(expr)
+      case EveryNthMatrix(ds,n,from) => Some(Seq(ds, n, from), (es: Seq[Expr]) => EveryNthMatrix(es.head, es(1), es(2)))
+      case RowOfMatrix(t,ind) => Some(Seq(t, ind), (es: Seq[Expr]) => RowOfMatrix(es.head, es(1)))
+      case CrossProduct(lhs,rhs) =>  Some(Seq(lhs, rhs), (es: Seq[Expr]) => CrossProduct(es.head, es(1)))
+      case MinOf(t) => Some(Seq(t), (es: Seq[Expr]) => MinOf(es.head))
+      case MaxOf(t) => Some(Seq(t), (es: Seq[Expr]) => MaxOf(es.head))
+      case Concat(lhs, rhs) => Some(Seq(lhs, rhs), (es: Seq[Expr]) => Concat(es.head, es(1)))
+      case AppendElement(ds,el) => Some(Seq(ds, el), (es: Seq[Expr]) => AppendElement(es.head, es(1)))
+      case PrependElement(ds,el) => Some(Seq(ds, el), (es: Seq[Expr]) => PrependElement(es.head, es(1)))
+      case ZipVectors(lhs, rhs) => Some(Seq(lhs, rhs), (es: Seq[Expr]) => ZipVectors(es.head, es(1)))
+      //case Determinant(t) => Some(expr)
+      //case MatrixInverse(t) => Some(expr)
+      //case FlattenMatrix(t) => Some(expr)
+      //case Transpose(t) => Some(expr)
+      case FlipUpsideDown(t) => Some(Seq(t), (es: Seq[Expr]) => FlipUpsideDown(es.head))
+      case FlipLeftToRight(t) => Some(Seq(t), (es: Seq[Expr]) => FlipLeftToRight(es.head))
+      case PadVector(v, padSize) => Some(Seq(v, padSize), (es: Seq[Expr]) => PadVector(es.head, es(1)))
+      case PadMatrix(m, padCol, padRows) => Some(Seq(m, padCol, padRows), (es: Seq[Expr]) => PadMatrix(es.head, es(1), es(2)))
+      case MapIter(t,fnc) => Some(Seq(t, fnc), (es: Seq[Expr]) => MapIter(es.head, es(1).asInstanceOf[Lambda]))
+      //case MapElemsIter(t,_) => Some(expr)
+      case Sum(t,init) => Some(Seq(t, init), (es: Seq[Expr]) => Sum(es.head, es(1)))
+      case FoldIter(t,init,fnc) => Some(Seq(t, init, fnc), (es: Seq[Expr]) => FoldIter(es.head, es(1), es(2).asInstanceOf[Lambda]))
+      case FoldElemsIter(t,init,fnc) => Some(Seq(t, init, fnc), (es: Seq[Expr]) => FoldElemsIter(es.head, es(1), es(2).asInstanceOf[Lambda]))
+      case FilterIter(t, fnc) => Some(Seq(t, fnc), (es: Seq[Expr]) => MapIter(es.head, es(1).asInstanceOf[Lambda]))
+      case EnumVectorAndMap(v, fnc) => Some(Seq(v, fnc), (es: Seq[Expr]) => EnumVectorAndMap(es.head, es(1).asInstanceOf[Lambda]))
+      case EnumSlideFlatMap(v,step, fnc) => Some(Seq(v, step, fnc), (es: Seq[Expr]) => EnumSlideFlatMap(es.head, es(1).asInstanceOf[Int32Literal], es(2).asInstanceOf[Lambda]))
+      case EnumRowsAndMap(m, fnc) => Some(Seq(m, fnc), (es: Seq[Expr]) => EnumRowsAndMap(es.head, es(1).asInstanceOf[Lambda]))
+      //case SlideIter(t, _, _) => Some(expr)
+      case SlideReduceIter(ds, size, step, fnc) =>
+        Some(Seq(ds, size, step, fnc),
+          (es: Seq[Expr]) => SlideReduceIter(es.head, es(1).asInstanceOf[Int32Literal], es(2).asInstanceOf[Int32Literal], es(3).asInstanceOf[Lambda]))
+      case VectorElement(v, ind) => Some(Seq(v, ind), (es: Seq[Expr]) => VectorElement(es.head, es(1)))
+      case MatrixElement(m, irow, icol) => Some(Seq(m, irow, icol), (es: Seq[Expr]) => MatrixElement(es.head, es(1), es(2)))
+
       case _ => None
     }
   }

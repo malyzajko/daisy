@@ -227,6 +227,11 @@ object Trees {
     val getType = TupleType(args map (_.getType))
   }
 
+  case class TupleElement(tpl: Expr, index: Int) extends Expr {
+    assert(tpl.getType match { case TupleType(_) => true; case _ => false }, s"Trying to take an tuple element of a non-tuple expression ${tpl}: ${tpl.getType}")
+    val getType = tpl.getType match { case TupleType(args) => args(index) }
+  }
+
   /** $encodingof `(args) => body` */
   case class Lambda(args: Seq[ValDef], body: Expr) extends Expr {
     val getType = FunctionType(args.map(_.getType), body.getType).unveilUntyped
@@ -234,6 +239,7 @@ object Trees {
       require(realArgs.size == args.size)
       (args map { _.id } zip realArgs).toMap
     }
+    val returnType: TypeTree = body.getType
     /* def withParamSubst(realArgs: Seq[Expr], e: Expr) = {
       replaceFromIDs(paramSubst(realArgs), e)
     } */
@@ -535,6 +541,322 @@ object Trees {
 
   case class AbsError(lhs: Expr, rhs: Expr) extends Expr {
     val getType = BooleanType
+  }
+
+  /* Loops over data structures */
+  // tensor literals
+  case class VectorLiteral(id: Identifier) extends Variable {
+    override val getType: TypeTree = id.getType
+    override def equals(obj: scala.Any): Boolean = super.equals(obj) // todo compare sizes as well?
+  }
+
+  case class VectorFromList(value: Seq[Expr], size: Int) extends Expr {
+    // todo do we need an id?, id: Identifier
+    override val getType: TypeTree = VectorType(value.map(_.getType).distinct) // todo do we need all types or just distinct?
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case VectorFromList(cvd, cvsz) => cvsz == size && cvd == value
+      case _ => false
+    }
+  }
+
+  case class VectorFromExpr(from: Expr) extends Expr {
+    assert(from.getType match { case VectorType(_) => true; case _ => false }, s"Trying to create a vector from incompatible expression ${from}: ${from.getType}")
+    override val getType: TypeTree = from.getType match {
+      case x: VectorType => x // result of map
+    }
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case VectorFromExpr(from2) => from == from2
+      case _ => false
+    }
+  }
+
+  case class FlatVector(from: Expr) extends Expr {
+    assert(from.getType match { case VectorType(Seq(VectorType(_))) => true; case _ => false }, s"Trying to create a flat vector from incompatible expression ${from}: ${from.getType}")
+    override val getType: TypeTree = from.getType match {
+      case VectorType(Seq(x)) => x // flatten the type
+    }
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case FlatVector(from2) => from == from2
+      case _ => false
+    }
+  }
+
+  case class MatrixLiteral(id: Identifier) extends Variable {
+    override val getType: TypeTree = id.getType
+    override def equals(obj: scala.Any): Boolean = super.equals(obj) // todo compare sizes as well?
+  }
+
+  case class MatrixFromLists(value: Seq[Seq[Expr]], numRows: Int, numCols: Int) extends Expr {
+    // todo do we need an id? id: Identifier,
+    override val getType: TypeTree = {
+      val tp: Seq[Seq[TypeTree]] = value.map(x => {
+        x.map(y => y.getType)
+      })
+      MatrixType(tp.flatten.distinct) // todo distinct or all?
+    }
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case MatrixFromLists(cvd, cvr, cvc) => cvr == numRows && cvc == numCols && cvd == value
+      case _ => false
+    }
+  }
+
+  case class MatrixFromExpr(from: Expr) extends Expr {
+    assert(from.getType match { case MatrixType(_) => true; case _ => false }, s"Trying to create a matrix from incompatible expression ${from}: ${from.getType}")
+    override val getType: TypeTree = from.getType match {
+      case x: MatrixType => x // result of map
+    }
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case MatrixFromExpr(from2) => from == from2
+      case _ => false
+    }
+  }
+
+  case class VectorElement(v: Expr, index: Expr) extends Expr with Terminal { // similar to a variable
+    assert(v.getType match { case VectorType(_) => true; case _ => false }, s"Trying to take an vector element of a non-vector expression ${v}: ${v.getType}")
+    override val getType: TypeTree = v.getType match {case VectorType(args) => args.head } // todo for it's mixed-precision check the actual spec
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case VectorElement(ds, ind) => ds == v && ind == index
+      case _ => false
+    }
+  }
+
+  case class MatrixElement(m: Expr, irow: Expr, icol: Expr) extends Expr with Terminal { // similar to a variable
+    assert(m.getType match { case MatrixType(_) => true; case _ => false }, s"Trying to take an matrix element of a non-matrix expression ${m}: ${m.getType}")
+    override val getType: TypeTree = m.getType match {case MatrixType(args) => args.head } // todo for it's mixed-precision check the actual spec
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case MatrixElement(ds, indI, indJ) => ds == m && indI == irow && indJ == icol
+      case _ => false
+    }
+  }
+
+  // for specifying range of a whole vector or subset of vector elements
+  case class VectorRange(v: VectorLiteral, fromInd: Int, toInd: Int, lb: RealLiteral, ub: RealLiteral) extends Expr {
+    val getType: TypeTree = BooleanType
+  }
+
+  // for specifying range of a whole matrix or subset of matrix elements
+  case class MatrixRange(v: MatrixLiteral, indices: Seq[(Int, Int)], lb: RealLiteral, ub: RealLiteral) extends Expr {
+    val getType: TypeTree = BooleanType
+  }
+
+  // for specifying vector/matrix size in the ensuring clause
+  case class SizeLessEquals(v: Expr, rowNum: Int, colNum: Int) extends Expr {
+    val getType: TypeTree = BooleanType
+  }
+
+  // AST node of v.length() | m.length()
+  case class SizeLength(v: Expr) extends Expr {
+    val getType: TypeTree = Int32Type
+  }
+
+  // AST node of m.numRows()
+  case class SizeNumRows(v: Expr) extends Expr {
+    val getType: TypeTree = Int32Type
+  }
+  // AST node of m.numCols()
+  case class SizeNumCols(v: Expr) extends Expr {
+    val getType: TypeTree = Int32Type
+  }
+
+  /* Subset of elements */
+  // DSL sub(i: Int, j: Int): Vector and everyNth(i: Int): Vector = ???
+  case class SubVector(v: Expr, from: Expr, to: Expr) extends Expr {
+    val getType: TypeTree = v.getType
+  }
+  // DSL everyNth(i: Int): Vector = ???
+  case class EveryNthVector(v: Expr, n: Expr, from: Expr) extends Expr {
+    val getType: TypeTree = v.getType
+  }
+
+  // DSL sub(fromI: Int, fromJ: Int)(toI: Int, toJ: Int): Matrix
+  case class SubMatrix(m: Expr, fromTOindices: Seq[(Int, Int)]) extends Expr {
+    val getType: TypeTree = m.getType
+  }
+
+  // DSL everyNth(i: Int): Matrix = ???
+  case class EveryNthMatrix(m: Expr, n: Expr, from: Expr) extends Expr {
+    val getType: TypeTree = m.getType
+  }
+
+  // DSL row(i:Int): Vector
+  case class RowOfMatrix(m: Expr, i: Expr) extends Expr {
+    assert(i.getType == Int32Type, s"Trying to pass a ${i.getType} as a row index on ${m}.")
+    assert(m.getType match { case MatrixType(_) => true; case _ => false }, s"Trying to take a row of a non-matrix expression ${m}: ${m.getType}")
+    val getType: TypeTree = m.getType match { case MatrixType(t) => VectorType(t) } // return one vector of the same type as the matrix todo for mixed-precision might need adjustment
+  }
+
+  /* Operations on elements */
+  // DSL Vector.x(Vector) and Matrix.x(Matrix)
+  case class CrossProduct(lhs: Expr, rhs: Expr) extends Expr {
+    val getType: TypeTree = rhs.getType // e.g Matrix x Vector -> Vector
+  }
+
+  // DSL Vector|Matrix.min()
+  case class MinOf(v: Expr) extends Expr {
+    val getType: TypeTree = v.getType match {
+      case VectorType(t) => t.head
+      case MatrixType(t) => t.head
+    }
+  }
+
+  // DSL Vector|Matrix.max()
+  case class MaxOf(v: Expr) extends Expr {
+    val getType: TypeTree = v.getType match {
+      case VectorType(t) => t.head
+      case MatrixType(t) => t.head
+    }
+  }
+
+  // DSL: Matrix.determinant(): Matrix
+  case class Determinant(m: Expr) extends Expr {
+    val getType: TypeTree = m.getType match { case MatrixType(t) => t.head }
+  }
+
+  // DSL: Matrix.inverse(): Matrix
+  case class MatrixInverse(m: Expr) extends Expr {
+    val getType: TypeTree = m.getType
+  }
+
+
+  /* rearrange DS */
+   // DSL: Vector.++(v: Vector): Vector = ???
+   case class Concat(lhs: Expr, rhs: Expr) extends Expr {
+     val getType: TypeTree = lhs.getType
+   }
+
+  // DSL: Vector.:+(v: Vector|Matrix)
+  case class AppendElement(ds: Expr, el: Expr) extends Expr {
+    val getType: TypeTree = ds.getType
+  }
+
+  // DSL: Vector.+:(v: Vector|Matrix)
+  case class PrependElement(ds: Expr, el: Expr) extends Expr {
+    val getType: TypeTree = ds.getType
+  }
+
+  // DSL zip(Vector, Vector): Matrix
+  case class ZipVectors(lhs: Expr, rhs: Expr) extends Expr {
+    val getType: TypeTree = {
+      val lTpe = lhs.getType match { case VectorType(t) => t }
+      val rTpe = rhs.getType match { case VectorType(t) => t }
+      val resTpe = (lTpe ++ rTpe).distinct
+      MatrixType(resTpe)
+    }
+  }
+
+  // DSL Matrix.flatten(): Vector
+  case class FlattenMatrix(m: Expr) extends Expr {
+    val getType: TypeTree = m.getType match {
+      case MatrixType(x) => VectorType(Seq(x.head))
+    }
+  }
+
+  // DSL: Matrix.transpose(): Matrix = ???
+  case class Transpose(m: Expr) extends Expr {
+    val getType: TypeTree = m.getType
+  }
+
+  // DSL: Matrix.flipud(): Matrix
+  case class FlipUpsideDown(m: Expr) extends Expr {
+    val getType: TypeTree = m.getType
+  }
+
+  // DSL: Matrix.fliplr(): Matrix
+  case class FlipLeftToRight(m: Expr) extends Expr {
+    val getType: TypeTree = m.getType
+  }
+
+  // DSL: def pad(i: Int): Vector = ??? // add zeros padding around the vector
+  case class PadVector(v: Expr, padSize: Expr) extends Expr {
+    assert(padSize.getType == Int32Type, s"Trying to pass a ${padSize.getType} as a padding size for ${v}.")
+    val getType: TypeTree = v.getType
+  }
+
+  // DSL: def pad(i: Int, j: Int): Matrix = ??? // add zeros padding around the matrix
+  case class PadMatrix(m: Expr, padRows: Expr, padCols: Expr) extends Expr {
+    assert(padRows.getType == Int32Type, s"Trying to pass a ${padRows.getType} as a padding row number for ${m}.")
+    assert(padCols.getType == Int32Type, s"Trying to pass a ${padCols.getType} as a padding column number for ${m}.")
+    val getType: TypeTree = m.getType
+  }
+
+  /* Loop-like constructs */
+  // DSL: Vector.map(fnc: (Real) => Real)
+  case class MapIter(v: Expr, func: Lambda) extends Expr {
+    val getType: TypeTree = v.getType match {
+      case VectorType(_) => VectorType(Seq(func.returnType))
+      case MatrixType(_) =>
+        val elType = func.returnType match {
+          case VectorType(args) => args.head
+        }
+        MatrixType(Seq(elType))
+    }}
+
+  // DSL: Vector.fold(init: Real)(fnc: (Real,Real) => Real): Real
+  case class FoldIter(v: Expr, init: Expr, fnc: Lambda) extends Expr {
+    val getType: TypeTree = init.getType
+  }
+  // DSL: Vector.fold(init: Real)(fnc: (Real,Real) => Real): Real
+  case class Sum(v: Expr, init: Expr) extends Expr {
+    val getType: TypeTree = init.getType
+  }
+
+  // DSL: Matrix.mapElements(fnc: (Real) => Real)
+  case class MapElemsIter(m: Expr, func: Lambda) extends Expr {
+    val getType: TypeTree = MatrixType(Seq(func.returnType)) // todo allow different types in one matrix? - mixed-precision
+  }
+
+  // DSL: Matrix.foldElements(init: Real)(fnc: (Real,Real) => Real): Real
+  case class FoldElemsIter(m: Expr, init: Expr, fnc: Lambda) extends Expr {
+    val getType: TypeTree = init.getType
+  }
+
+  // DSL: Vector.filter(fnc: (Real) => Boolean): Vector
+  // DSL: Matrix.filter(fnc: (Vector) => Boolean): Matrix
+  case class FilterIter(v: Expr, func: Lambda) extends Expr {
+    val getType: TypeTree = v.getType
+  }
+
+  // DSL: def enumMap((Int, Real) => Real): Vector = ???
+  case class EnumVectorAndMap(v: Expr, fnc: Lambda) extends Expr {
+    assert(v.getType match { case VectorType(_) => true; case _ => false }, s"Trying to enumerate elements of a vector on a non-vector expression ${v}: ${v.getType}")
+    val getType: TypeTree = VectorType(Seq(fnc.returnType))
+  }
+
+// enumSlideFlatMap(n: Int)(fnc: (Int, Vector) => Vector): Vector - like a slide, but with indexing
+  case class EnumSlideFlatMap(v: Expr, n: Expr, fnc: Lambda) extends Expr {
+  assert(n.getType == Int32Type, s"$n has wrong type ${n.getType} in $this")
+  assert(v.getType match { case VectorType(_) => true; case _ => false }, s"Trying to enumerate vector on a non-vector expression ${v}: ${v.getType}")
+    val getType: TypeTree = fnc.returnType
+  }
+
+  // DSL: enumRowsMap(fnc: (Int, Vector) => Real): Matrix = ???
+  case class EnumRowsAndMap(m: Expr, fnc: Lambda) extends Expr {
+    assert(m.getType match { case MatrixType(_) => true; case _ => false }, s"Trying to enumerate matrix a non-matrix expression ${m}: ${m.getType}")
+    val getType: TypeTree = {
+      val lambdaType = fnc.returnType match {
+        case VectorType(args) => args
+        case _ => throw new DaisyFatalError(Some(s"Lambda function returns the wrong type ${fnc.returnType}, expected Vector[T]"))
+      }
+      MatrixType(lambdaType)
+    }
+  }
+
+  // DSL: def slide(size:Int, step: Int): List[Vector] = ??? // apply sliding window to the vector, list resulting sub-vectors left to right
+  case class SlideIter(v: Expr, size: Int, step: Int) extends Expr {
+    val getType: TypeTree = v.getType match {
+      case VectorType(t) => ??? // TODO how to represent a list of vectors? -> Matrix?
+      case MatrixType(t) => ??? // TODO represent a matrix of matrices
+    }
+  }
+
+  // DSL: def slideReduce(size:Int, step: Int)(fnc: (Vector) => Real): Vector = ??? // apply sliding window to the vector, map over sub-vectors, record the reduced value
+  case class SlideReduceIter(v: Expr, size: Expr, step: Expr, fnc: Lambda) extends Expr {
+    assert(size.getType == Int32Type, s"$size has a wrong type. Wrong arguments to _.slideReduce($size,$step)(...)")
+    assert(step.getType == Int32Type, s"$step has a wrong type. Wrong arguments to _.slideReduce($size,$step)(...)")
+    val getType: TypeTree = v.getType match {
+      case VectorType(_) => VectorType(Seq(fnc.returnType))
+      case MatrixType(_) => MatrixType(Seq(fnc.returnType))
+    }
   }
 
   /*  Program structure  */

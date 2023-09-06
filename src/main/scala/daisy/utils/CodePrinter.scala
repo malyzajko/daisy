@@ -13,13 +13,15 @@ object CodePrinter {
   val suffix: Map[String, String] = HashMap(
     "C" -> ".c",
     "Scala" -> ".scala",
-    "FPCore" -> ".fpcore")
+    "FPCore" -> ".fpcore",
+    "Satire" -> ".txt")
 
   def apply(t: Program, ctx: Context, lang: String, out: BufferedWriter): Unit = {
     val printer = lang match {
       case "apfixed" | "C" => new CPrinter(out, ctx)
       case "Scala" => new ScalaPrinter(out, ctx)
       case "FPCore" => new FPCorePrinter(out, ctx)
+      case "Satire" => new SatirePrinter(out, ctx)
     }
     printer.pp(t, None)(0)
   }

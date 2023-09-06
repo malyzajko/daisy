@@ -6,7 +6,7 @@ package daisy
 import scala.reflect.ClassTag
 import lang.Trees.{Expr, Program, FunDef}
 import lang.Identifiers._
-import tools.{FinitePrecision, Interval, PartialInterval, Rational}
+import tools.{DSAbstraction, FinitePrecision, Interval, PartialInterval, Rational}
 import FinitePrecision.{FixedPrecision, Precision}
 import daisy.Main.ProgramLanguage
 import daisy.Main.ProgramLanguage._
@@ -24,7 +24,8 @@ case class Context(
 
   timers: TimerStorage = new TimerStorage,
 
-  libFiles: List[String] = List(System.getProperty("user.dir")+"/library/Real.scala"),
+  libFiles: List[String] = List(System.getProperty("user.dir")+"/library/Real.scala",
+    System.getProperty("user.dir")+"/library/Vector.scala"),
 
   // Information we want to persist through phases,
   // but don't want to pollute the nice and clean trees.
@@ -73,7 +74,9 @@ case class Context(
   metalibmWrapperFunctions: Seq[String] = Seq(),
   metalibmGeneratedFiles: Seq[String] = Seq(),
 
-  originalFunctions: Map[Identifier, FunDef] = Map()
+  originalFunctions: Map[Identifier, FunDef] = Map(),
+  dsAbstractions: Map[Identifier, Map[Expr, DSAbstraction]] = Map(),
+  errMsg: Option[String] = None
 
 ) {
 

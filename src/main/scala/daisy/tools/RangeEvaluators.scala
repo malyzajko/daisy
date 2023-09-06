@@ -26,9 +26,10 @@ trait RangeEvaluators {
   def evalRange[T <: RangeArithmetic[T]](
     expr: Expr,
     initValMap: Map[Identifier, T],
-    rangeFromInterval: Interval => T): (T, Map[(Expr, PathCond), T]) = {
+    rangeFromInterval: Interval => T,
+    precompIntermRanges: CachingMap[(Expr, PathCond), T] = CachingMap.empty[(Expr, PathCond), T]()): (T, Map[(Expr, PathCond), T]) = {
 
-    val intermediateRanges: CachingMap[(Expr, PathCond), T] = new CachingMap[(Expr, PathCond), T]
+    val intermediateRanges: CachingMap[(Expr, PathCond), T] = if (precompIntermRanges.isEmpty) new CachingMap[(Expr, PathCond), T] else precompIntermRanges
 
     for ((id, range) <- initValMap){
       intermediateRanges.put((Variable(id), emptyPath), range)
@@ -36,7 +37,8 @@ trait RangeEvaluators {
 
     def eval(e: Expr, p: PathCond): T = intermediateRanges.getOrAdd((e, p), {
 
-      case (RealLiteral(r), path) => rangeFromInterval(Interval(r))
+      case (RealLiteral(r), _) => rangeFromInterval(Interval(r))
+      case (Int32Literal(r), _) => rangeFromInterval(Interval(r))
 
       case (Plus(lhs, rhs), path) => eval(lhs, path) + eval(rhs, path)
 
@@ -190,8 +192,8 @@ trait RangeEvaluators {
             throw new Exception("Not supported")
         }
 
-      case _ =>
-        throw new Exception("Not supported")
+      case x =>
+        throw new Exception(s"Not supported $x")
     })
     val res = eval(expr, emptyPath)
     (res, intermediateRanges.toMap)
