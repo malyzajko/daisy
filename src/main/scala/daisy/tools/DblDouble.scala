@@ -143,7 +143,7 @@ class DblDouble(val hi: Double, val lo: Double) extends ScalaNumber with Ordered
     val axdd = DblDouble(ax)
 
     val axddSqr = axdd * axdd
-    val diffSq = x - axddSqr
+    val diffSq = this - axddSqr
     val d2 = diffSq.hi * (x * 0.5)
 
     axdd + DblDouble(d2)
