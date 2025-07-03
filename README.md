@@ -1,7 +1,6 @@
+<img src="daisy_logo.jpg" width="150">
+
 # Project Daisy
-
-<img src="https://github.com/malyzajko/daisy/daisy_logo.jpg" width="150">
-
 
 ## News
 
