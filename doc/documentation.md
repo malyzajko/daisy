@@ -1,6 +1,5 @@
 # Daisy's Documentation
 
-
 Daisy is a framework for verifying and optimizing numerical programs,
 especially focused on the accuracy of computations.
 
@@ -12,22 +11,6 @@ well-established techniques for accuracy analysis of roundoff errors.
 
 While performance is, of course, a consideration, the first priority of Daisy's
 code design is ease of understanding and extensibility of the code.
-
-## Publications
-
-  * [Sound Probabilistic Numerical Error Analysis](https://people.mpi-sws.org/%7Eeva/papers/iFM2019.pdf), iFM'19 - see the 'probabilistic' branch
-
-  * [Synthesizing Efficient Low-Precision Kernels](https://people.mpi-sws.org/%7Eeva/papers/atva2019.pdf), ATVA'19 - see the 'approx' branch
-
-  * [Sound Approximation of Programs with Elementary Functions](https://people.mpi-sws.org/%7Eeva/papers/cav2019b.pdf), CAV'19
-
-  * [Discrete Choice in the Presence of Numerical Uncertainties](https://people.mpi-sws.org/%7Eeva/papers/emsoft2018.pdf), EMSOFT'18 - see the 'probabilistic' branch
-
-  * [Sound Mixed-Precision Optimization with Rewriting](https://people.mpi-sws.org/~eva/papers/iccps18_mixedtuning_rewriting.pdf), ICCPS'18
-
-  * [Daisy tool paper](https://people.mpi-sws.org/~eva/papers/tacas18_daisy_toolpaper.pdf), TACAS'18
-
-  * [On Sound Relative Error Bounds for Floating-Point Arithmetic](https://people.mpi-sws.org/~eva/papers/fmcad17_relative.pdf), FMCAD'17
 
 ## User's Guide
 
@@ -59,11 +42,12 @@ operations can be found in library/Real.scala.
 
 To note about the input language:
 
-  * Function bodies may consist of arithmetic expressions, including square root and the most common transcendental functions (sin, cos, tan, exp, log) and immutable variable definitions ('val z = ').
+  * Function bodies may consist of arithmetic expressions, including square root and the most common transcendental functions (sin, cos, tan, exp, log), immutable variable definitions (`val z = `)
+  and operations over Daisy's `Vector` and `Matrix` data types (see all operations in `library/Vector.scala`).
 
   * The require clause must specify the ranges (i.e. lower AND upper bounds) for all input variables.
 
-  * The ensuring clause is optional in general, but may be required for certain functionalities like for instance mixed-precision tuning.
+  * The ensuring clause is optional in general, but may be required for certain functionality like for instance mixed-precision tuning.
 
   * The notation `x +/- e` defines an absolute roundoff error of magnitude 'e' on the variable 'x'.
 

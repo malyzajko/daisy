@@ -4,9 +4,7 @@
 package daisy
 
 import java.io.File
-
 import daisy.tools.FinitePrecision._
-
 import lang.Trees.Program
 
 object Main {
@@ -50,7 +48,7 @@ object Main {
       "smt solver to use for smt range analysis"),
     ChoiceOption(
       "analysis",
-      Map("dataflow" -> analysis.DataflowPhase, "opt" -> analysis.TaylorErrorPhase,
+      Map("dataflow" -> analysis.DataflowPhase, "opt" -> analysis.FPTaylorPhase,
           "relative" -> analysis.RelativeErrorPhase),
       "dataflow",
       "Which analysis method to use"),
@@ -61,9 +59,8 @@ object Main {
     ChoiceOption(
       "precision",
       Map("Float16" -> Float16, "Float32" -> Float32, "Float64" -> Float64,
-        "Quad" -> DoubleDouble, "QuadDouble" -> QuadDouble,
-        "Fixed8" -> FixedPrecision(8), "Fixed16" -> FixedPrecision(16),
-        "Fixed32" -> FixedPrecision(32), "Fixed64" -> FixedPrecision(64)),
+        "Quad" -> DoubleDouble, "QuadDouble" -> QuadDouble) ++
+        (1 to 64).map(x => ("Fixed" + x -> FixedPrecision(x))),
       "Float64",
       "(Default, uniform) precision to use"),
     StringChoiceOption(
@@ -119,7 +116,34 @@ object Main {
       "Cost function for mixed-tuning and approximation phases."),
 
     FlagOption("metalibm", "approximate an elementary function from Metalibm"),
-    FlagOption("benchmarking", "generates the benchmark file")
+    FlagOption("benchmarking", "generates the benchmark file"),
+    FlagOption("modularRoundOffEval", "modular roundoff error evaluation"),
+    FlagOption("FPTaylor", "evaluates the Taylor abstract using FPTaylor approach"),
+    FlagOption("FPTaylorOriginal", "evaluates the Taylor abstract using FPTaylor approach"),
+    FlagOption("inlineTranslate", "inlines functions and generates code in specified format by the 'lang' flag"),
+    FlagOption("print-ast", "prints the AST of a parsed program"),
+    FlagOption("unroll", "unrolls all loops over DS [WARN] only used with --print-ast at the moment"),
+    FlagOption("ds", "applies abstraction to data structures and computes ranges, errors"),
+    FlagOption("ds-naive", "naive analysis of programs with data structures (ranges, errors)"),
+
+    // Omelette settings
+    NumOption(
+      "omelettePrecision",
+      128,
+      "number of bits used for interval evaluation; higher is slower but more accurate"
+    ),
+    NumOption(
+      "omeletteIterLimit",
+      30,
+      "maximum number of iterations to run the simplification for; higher is slower but more accurate"
+    ),
+    StringChoiceOption(
+      "omeletteCostFn", 
+      Set("astSize", "width", "magnitude", "widthFirst", "magnitudeFirst"), 
+      "widthFirst", 
+      "cost function used when extracting an expression", 
+    ) 
+    
   )
 
   lazy val allPhases: Set[DaisyPhase] = Set(
@@ -128,9 +152,16 @@ object Main {
     analysis.AbsErrorPhase,
     analysis.RangePhase,
     analysis.DataflowPhase,
+    analysis.DSAbstractionPhase,
+    analysis.DSNaivePhase,
     analysis.RelativeErrorPhase,
     analysis.TaylorErrorPhase,
     analysis.DataflowSubdivisionPhase,
+    analysis.TaylorAbstractPhase,
+    analysis.FPTaylorPhase,
+    analysis.FPTaylorPhaseOriginal,
+    analysis.ModularRoundOffErrorEvalPhase,
+    analysis.FunctionCallPhase,
     backend.CodeGenerationPhase,
     transform.TACTransformerPhase,
     transform.PowTransformerPhase,
@@ -147,7 +178,8 @@ object Main {
     opt.MetalibmPhase,
     //transform.ReassignElemFuncPhase,
     experiment.BenchmarkingPhase,
-    transform.DecompositionPhase
+    transform.DecompositionPhase,
+    transform.UnrollPhase
   )
 
   // all available options from all phases
@@ -166,22 +198,34 @@ object Main {
         try { // for debugging it's better to have these off.
           pipeline.run(ctx, Program(null, Nil))
         } catch {
-          case tools.DivisionByZeroException(msg) =>
-            ctx.reporter.warning(msg)
-          case tools.DenormalRangeException(msg) =>
-            ctx.reporter.warning(msg)
-          case tools.OverflowException(msg) =>
-            ctx.reporter.warning(msg)
-          case e: java.lang.UnsatisfiedLinkError =>
-            ctx.reporter.warning("A library could not be loaded: " + e)
-          case tools.NegativeSqrtException(msg) =>
-            ctx.reporter.warning(msg)
-          case tools.ArcOutOfBoundsException(msg) =>
-            ctx.reporter.warning(msg)
+          //case tools.DivisionByZeroException(msg) =>
+          //  ctx.reporter.warning(msg)
+          //case tools.DenormalRangeException(msg) =>
+          //  ctx.reporter.warning(msg)
+          //case tools.OverflowException(msg) =>
+          //  ctx.reporter.warning(msg)
+          //case e: java.lang.UnsatisfiedLinkError =>
+          //  ctx.reporter.warning("A library could not be loaded: " + e)
+          //case tools.NegativeSqrtException(msg) =>
+          //  ctx.reporter.warning(msg)
+          //case tools.ArcOutOfBoundsException(msg) =>
+          //  ctx.reporter.warning(msg)
           // case e: DaisyFatalError =>
-          //   ctx.reporter.info("Something really bad happened. Cannot continue.")
-          // case _ : Throwable =>
-          //   ctx.reporter.info("Something really bad happened. Cannot continue.")
+          //   ctx.reporter.info(f"Something really bad happened. Cannot continue.")
+          case e: Exception =>
+            val msg = f"${e.getClass.getSimpleName}: ${e.getMessage}"
+            ctx.reporter.info(f"Something really bad happened. Cannot continue: $msg")
+            if ((ctx.options.contains("ds") || ctx.options.contains("ds-naive")) && ctx.options.contains("results-csv")) {
+              val (_,prg) = frontend.ExtractionPhase.runPhase(ctx, ctx.originalProgram)
+              backend.InfoPhase.runPhase(ctx.copy(errMsg = Some(msg)), prg)
+            }
+          case t : Throwable =>
+            val msg = f"${t.getClass.getSimpleName}: ${t.getMessage}"
+            ctx.reporter.info(f"Something really bad happened. Cannot continue: $msg")
+            if ((ctx.options.contains("ds") || ctx.options.contains("ds-naive")) && ctx.options.contains("results-csv")) {
+              val (_,prg) = frontend.ExtractionPhase.runPhase(ctx, ctx.originalProgram)
+              backend.InfoPhase.runPhase(ctx.copy(errMsg = Some(msg)), prg)
+            }
         }
         ctx.timers.get("total").stop()
         ctx.reporter.info("time: \n" + ctx.timers.toString)
@@ -201,7 +245,30 @@ object Main {
     var pipeline: Pipeline[Program, Program] =
       if (ctx.lang == ProgramLanguage.ScalaProgram) frontend.ExtractionPhase else frontend.CExtractionPhase
 
+    if (ctx.hasFlag("ds-pre-c") || ctx.hasFlag("ds-pre-scala")) {
+      pipeline >>= analysis.SpecsProcessingPhase
+      pipeline >>= backend.InfoPhase
+      return pipeline
+    }
+    if (ctx.hasFlag("print-ast")) {
+      if (ctx.hasFlag("unroll")) {
+        pipeline >>= analysis.SpecsProcessingPhase
+        pipeline >>= transform.UnrollPhase
+        //pipeline >>= analysis.DataflowPhase
+        //pipeline >>= backend.CodeGenerationPhase
+      }
+      pipeline >>= backend.InfoPhase
+      return pipeline
+    }
+
     pipeline >>= analysis.SpecsProcessingPhase
+    if (ctx.hasFlag("unroll")) {
+      pipeline >>= transform.UnrollPhase
+      if (ctx.hasFlag("codegen")) {
+        pipeline >>= backend.CodeGenerationPhase
+        return pipeline
+      }
+    }
 
     if (ctx.hasFlag("rewrite")) {
       pipeline >>= opt.RewritingOptimizationPhase
@@ -287,6 +354,41 @@ object Main {
         backend.InfoPhase >>
         backend.CodeGenerationPhase
 
+    } else if (ctx.hasFlag("FPTaylorOriginal")) {
+       pipeline  >>= analysis.FunctionCallPhase
+       //pipeline >>= analysis.TaylorAbstractPhase
+       pipeline >>= analysis.FPTaylorPhaseOriginal
+       pipeline >>= backend.InfoPhase
+
+    } else if (ctx.hasFlag("FPTaylor")) {
+       pipeline  >>= analysis.FunctionCallPhase
+       //pipeline >>= analysis.TaylorAbstractPhase
+       pipeline >>= analysis.FPTaylorPhase
+       pipeline >>= backend.InfoPhase
+
+    } else if (ctx.hasFlag("modularRoundOffEval")) {
+//       pipeline  >>= analysis.FunctionCallPhase
+       pipeline >>= analysis.TaylorAbstractPhase
+       pipeline >>= analysis.ModularRoundOffErrorEvalPhase
+       pipeline >>= backend.InfoPhase
+
+    } else if (ctx.hasFlag("inlineTranslate")) {
+      pipeline  >>= analysis.FunctionCallPhase
+      pipeline >>= backend.CodeGenerationPhase
+    } else if (ctx.hasFlag("ds") && !ctx.hasFlag("unroll")) {
+      pipeline >>= analysis.DSAbstractionPhase
+      pipeline >>= backend.InfoPhase
+      //pipeline >>= transform.TACTransformerPhase
+      //pipeline >>= backend.CodeGenerationPhase
+      if (ctx.hasFlag("codegen")) {
+        pipeline >>= backend.CodeGenerationPhase
+      }
+    } else if (ctx.hasFlag("ds-naive")) {
+      pipeline >>= analysis.DSNaivePhase
+      pipeline >>= backend.InfoPhase
+      if (ctx.hasFlag("codegen")) {
+        pipeline >>= backend.CodeGenerationPhase
+      }
     } else {
       // Standard static analyses
       if (ctx.fixedPoint && ctx.hasFlag("apfixed")) {
@@ -296,6 +398,10 @@ object Main {
       if (ctx.hasFlag("three-address") || (ctx.fixedPoint && ctx.hasFlag("codegen"))) {
         pipeline >>= transform.TACTransformerPhase
       }
+
+      // must come just before the (standard) analysis so that it inlines
+      // functions with transformations applied
+      pipeline >>= analysis.FunctionCallPhase
 
       // TODO: this is very ugly
       if (ctx.hasFlag("subdiv") && ctx.option[DaisyPhase]("analysis") == analysis.DataflowPhase) {

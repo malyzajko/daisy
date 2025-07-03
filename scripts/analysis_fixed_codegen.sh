@@ -1,18 +1,13 @@
 #!/bin/bash --posix
 #
-# This script
-
-# 'Standard' benchmark set
-declare -a files=("testcases/rosa/Bsplines.scala" \
-  "testcases/rosa/Doppler.scala" \
-  "testcases/real2float/Himmilbeau.scala" \
-  "testcases/control/InvertedPendulum.scala" \
-  "testcases/real2float/Kepler.scala" \
-  "testcases/rosa/RigidBody.scala" \
-  "testcases/misc/Sine.scala" \
-  "testcases/misc/Sqrt.scala" \
-  "testcases/control/Traincar4.scala" \
-  "testcases/rosa/Turbine.scala")
+# This script runs Daisy on all FPBench benchmarks using dataflow analysis
+# (default options made explicit here) assuming a uniform fixed-point bitlength,
+# and generates fixed-point code using either bitshift operations in Scala or C,
+# or generates C++ code using Xilinx apfixed library (to compile to FPGAs).
+# Generated code is saved in the output/ folder.
+#
+# Note: not all of the FPBench benchmarks are supported for fixed-point code
+# generation; for simplicity they are included here, but will not produce code.
 
 # Make sure the code is compiled
 sbt compile
@@ -23,9 +18,12 @@ then
   sbt script
 fi
 
-# Run daisy on each testfile
-for file in "${files[@]}"
-do
-  ./daisy --codegen --precision=Fixed32 --results-csv=fixed_codegen_rewriting_results.csv \
-    --rewrite --rangeMethod=smt --solver=z3 ${file}
+# run Daisy on each testfile
+for file in testcases/fpbench/*.scala; do
+  echo "*******"
+  echo ${file}
+  ./daisy --analysis=dataflow --rangeMethod=interval --errorMethod=affine \
+    --codegen --lang=C --precision=Fixed32 ${file}
+  #./daisy --analysis=dataflow --rangeMethod=interval --errorMethod=affine \
+  #  --codegen --apfixed --precision=Fixed32 ${file}
 done

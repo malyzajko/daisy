@@ -4,9 +4,10 @@
 package daisy
 package frontend
 
+import scala.collection.immutable.Seq
 import scala.tools.nsc._
 
-import scala.collection.immutable.Seq
+import daisy.lang.Trees.Variable
 
 
 /** Contains extractors to pull-out interesting parts of the Scala ASTs. */
@@ -194,12 +195,12 @@ trait ASTExtractors {
       }
     }
 
-    // object ExUMinus {
-    //   def unapply(tree: Select): Option[Tree] = tree match {
-    //     case Select(t, n) if n == nme.UNARY_- => Some(t)
-    //     case _ => None
-    //   }
-    // }
+     object ExUMinus {
+       def unapply(tree: Select): Option[Tree] = tree match {
+         case Select(t, n) if n == nme.UNARY_- => Some(t)
+         case _ => None
+       }
+     }
 
     object ExRealUMinus {
       def unapply(tree: Apply): Option[Tree] = tree match {
@@ -212,6 +213,36 @@ trait ASTExtractors {
       def unapply(tree: Apply): Option[Int] = tree match {
         case Apply(select, List(Literal(c @ Constant(i)))) if (select.toString == "daisy.lang.Real.int2real") =>
           Some(c.intValue)
+        case _ => None
+      }
+    }
+
+    object ExImplicitInt2RealVar {
+      def unapply(tree: Apply): Option[(Symbol, Tree)] = tree match {
+        case Apply(select, List(i @ Ident(_))) if (select.toString == "daisy.lang.Real.int2real") =>
+          Some((i.symbol, i))
+        case _ => None
+      }
+    }
+
+    object ExImplicitInt2RealOp {
+      def unapply(tree: Apply): Option[Tree] = tree match {
+        case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.int2real") => Some(arg)
+        case _ => None
+      }
+    }
+
+    object ExImplicitDouble2RealOp {
+      def unapply(tree: Apply): Option[Tree] = tree match {
+        case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.double2real") => Some(arg)
+        case _ => None
+      }
+    }      
+
+    object ExImplicitInt2RealOnVars {
+      def unapply(tree: Apply): Option[Tree] = tree match {
+        case Apply(select, List(x:Ident)) if select.toString == "daisy.lang.Real.int2real" =>
+          Some(x)
         case _ => None
       }
     }
@@ -234,6 +265,7 @@ trait ASTExtractors {
     object ExSqrt {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.sqrt") => Some(arg)
+        case Apply(Select(t, nm), List()) if (nm.toString == "sqrt") => Some(t)
         case _ => None
       }
     }
@@ -255,6 +287,7 @@ trait ASTExtractors {
     object ExSin {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.sin") => Some(arg)
+        case Apply(Select(t, nm), List()) if (nm.toString == "sin") => Some(t)
         case _ => None
       }
     }
@@ -262,6 +295,7 @@ trait ASTExtractors {
     object ExCos {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.cos") => Some(arg)
+        case Apply(Select(t, nm), List()) if (nm.toString == "cos") => Some(t)
         case _ => None
       }
     }
@@ -269,6 +303,7 @@ trait ASTExtractors {
     object ExTan {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.tan") => Some(arg)
+        case Apply(Select(t, nm), List()) if (nm.toString == "tan") => Some(t)
         case _ => None
       }
     }
@@ -276,6 +311,7 @@ trait ASTExtractors {
     object ExAsin {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.asin") => Some(arg)
+        case Apply(Select(t, nm), List()) if (nm.toString == "asin") => Some(t)
         case _ => None
       }
     }
@@ -283,6 +319,7 @@ trait ASTExtractors {
     object ExAcos {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.acos") => Some(arg)
+        case Apply(Select(t, nm), List()) if (nm.toString == "acos") => Some(t)
         case _ => None
       }
     }
@@ -290,6 +327,7 @@ trait ASTExtractors {
     object ExAtan {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.atan") => Some(arg)
+        case Apply(Select(t, nm), List()) if (nm.toString == "atan") => Some(t)
         case _ => None
       }
     }
@@ -297,6 +335,7 @@ trait ASTExtractors {
     object ExLog {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.log") => Some(arg)
+        case Apply(Select(t, nm), List()) if (nm.toString == "log") => Some(t)
         case _ => None
       }
     }
@@ -304,10 +343,10 @@ trait ASTExtractors {
     object ExExp {
       def unapply(tree: Apply): Option[Tree] = tree match {
         case Apply(select, List(arg)) if (select.toString == "daisy.lang.Real.exp") => Some(arg)
+        case Apply(Select(t, nm), List()) if (nm.toString == "exp") => Some(t)
         case _ => None
       }
     }
-
 
     object ExPlusMinus {
       def unapply(tree: Apply): Option[(Tree,Tree)] = tree match {
@@ -330,6 +369,282 @@ trait ASTExtractors {
       }
     }
 
+    // Data struct Operations
+    object ExFold{
+      def unapply(tree:Apply): Option[(Tree,Tree,Tree)] = tree match {
+        case Apply(Apply(Select(v,sym), List(init)), List(fnc)) if sym.toString.contains("fold") =>
+          Some(v, init, fnc)
+        case _ => None
+      }
+    }
+
+    // TODO remove if x.length() has type Real
+    object ExImplicitSize2Real {
+      def unapply(tree: Apply): Option[Tree] = tree match {
+        case Apply(select, List(Apply(x @ Select(id, innerFnc), Nil))) if (select.toString == "daisy.lang.Real.int2real" && innerFnc.toString() == "length") =>
+          Some(id)
+        case _ => None
+      }
+    }
+
+    object ExZipVectors {
+      def unapply(tree: Apply): Option[(Tree, Tree)] = tree match {
+        case Apply(select, List(v1,v2)) if (select.toString == "daisy.lang.Vector.zip") =>
+          Some(v1, v2)
+        case _ => None
+      }
+    }
+
+    object ExZeroDS {
+      def unapply(tree: Tree): Option[(Tree, Seq[Tree])] = tree match {
+        case Apply(Select(t, nm), List(i)) if nm.toString() == "zeroVector" =>
+          Some(t, Seq(i))
+        case Apply(Select(t, nm), List(i,j)) if nm.toString() == "zeroMatrix" =>
+          Some(t, Seq(i,j))
+        case _ => None
+      }
+    }
+
+    object ExConstructDSFromList {
+      def unapply(tree: Tree): Option[(Tree, Seq[Seq[Tree]])] = tree match {
+        case Apply(t@Select(New(v), _),List(Apply(_,args))) if v.toString() == "daisy.lang.Vector" =>
+          args match {
+            case List(Function(_,_)) => None //  this case is for ExConstructDSFromExpr
+            case List(TypeApply(_,_)) => None //  this case is for ExConstructDSFromExpr
+            case _ => Some(t, Seq(args))
+          }
+        case Apply(t@Select(New(v), _),List(Apply(l,args))) if v.toString() == "daisy.lang.Matrix" =>
+          l match {
+            // create from constants: Matrix(List(List(0.0)))
+            case TypeApply(Select(list, _),_) if list.symbol.nameString == "List" =>
+              val resArgs: Seq[Seq[Tree]] = args.map { case Apply(_, inner) => inner }
+              Some(t, resArgs)
+            case _ => None
+          }
+
+        case _ => None
+      }
+    }
+
+    object ExConstructDSFromExpr {
+      def unapply(tree: Tree): Option[(Tree, Tree)] = tree match {
+        case Apply(t@Select(New(v), _), List(res)) if v.toString() == "daisy.lang.Vector" || v.toString() == "daisy.lang.Matrix" =>
+          res match {
+            case Apply(TypeApply(x, _), body) => //if to.symbol.nameString != "List"
+              val redo = Apply(x, body) // todo test properly -> TypeApply is Apply for generics, applies actual type
+              Some(t, redo)
+            case Ident(_) =>
+              Some(t, res)
+            case _ => None
+          }
+        case _ => None
+      }
+    }
+
+    object ExFlatVector {
+      def unapply(tree: Tree): Option[Tree] = tree match {
+        case Apply(Select(_, nm), List(expr)) if nm.toString() == "flatVector" => // todo need the case for multiple expressions as arg?
+          expr match {
+            case Apply(TypeApply(x, _), body) =>
+              val redo = Apply(x, body)
+              Some(redo)
+            case _ =>  Some(expr)
+          }
+        case _ => None
+      }
+    }
+
+    object ExAccessTuple {
+        def unapply(tree: Tree): Option[(Tree, Int)] = tree match {
+          case Select(tpl, nm) if nm.decoded == "_1" =>
+            Some(tpl, 0)
+          case Select(tpl, nm) if nm.decoded == "_2" =>
+            Some(tpl, 1)
+          case _ => None
+        }}
+
+    object ExSlideReduce {
+      def unapply(tree: Tree): Option[(Tree, Tree, Tree, Tree)] = tree match {
+        case Apply(Apply(Select(v,sym), List(size, step)), List(fnc)) if sym.toString == "slideReduce" =>
+          Some(v, size, step, fnc)
+        case _ => None
+      }
+    }
+
+    object ExEnumSlideFlatMap {
+      def unapply(tree: Tree): Option[(Tree, Tree, Tree)] = tree match {
+        case Apply(Apply(Select(v,sym), List(size)), List(fnc)) if sym.toString == "enumSlideFlatMap" =>
+          Some(v, size, fnc)
+        case _ => None
+      }
+    }
+
+    object ExPadMatrix {
+      def unapply(tree: Tree): Option[(Tree, Tree, Tree)] = tree match {
+        case Apply(Select(v,sym), List(i, j)) if sym.toString == "pad" =>
+          Some(v, i, j)
+        case _ => None
+      }
+    }
+
+    object ExElementAt {
+      def unapply(tree: Tree): Option[(Tree, Tree, Option[Tree])] = tree match {
+        case Apply(Select(v,sym), List(i, j)) if sym.toString == "at" =>
+          Some(v, i, Some(j))
+        case Apply(Select(v,sym), List(i)) if sym.toString == "at" =>
+          Some(v, i, None)
+        case _ => None
+      }
+    }
+
+    object ExEveryNth {
+      def unapply(tree: Tree): Option[(Tree, Tree, Tree)] = tree match {
+        case Apply(Select(v,sym), List(i, j)) if sym.toString == "everyNth" =>
+          Some(v, i, j)
+        case _ => None
+      }
+    }
+
+    object ExHeadElement {
+      def unapply(tree: Tree): Option[(Tree)] = tree match {
+        case Select(v, sym) if sym.toString == "head" =>
+          Some(v)
+        case _ => None
+      }
+    }
+
+    object ExPrependElement {
+      def unapply(tree: Tree): Option[(Tree,Tree)] = tree match {
+        case Apply(Select(ds, nm), List(el)) if nm.decoded == "+:" => Some((ds, el))
+        case _ => None
+      }
+    }
+
+    object ExSubsetDS {
+      def unapply(tree: Tree): Option[(Tree, Seq[Tree], Seq[Tree])] = tree match {
+        case Apply(Select(v,sym), List(i, j)) if sym.toString == "slice" =>
+          Some(v, Seq(i), Seq(j))
+        case Apply(Apply(Select(v,sym), List(fromI, fromJ)), List(toI, toJ)) if sym.toString == "slice" =>
+          Some(v, Seq(fromI, fromJ), Seq(toI, toJ))
+        case _ => None
+      }
+    }
+
+    object ExSizeSpec {
+      def unapply(tree: Tree): Option[(Tree, Seq[Tree])] = tree match {
+        case Apply(Select(v,sym), List(i)) if sym.toString == "size" =>
+          Some(v, Seq(i))
+        case Apply(Select(v,sym), List(i, j)) if sym.toString == "size" =>
+          Some(v, Seq(i,j))
+        case _ => None
+      }
+    }
+
+    object ExElemRangeSpec {
+      def unapply(tree: Tree): Option[(Tree, Tree, Tree, Tree, Tree)] = tree match {
+        case Apply(Apply(Select(v, sym), List(i, j)), List(low, up)) if sym.toString == "el" =>
+          Some(v, i, j, low, up)
+        case _ => None
+      }
+    }
+
+    object ExBulkVectorElemRangeSpec {
+      def unapply(tree: Tree): Option[(Tree, List[((Int, Int),(Double, Double))])] = tree match {
+        case Apply(Select(v, sym), List(Apply(_, specList))) if sym.toString == "specV" =>
+          val specTuples = specList.map({
+            case ExBulkVectorPartSpec(i1,i2, r1, r2) => ((i1,i2),(r1,r2))
+            case _ => ((-100,-100),(0.0,0.0))
+          })
+          if (specTuples.contains(((-100,-100),(0.0,0.0))))
+            None
+          else
+            Some(v, specTuples)
+        case _ => None
+      }
+    }
+
+
+    object ExBulkVectorPartSpec {
+      def unapply(tree: Tree): Option[(Int, Int, Double, Double)] = tree match {
+        case Apply(select, List(Apply(_,
+        List(ExInt32Literal(i1), ExInt32Literal(i2))), Apply(_,
+        List(ExImplicitDouble2Real(r1), ExImplicitDouble2Real(r2))))) if select.toString.startsWith("new") =>
+          Some(i1, i2, r1, r2)
+        case Apply(select, List(Apply(_,
+        List(ExInt32Literal(i1), ExInt32Literal(i2))), Apply(_,
+        List(ExImplicitInt2Real(r1), ExImplicitInt2Real(r2))))) if select.toString.startsWith("new") =>
+          Some(i1, i2, r1.doubleValue(), r2.doubleValue())
+        case _ => None
+      }
+    }
+
+    object ExBulkMatrixElemRangeSpec {
+      def unapply(tree: Tree): Option[(Tree, List[(Seq[(Int, Int)],(Double, Double))])] = tree match {
+        case Apply(Select(v, sym), List(Apply(_, specList))) if sym.toString == "specM" =>
+          val specTuples = specList.map({
+            case ExBulkMatrixPartSpec(inds, r1, r2) => (inds, (r1, r2))
+            case _ => (Seq(), (0.0, 0.0))
+          })
+          if (specTuples.contains((Seq(), (0.0, 0.0))))
+            None
+          else
+            Some(v, specTuples)
+        case _ => None
+      }
+    }
+
+    object ExBulkMatrixPartSpec {
+      def unapply(tree: Tree): Option[(Seq[(Int, Int)], Double, Double)] = tree match {
+        case Apply(select,
+            List(Apply(_, inds),
+            Apply(_, List(ExImplicitDouble2Real(r1), ExImplicitDouble2Real(r2))))) if select.toString.startsWith("new") =>
+          val indSeq = inds.map({case Apply(_, List(ExInt32Literal(i1), ExInt32Literal(i2))) => (i1,i2)})
+          Some(indSeq, r1, r2)
+        case Apply(select,
+            List(Apply(_, inds),
+            Apply(_, List(ExImplicitInt2Real(r1), ExImplicitInt2Real(r2))))) if select.toString.startsWith("new") =>
+          val indSeq = inds.map({case Apply(_, List(ExInt32Literal(i1), ExInt32Literal(i2))) => (i1,i2)})
+          Some(indSeq, r1.doubleValue(), r2.doubleValue())
+        case _ => None
+      }
+    }
+
+
+    object ExSubRangeSpec {
+      def unapply(tree: Tree): Option[(Tree, Seq[(Tree,Tree)], Tree, Tree)] = tree match {
+        case Apply(Apply(Select(v,sym), List(from, to)), List(low, up)) if sym.toString == "range" =>
+          Some(v, Seq((from,to)), low, up)
+        case Apply(Apply(Select(v,sym), z), List(low, up)) if sym.toString == "range" =>
+          val tmp = z.head
+          tmp match {
+            case Apply(TypeApply(_,_), args) =>
+              args match {
+                case ExSeqTuples(tuples) => Some (v, tuples, low, up) //
+                case _ => None
+              }
+            case _ => None
+          }
+        case _ => None
+      }
+    }
+
+    object ExSeqTuples {
+      def unapply(tree: Seq[Tree]): Option[Seq[(Tree,Tree)]] = {
+        if (tree.nonEmpty)
+          Some(tree.map { case ExTuple(args) => (args.head, args(1))})
+        else
+          None
+      }
+    }
+
+    // only tested for one testcase val (k,x) = y; not suitable for "match-case" in general
+    // todo remove the var x$1 directly from the let stmt: let x$1 = synthetic match {..} in let x = x$1._1
+    object ExMatchSynthetic {
+      def unapply(tree: Tree): Option[Tree] = tree match {
+        case Match(Typed(sel, tpt), cases) => Some(sel)
+        case _ => None
+      }
+    }
 
   } // end StructuralExtractors
 }

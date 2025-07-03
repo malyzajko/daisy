@@ -55,9 +55,9 @@ object AffineForm {
 
 case class AffineForm(x0: Rational, noise: Seq[Deviation]) extends RangeArithmetic[AffineForm] {
 
-  if (noise.size > 200) {
-    System.err.println("200 noise terms")
-  }
+  // if (noise.size > 200) {
+  //   System.err.println("200 noise terms")
+  // }
 
   lazy val radius: Rational = sumAbsQueue(noise)
 

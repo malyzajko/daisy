@@ -2,18 +2,34 @@ name := "Daisy"
 
 version := "0.1"
 
-organization := "org.mpi-sws.ava"
+organization := "Uppsala universitet"
 
 scalaVersion := "2.13.3"
 
 scalacOptions ++= Seq(
-    "-deprecation",
+    //"-deprecation",
+    // "-optimize",
+    // "-opt-warnings",
+    "-Xno-patmat-analysis",  // Eva: takes a long time, but not so helpful for Daisy
     "-unchecked",
     "-feature",
-    //"-Ywarn-unused-import", unknown option in 2.13
-    //"-Ywarn-unused",    too many false positives
-    "-Ywarn-dead-code",
-    "-Xlint:_,-adapted-args")
+    "-Xlint:infer-any",
+    "-Wdead-code",                       // Warn when dead code is identified.
+    // "-Wextra-implicit",                  // Warn when more than one implicit parameter section is defined.
+    // "-Wnumeric-widen",                   // Warn when numerics are widened.
+    // "-Wself-implicit",                   // Warn when an implicit resolves to an enclosing self-definition.
+    // "-Wunused:imports",                  // Warn if an import selector is not referenced.
+    // "-Wunused:patvars",                  // Warn if a variable bound in a pattern is unused.
+    // "-Wunused:privates",                 // Warn if a private member is unused.
+    // "-Wunused:locals",                   // Warn if a local definition is unused.
+    // "-Wunused:explicits",                // Warn if an explicit parameter is unused.
+    // "-Wunused:implicits",                // Warn if an implicit parameter is unused.
+    // "-Wunused:params",                   // Enable -Wunused:explicits,implicits.
+    // "-Wunused:linted",
+    // "-Wvalue-discard"                   // Warn when non-Unit expression results are unused.
+    //"-Ywarn-dead-code",
+    //"-Xlint:_,-adapted-args"
+  )
 
 resolvers += "Typesafe Repository" at "https://repo.typesafe.com/typesafe/releases/"
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/releases"
@@ -24,51 +40,25 @@ libraryDependencies ++= Seq(
     "com.storm-enroute" %% "scalameter" % "0.19",
     "org.fusesource.hawtjni" % "hawtjni-runtime" % "1.9",  //for JNI
     "org.scala-lang.modules" %% "scala-parser-combinators" % "1.1.2",
-    "org.scala-lang.modules" %% "scala-parallel-collections" % "0.2.0"
+    "org.scala-lang.modules" %% "scala-parallel-collections" % "0.2.0",
+    "com.regblanc" %% "scala-smtlib" % "0.2.1-42-gc68dbaa"
 )
 
 envVars := Map("LC_NUMERIC" -> "en_US.UTF-8")
 
 Keys.fork in run := true
 
-javaOptions in run ++= Seq(
-    "-Xms256M", "-Xmx2G", "-XX:+UseConcMarkSweepGC")
-
 Keys.fork in Test := true   //for native libraries to be on correct path
+
+javaOptions in run ++= Seq(
+    "-Xms2048M", "-Xmx8G", "-XX:+UseConcMarkSweepGC")
 
 parallelExecution in Test := false
 
-val scalaMeterFramework = new TestFramework("org.scalameter.ScalaMeterFramework")
-
-testFrameworks += scalaMeterFramework
-
-testOptions in Test += Tests.Argument(scalaMeterFramework, "-silent")
-
-lazy val Benchmark = config("bench") extend Test
-
-ivyLoggingLevel in clean := UpdateLogging.Quiet
-ivyLoggingLevel in Test := UpdateLogging.Quiet
-
-logBuffered := false
-
-lazy val smtlib = RootProject(uri("git://github.com/regb/scala-smtlib"))
-
-lazy val basic = Project("daisy", file(".")
-) dependsOn (smtlib
-) configs(
-  Benchmark
-) settings(
-  inConfig(Benchmark)(Defaults.testSettings): _*
-)
+// ivyLoggingLevel in clean := UpdateLogging.Quiet
+// ivyLoggingLevel in Test := UpdateLogging.Quiet
 
 lazy val scriptFile = file(".") / "daisy"
-
-clean := {
-  clean.value
-  if(scriptFile.exists && scriptFile.isFile) {
-    scriptFile.delete
-  }
-}
 
 lazy val script = taskKey[Unit]("Generate the daisy Bash script")
 
@@ -78,7 +68,7 @@ script := {
     val cps = (dependencyClasspath in Compile).value
     val out = (classDirectory      in Compile).value
     val res = (resourceDirectory   in Compile).value
-//    val jar = (artifactPath in Compile in packageBin).value
+    //val jar = (artifactPath in Compile in packageBin).value
     //val is64 = System.getProperty("sun.arch.data.model") == "64"
     val f = scriptFile
     if(f.exists) {
@@ -96,7 +86,7 @@ script := {
                     |TMP=$$LC_NUMERIC
                     |LC_NUMERIC=en_US.UTF-8
                     |
-                    |java -Xmx2G -Xms512M -Xss64M -classpath "$${SCALACLASSPATH}" -Dscala.usejavacp=false scala.tools.nsc.MainGenericRunner -classpath "$${SCALACLASSPATH}" daisy.Main $$@ 2>&1 | tee -i last.log
+                    |java -Xmx2G -Xms1G -Xss1G -classpath "$${SCALACLASSPATH}" -Dscala.usejavacp=false scala.tools.nsc.MainGenericRunner -classpath "$${SCALACLASSPATH}" daisy.Main $$@ 2>&1 | tee -i last.log
                     |
                     |LC_NUMERIC=$$TMP
                     |""".stripMargin)

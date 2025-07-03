@@ -74,7 +74,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
 
       ctx.reporter.info("Evaluating " + fnc.id + "...")
       val bodyReal = fnc.body.get
-      val bodyDeltaAbs = deltaAbstract(bodyReal, ctx.hasFlag("denormals"))._1
+      val bodyDeltaAbs = epsilonDeltaAbstract(bodyReal, ctx.hasFlag("denormals"))._1
       // cfg.reporter.warning(s"bodyDelta $bodyDeltaAbs")
       // Step 1: disregard initial errors for now
       // (f(x) - fl(x))/ f(x)
@@ -86,14 +86,14 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
       val startTime = System.currentTimeMillis
 
       // adding constraints on deltas here
+      val epsilons = epsilonsOf(relErrorExpr)
+      var epsilonIntervalMap: Map[Identifier, Interval] =
+        epsilons.map(eps => (eps.id -> epsilonIntervalFloat64)).toMap
+
       val deltas = deltasOf(relErrorExpr)
-      var deltaIntervalMap: Map[Identifier, Interval] =
-        deltas.map(delta => (delta.id -> deltaIntervalFloat64)).toMap
+      epsilonIntervalMap = epsilonIntervalMap ++ deltas.map(e => (e.id -> deltaIntervalFloat64))
 
-      val eps = epsilonsOf(relErrorExpr)
-      deltaIntervalMap = deltaIntervalMap ++ eps.map(e => (e.id -> epsilonIntervalFloat64))
-
-      val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id) ++ deltaIntervalMap
+      val inputValMap: Map[Identifier, Interval] = ctx.specInputRanges(fnc.id) ++ epsilonIntervalMap
 
       // no initial errors
       val allIDs = fnc.params.map(_.id)
@@ -177,7 +177,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
         }
       }
       ctx.reporter.debug(s"We need to evaluate expression on " + newSet.size + " intervals")
-      ctx.reporter.debug("there are " + deltasOf(relErrorExpr).size + " deltas")
+      ctx.reporter.debug("there are " + epsilonsOf(relErrorExpr).size + " epsilons")
     }
 
     val taylorFirst = getDerivative(relErrorExpr)
@@ -196,7 +196,7 @@ object RelativeErrorPhase extends DaisyPhase with tools.Taylor with tools.Subdiv
     if (taylorRemainder.isDefined) {
       val errForSum = taylorFirst.map(x => {
         val (expr, wrt) = x
-        val tmpExpr = moreSimplify(Times(replaceDeltasWithZeros(expr), Delta(wrt)))
+        val tmpExpr = moreSimplify(Times(replaceDeltasWithZeros(expr), Epsilon(wrt)))
         ctx.reporter.debug(s"Evaluate the term $tmpExpr")
         // do not call evaluation function on all subintervals
         // if simplified expression is delta or RealLiteral

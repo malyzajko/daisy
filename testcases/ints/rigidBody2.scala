@@ -1,0 +1,13 @@
+import scala.annotation.strictfp
+import daisy.lang._
+import Real._
+@strictfp
+object rigidBody2 {
+
+
+  def rigidBody2(x1: Int, x2: Int, x3: Real): Real = {
+    require(((-15.0 <= x1) && (x1 <= 15.0) && (-15.0 <= x2) && (x2 <= 15.0) && (-15.0 <= x3) && (x3 <= 15.0)))
+    (((((((2.0 * x1) * x2) * x3) + ((3.0 * x3) * x3)) - (((x2 * x1) * x2) * x3)) + ((3.0 * x3) * x3)) - x2)
+  }
+
+}

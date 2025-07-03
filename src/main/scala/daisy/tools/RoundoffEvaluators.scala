@@ -3,7 +3,7 @@
 package daisy
 package tools
 
-import lang.Types.{ FinitePrecisionType}
+import lang.Types.{FinitePrecisionType, Int32Type}
 import lang.Trees._
 import lang.Identifiers._
 import FinitePrecision._
@@ -149,11 +149,12 @@ trait RoundoffEvaluators extends RangeEvaluators {
     trackRoundoffErrors: Boolean, // if false, propagate only initial errors
     approxRoundoff: Boolean = false,
     resultAbsErrors: Map[Identifier, Rational] = Map(),
-    resultErrorsMetalibm: Map[Expr, Rational] = Map()
+    resultErrorsMetalibm: Map[Expr, Rational] = Map(),
+    precomputedIntermedErrs: CachingMap[(Expr, PathCond), (T, Precision)] = CachingMap.empty[(Expr, PathCond), (T, Precision)]()
     ): (T, Map[(Expr, PathCond), T]) = {
 
 
-    val intermediateErrors = new CachingMap[(Expr, PathCond), (T, Precision)]
+    val intermediateErrors = if (precomputedIntermedErrs.nonEmpty) precomputedIntermedErrs else new CachingMap[(Expr, PathCond), (T, Precision)]
 
     for ((id, err) <- freeVarsError){
       intermediateErrors.put((Variable(id), emptyPath), (err, precision(id)))
@@ -185,6 +186,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
           fromError(constantsPrecision.absRoundoff(r))
         }
         (error, constantsPrecision)
+      case (Int32Literal(i), _) => (zeroError, constantsPrecision) // todo check something for i?
 
       // these can appear after mixed-precision tuning
       case x @ (FinitePrecisionLiteral(r, prec, _), _) =>
@@ -202,7 +204,12 @@ trait RoundoffEvaluators extends RangeEvaluators {
 
         val propagatedError = errorLhs + errorRhs
 
-        computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs)  /* Scala semantics */)
+        if(lhs.getType == Int32Type && rhs.getType == Int32Type) {
+          (propagatedError, getUpperBound(precLhs, precRhs))
+        } else {
+          computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs) /* Scala semantics */)
+        }
+
 
       case x @ (Minus(lhs, rhs), path) =>
         val (errorLhs, precLhs) = eval(lhs, path)
@@ -211,7 +218,8 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val propagatedError = errorLhs - errorRhs
         val precision = getUpperBound(precLhs, precRhs)
 
-        if (precision.isInstanceOf[FloatPrecision] && sterbenzTheoremApplies(range(lhs, path), range(rhs, path))) {
+        if ((precision.isInstanceOf[FloatPrecision] && sterbenzTheoremApplies(range(lhs, path), range(rhs, path)))
+            || (lhs.getType == Int32Type && rhs.getType == Int32Type)) {
           (propagatedError, precision)
         } else {
           computeNewError(range(x), propagatedError, precision)
@@ -234,7 +242,8 @@ trait RoundoffEvaluators extends RangeEvaluators {
         val precision = getUpperBound(precLhs, precRhs)
         // No roundoff error if one of the operands is a non-negative power of 2
         if ((rangeLhs.isNonNegative && rangeLhs.isPowerOf2)
-          || (rangeRhs.isNonNegative && rangeRhs.isPowerOf2)) {
+          || (rangeRhs.isNonNegative && rangeRhs.isPowerOf2)
+          || (lhs.getType == Int32Type && rhs.getType == Int32Type)) {
           (propagatedError, precision)
         } else {
           computeNewError(range(x), propagatedError, precision)
@@ -282,7 +291,12 @@ trait RoundoffEvaluators extends RangeEvaluators {
           interval2T(inverse) * errorLhs +
           errorLhs * invErr
 
-        computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs))
+        if((lhs.getType == Int32Type && rhs.getType == Int32Type)) {
+          (propagatedError, getUpperBound(precLhs, precRhs))
+        } else {
+          computeNewError(range(x), propagatedError, getUpperBound(precLhs, precRhs))
+        }
+
 
       case x @ (IntPow(base, n), path) =>
         val (errorT, prec) = eval(base, path)
@@ -312,10 +326,21 @@ trait RoundoffEvaluators extends RangeEvaluators {
           throw NegativeSqrtException("trying to take the square root of a negative number or zero")
         }
 
-        val a = Interval.minAbs(rangeT)
+        val mepsilon = prec match {
+          case pr@FloatPrecision(_) => pr.machineEpsilon
+          case FixedPrecision(_) => throw DaisyFatalError(Some("Square root error computation for fixed-point numbers is undefined.")) // see todo
+        }
+        val a = try {
+          Interval.minAbs(rangeT)
+        } catch {
+          case _: AssertionError =>  mepsilon // if the lower bound is near or equals zero, can't compute minAbs()
+        }
         val errorMultiplier = Rational(1L, 2L) / sqrtDown(a)
 
         val propagatedError = errorT * errorMultiplier
+        // PRECiSa's way of computing the error would be
+        //val errorMultiplier = Rational(1L, 2L)* Rational.fromDouble(Math.ulp(sqrtUp(a).toDouble))
+        //val propagatedError = errorT + fromError(errorMultiplier)
 
         // TODO: check that this operation exists for this precision
         //println("range map is " + range)
@@ -527,7 +552,7 @@ trait RoundoffEvaluators extends RangeEvaluators {
         else
           (fromError(totalError), approxPrec.get) // for another Metalibm phase (not ApproxPhase)
 
-      case _ => throw new Exception("Not supported")
+      case x => throw new Exception(s"Not supported $x")
 
     })
 

@@ -1,5 +1,6 @@
 .DS_STORE
 output/*.scala
+output/*.csv
 target/
 project/project/
 project/target/

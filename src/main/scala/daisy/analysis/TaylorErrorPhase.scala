@@ -30,6 +30,7 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
 
     val res: Map[Identifier, (Rational, Interval)] = analyzeConsideredFunctions(ctx, prg){ fnc =>
 
+      val body = daisy.lang.TreeOps.inline(fnc.body.get)
       ctx.reporter.info("analyzing fnc: " + fnc.id)
       val startTime = System.currentTimeMillis
 
@@ -38,7 +39,7 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
            getEqualSubintervals(ctx.specInputRanges(fnc.id), 3)
 
         val errors = subIntervals.par.map(subInt =>
-          evalTaylor(ctx, fnc.body.get, subInt, fnc.precondition.get, rangeMethod)._1
+          evalTaylor(ctx, body, subInt, fnc.precondition.get, rangeMethod)._1
         )
         val totalAbsError = errors.tail.fold(errors.head)({
           case (x, y) => max(x, y)
@@ -46,7 +47,7 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
         // TODO: also do this for ranges
         (totalAbsError, Interval(Rational.zero))
       } else {
-        val (error, interval) = evalTaylor(ctx, fnc.body.get, ctx.specInputRanges(fnc.id), fnc.precondition.get, rangeMethod)
+        val (error, interval) = evalTaylor(ctx, body, ctx.specInputRanges(fnc.id), fnc.precondition.get, rangeMethod)
         ctx.reporter.debug("absError: " + error.toString + ", time: " +
           (System.currentTimeMillis - startTime))
 
@@ -62,34 +63,30 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
 
   def evalTaylor(ctx: Context, bodyReal: Expr, inputRanges: Map[Identifier, Interval],
     precondition: Expr, rangeMethod: String): (Rational, Interval) = {
-    val containsLet = lang.TreeOps.exists { case Let(_,_,_) => true }(bodyReal)
-    if (containsLet) {
-      ctx.reporter.error("The Taylor approach currently does not support Let definitions.")
-    }
 
     // derive f~(x)
-    val (bodyDelta, transDeltas) = deltaAbstract(bodyReal, ctx.hasFlag("denormals"))
+    val (bodyDelta, transEpsilons , _, _) = epsilonDeltaAbstract(bodyReal, ctx.hasFlag("denormals"))
     //println(transDeltas)
 
-    // get set of partial derivatives wrt deltas
+    // get set of partial derivatives wrt epsilons
     val taylor = getDerivative(bodyDelta)
     //println("derivative: " + taylor)
 
-    // add constraints for deltas
-    val deltas = deltasOf(bodyDelta)
-    var deltaIntervalMap: Map[Identifier, Interval] = Map.empty
-    for (delta <- deltas if !transDeltas.contains(delta.id)){
-      deltaIntervalMap = deltaIntervalMap +
-        (delta.id -> Interval(-Float64.machineEpsilon, Float64.machineEpsilon))
+    // add constraints for deltas and epsilons
+    val epsilons = epsilonsOf(bodyDelta)
+    var epsilonIntervalMap: Map[Identifier, Interval] = Map.empty
+    for (epsilon <- epsilons if !transEpsilons.contains(epsilon.id)){
+      epsilonIntervalMap = epsilonIntervalMap +
+        (epsilon.id -> Interval(-Float64.machineEpsilon, Float64.machineEpsilon))
     }
-    for (delta <- deltas if transDeltas.contains(delta.id)){
-      deltaIntervalMap = deltaIntervalMap +
-        (delta.id -> Interval(-Float64.machineEpsilon*2, Float64.machineEpsilon*2))
+    for (epsilon <- epsilons if transEpsilons.contains(epsilon.id)){
+      epsilonIntervalMap = epsilonIntervalMap +
+        (epsilon.id -> Interval(-Float64.machineEpsilon*2, Float64.machineEpsilon*2))
     }
-    val eps = epsilonsOf(bodyDelta)
-    deltaIntervalMap = deltaIntervalMap ++ eps.map(e => (e.id -> epsilonIntervalFloat64))
+    val delta = deltasOf(bodyDelta)
+    epsilonIntervalMap = epsilonIntervalMap ++ delta.map(d => (d.id -> deltaIntervalFloat64))
 
-    val inputValMap: Map[Identifier, Interval] = inputRanges ++ deltaIntervalMap
+    val inputValMap: Map[Identifier, Interval] = inputRanges ++ epsilonIntervalMap
     //println(inputValMap)
 
     val (tmpErr, interval) = rangeMethod match {
@@ -97,7 +94,7 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
         // evaluate each partial derivative
         val err = taylor.map(x => {
           // replace all deltas with zeros to get f~(x,0)
-          val tmp = easySimplify(Times(replaceDeltasWithZeros(x._1), Delta(x._2)))
+          val tmp = easySimplify(Times(replaceDeltasWithZeros(x._1), Epsilon(x._2)))
           //println("simplified: " + tmp)
           //maxAbs(Evaluators.evalInterval(tmp, inputValMap))
           maxAbs(evalRange[Interval](tmp, inputValMap, Interval.apply)._1)
@@ -108,8 +105,8 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
 
       case "affine" =>
         val err = taylor.map(x => {
-          // replace all deltas with zeros to get f~(x,0)
-          val tmp = easySimplify(Times(replaceDeltasWithZeros(x._1), Delta(x._2)))
+          // replace all deltas and epsilons with zeros to get f~(x,0)
+          val tmp = easySimplify(Times(replaceDeltasWithZeros(x._1), Epsilon(x._2)))
           // maxAbs(Evaluators.evalAffine(
           //   tmp, inputValMap.map(y => (y._1 -> AffineForm(y._2)))).toInterval)
           maxAbs(evalRange[AffineForm](tmp, inputValMap.map(y => (y._1 -> AffineForm(y._2))),
@@ -125,8 +122,8 @@ object TaylorErrorPhase extends DaisyPhase with tools.Subdivision with tools.Tay
 
       case "smt" =>
         val err = taylor.map(x => {
-          // replace all deltas with zeros to get f~(x,0)
-          val tmp = easySimplify(Times(replaceDeltasWithZeros(x._1), Delta(x._2)))
+          // replace all deltas and epsilons with zeros to get f~(x,0)
+          val tmp = easySimplify(Times(replaceDeltasWithZeros(x._1), Epsilon(x._2)))
           // evaluate the term and take the upper bound of resulting interval
           // maxAbs(Evaluators.evalSMT(tmp, inputValMap.map({
           //   case (id, int) => (id -> SMTRange(Variable(id), int)) })).toInterval)

@@ -1,53 +1,47 @@
-
 #!/bin/bash --posix
 #
-# Runs mixed-precision tuning on a set of benchmarks
-# Usage: this script needs to be run from the /daisy home directory. If you
-# get an error that daisy is not found, check this.
+# This script runs Daisy's mixed-precision tuning on the set of benchmarks
+# used in the ICCPS'18 paper. The automatically generated code will be saved
+# in the output/ folder.
+# Using the non-default --rangeMethod=smt is optional; --errorMethod=affine is
+# the default option, made explicit here.
 #
-# Parameters are non-optional:
-#
-# 1: whether to use rewriting
-# 2: whether to run benchmarking
-#
-# ./scripts/mixed-precision/run_delta_batch.sh [rewriting|foo] [bench|foo] [directory of generated files] [bench-id]
-#
-# seeds used: 1469010147126
-
-declare -a arr=("Bsplines0" \
-  "Bsplines1" \
-  "Bsplines2" \
-  "Doppler" \
-  "Himmilbeau" \
-  "InvertedPendulum" \
-  "Kepler0" \
-  "Kepler1" \
-  "Kepler2" \
-  "RigidBody1" \
-  "RigidBody2" \
-  "Sine" \
-  "Sqrt" \
-  "Traincar4_State8" \
-  "Traincar4_State9" \
-  "Turbine1" \
-  "Turbine2" \
-  "Turbine3")
+# The second command below runs rewriting before mixed-precision tuning. The
+# range method is set to the default for performance reasons. If you want to fix
+# the random seed for determinism, use --rewrite-seed with a non-zero number.
 
 
-echo "Running mixed-precision optimization with delta debugging"
-# rm mixed-opt-numValid.txt    # just in case there is old data there
-# rm mixed-opt-minCost.txt
-# rm mixed-opt-opCount.txt
-for file in "${arr[@]}"
-do
-  echo "---> $file"   # --rangeMethod=smt #--rewrite-seed-system-millis \
-  if [ "$1" = "rewriting" ]; then
-    ./daisy --mixed-tuning --rewrite --rangeMethod=smt \
-      --rewrite-seed=1490794789615 "testcases/mixed-precision/${file}.scala"
-      #--rewrite-seed-system-millis "testcases/mixed-precision/${file}.scala"
+# make sure the code is compiled
+sbt compile
 
-  else
-    ./daisy --mixed-tuning --rangeMethod=smt "testcases/mixed-precision/${file}.scala"
-    #./daisy --mixed-fixedpoint --mixed-tuning --rangeMethod=smt "testcases/mixed-precision/fixedpoint/${file}.scala"
-  fi
+# generate daisy script, if it doesn't exist
+if [ ! -e daisy ]; then
+  sbt script
+fi
+
+# run Daisy on each testfile
+for file in testcases/mixed-precision/*.scala; do
+  echo "*******"
+  echo ${file}
+  time ./daisy --silent --mixed-tuning --rangeMethod=smt --errorMethod=affine ${file}
+
+  # also use rewriting
+  # time ./daisy --silent --mixed-tuning --rewrite --rewrite-seed=0 \
+  #   --rangeMethod=interval --errorMethod=affine ${file}
 done
+
+
+
+# for file in "${arr[@]}"
+# do
+#   echo "---> $file"   # --rangeMethod=smt #--rewrite-seed-system-millis \
+#   if [ "$1" = "rewriting" ]; then
+#     ./daisy --mixed-tuning --rewrite --rangeMethod=smt \
+#       --rewrite-seed=1490794789615 "testcases/mixed-precision/${file}.scala"
+#       #--rewrite-seed-system-millis "testcases/mixed-precision/${file}.scala"
+
+#   else
+#     ./daisy --mixed-tuning --rangeMethod=smt "testcases/mixed-precision/${file}.scala"
+#     #./daisy --mixed-fixedpoint --mixed-tuning --rangeMethod=smt "testcases/mixed-precision/fixedpoint/${file}.scala"
+#   fi
+# done

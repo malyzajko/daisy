@@ -4,6 +4,7 @@ package daisy
 package tools
 
 import daisy.lang.TreeOps
+import daisy.lang.Types.Int32Type
 import daisy.utils.CachingMap
 import lang.Trees._
 import lang.Identifiers._
@@ -26,9 +27,10 @@ trait RangeEvaluators {
   def evalRange[T <: RangeArithmetic[T]](
     expr: Expr,
     initValMap: Map[Identifier, T],
-    rangeFromInterval: Interval => T): (T, Map[(Expr, PathCond), T]) = {
+    rangeFromInterval: Interval => T,
+    precompIntermRanges: CachingMap[(Expr, PathCond), T] = CachingMap.empty[(Expr, PathCond), T]()): (T, Map[(Expr, PathCond), T]) = {
 
-    val intermediateRanges: CachingMap[(Expr, PathCond), T] = new CachingMap[(Expr, PathCond), T]
+    val intermediateRanges: CachingMap[(Expr, PathCond), T] = if (precompIntermRanges.isEmpty) new CachingMap[(Expr, PathCond), T] else precompIntermRanges
 
     for ((id, range) <- initValMap){
       intermediateRanges.put((Variable(id), emptyPath), range)
@@ -36,7 +38,9 @@ trait RangeEvaluators {
 
     def eval(e: Expr, p: PathCond): T = intermediateRanges.getOrAdd((e, p), {
 
-      case (RealLiteral(r), path) => rangeFromInterval(Interval(r))
+      case (RealLiteral(r), _) => rangeFromInterval(Interval(r))
+      
+      case (Int32Literal(i), path) => rangeFromInterval(Interval(i))
 
       case (Plus(lhs, rhs), path) => eval(lhs, path) + eval(rhs, path)
 
@@ -45,6 +49,12 @@ trait RangeEvaluators {
       case (Times(lhs, rhs), path) => eval(lhs, path) * eval(rhs, path)
 
       case (FMA(fac1, fac2, sum), path) => eval(fac1, path) * eval(fac2, path) + eval(sum, path)
+
+      case (Division(lhs, rhs), path) if (e.getType == Int32Type) => {
+        val realRange = eval(lhs, path) / eval(rhs, path)
+        rangeFromInterval(realRange.toInterval.+(Interval(-1,1)))
+
+      }
 
       case (Division(lhs, rhs), path) => eval(lhs, path) / eval(rhs, path)
 
@@ -190,8 +200,8 @@ trait RangeEvaluators {
             throw new Exception("Not supported")
         }
 
-      case _ =>
-        throw new Exception("Not supported")
+      case x =>
+        throw new Exception(s"Not supported $x")
     })
     val res = eval(expr, emptyPath)
     (res, intermediateRanges.toMap)

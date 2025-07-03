@@ -12,11 +12,13 @@ import lang.Identifiers._
 import tools.FinitePrecision._
 import tools._
 import lang.Trees.RealLiteral.{zero, one, two}
+import daisy.lang.TreeOps._
+
 
 /*
   This Phase approximates elementary function calls using the Metalibm tool.
  */
-object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools.Taylor {
+object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators {
 
   override val name = "Metalibm"
   override val description = "generates elementary functions from metalibm tool"
@@ -91,7 +93,7 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
         // compute derivatives wrt. those
         val elemFactors: Map[Identifier, Rational] = elemIds.map({ id =>
           // computes derivative of the returned expression
-          val deriv = easySimplify(getDerivative(fnc.body.get, id))
+          val deriv = easySimplify(getPartialDerivative(fnc.body.get, id))
           val bound = evalRange[Interval](deriv, inputRanges, Interval.apply)._1
           (id, Interval.maxAbs(bound))
         }).toMap
@@ -182,8 +184,8 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
 
           // compute new local error from total error
           val inlinedValue = replaceForDerivative(expr, value)
-          val bodyForDeriv = lang.TreeOps.replace(Map(inlinedValue -> Variable(binder)))(inline(original))
-          val deriv = easySimplify(getDerivative(bodyForDeriv, binder))
+          val bodyForDeriv = lang.TreeOps.replace(Map(inlinedValue -> Variable(binder)))(lang.TreeOps.inline(original))
+          val deriv = easySimplify(getPartialDerivative(bodyForDeriv, binder))
           val inputRanges = lang.TreeOps.allVariablesOf(bodyForDeriv).map({
             id => (id -> intermRange(Variable(id), emptyPath))
           }).toMap
@@ -247,14 +249,6 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
       lang.TreeOps.replace(Map(Variable(id) -> v))(replaced)
 
     case _ => value  // nothing to replace
-  }
-
-  def inline(e: Expr): Expr = e match {
-    case Let(id, v, b) =>
-      val tmp = inline(b)
-      lang.TreeOps.replace(Map(Variable(id) -> v))(tmp)
-
-    case _ => e
   }
 
   def getSimpleName(expr: Expr): String = expr match {
@@ -416,111 +410,4 @@ object MetalibmPhase extends DaisyPhase with tools.RoundoffEvaluators with tools
     prototypes
   }
 
-  /**
-   * Computes partial derivative w.r.t. passed parameter
-   * @param e expression for which derivative is computed
-   * @param wrt Delta id w.r.t. which derivative is computed
-   * @return expression
-   */
-  private def getDerivative(e: Expr, wrt: Identifier): Expr = e match {
-    case x @ Variable(id) if wrt.equals(id) => one
-    case x @ Variable(id) => zero
-    case x @ RealLiteral(r) => zero
-    case x @ UMinus(in) => UMinus(getDerivative(in, wrt))
-
-    case z @ Plus(x, y) =>
-      Plus(getDerivative(x, wrt), getDerivative(y, wrt))
-
-    case z @ Minus(x, y) =>
-      Minus(getDerivative(x, wrt), getDerivative(y, wrt))
-
-    case z @ Times(x, y) if containsVariables(x, wrt) && containsVariables(y, wrt) =>
-      Plus(Times(x, getDerivative(y, wrt)), Times(getDerivative(x, wrt), y))
-
-    case z @ Times(x, y) if containsVariables(x, wrt) =>
-      // y is constant
-      Times(getDerivative(x, wrt), y)
-
-    case z @ Times(x, y) if containsVariables(y, wrt) =>
-      // x is constant
-      Times(x, getDerivative(y, wrt))
-
-    case z @ Times(x, y) =>
-      // x, y are both constants
-      zero
-
-    case z @ Division(x, y) if containsVariables(x, wrt) && containsVariables(y, wrt) =>
-      Division(Minus(Times(getDerivative(x, wrt), y), Times(getDerivative(y, wrt), x)),
-        Times(y, y))
-
-    case z @ Division(x, y) if containsVariables(x, wrt) =>
-      // y is constant
-      Times(Division(one, y), getDerivative(x, wrt))
-
-    case z @ Division(x, y) if containsVariables(y, wrt) =>
-      // x is constant
-      // (1/y)' = -y' / y^2
-      Times(x, Division(UMinus(getDerivative(y, wrt)), Times(y, y)))
-
-    case z @ Division(x, y) => zero
-
-    case z @ IntPow(x, n) if containsVariables(x, wrt) =>
-      assert(n > 1)
-      // assert(n.isValidInt)
-      if (n == 2) {
-        getDerivative(x, wrt)
-      } else {
-        Times(RealLiteral(Rational(n)),
-          IntPow(getDerivative(x, wrt), n-1))
-      }
-
-    // case z @ IntPow(x, n) => zero
-
-    case z @ Sqrt(x) if containsVariables(x, wrt) =>
-      Division(getDerivative(x, wrt), Times(two, Sqrt(x)))
-    case z @ Sqrt(x) => zero
-
-    case z @ Sin(x) if containsVariables(x, wrt) =>
-      Times(getDerivative(x, wrt), Cos(x))
-    case z @ Sin(x) => zero
-
-    case z @ Cos(x) if containsVariables(x, wrt) =>
-      Times(getDerivative(x, wrt), UMinus(Sin(x)))
-    case z @ Cos(x) => zero
-
-    case z @ Tan(x) if containsVariables(x, wrt) =>
-      Times(getDerivative(x, wrt), Plus(one, Times(Tan(x), Tan(x))))
-    case z @ Tan(x) => zero
-
-    case z @ Exp(x) if containsVariables(x, wrt) =>
-      Times(getDerivative(x, wrt), Exp(x))
-    case z @ Exp(x) => zero
-
-    case z @ Log(x) if containsVariables(x, wrt) =>
-      Division(getDerivative(x, wrt), x)
-    case z @ Log(x) => zero
-
-    case z @ Atan(x) if containsVariables(x, wrt) =>
-      Division(getDerivative(x, wrt), Plus(one, Times(x, x)))
-    case z @ Atan(x) => zero
-
-    case z @ Asin(x) if containsVariables(x, wrt) =>
-      Division(getDerivative(x, wrt), Sqrt(Minus(one, Times(x, x))))
-    case z @ Asin(x) => zero
-
-    case z @ Acos(x) if containsVariables(x, wrt) =>
-      UMinus(Division(getDerivative(x, wrt), Sqrt(Minus(one, Times(x, x)))))
-    case z @ Acos(x) => zero
-
-    case z @ Let(x, value, body) if containsVariables(body, wrt) =>
-      getDerivative(body, wrt)
-
-    case z @ Let(x, value, body) => zero
-
-    case z => throw new IllegalArgumentException(s"Unknown expression $z. Computing derivative failed")
-  }
-
-  private def containsVariables(e: Expr, wrt: Identifier): Boolean = lang.TreeOps.exists{
-    case Variable(`wrt`) => true
-  }(e)
 }

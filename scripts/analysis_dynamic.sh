@@ -1,33 +1,32 @@
 #!/bin/bash --posix
 #
-# This script
+# This script runs Daisy's dynamic analysis to compute an under-approximation
+# of rounding errors on all FPBench benchmarks.
+# Prints the results to standard output as well as to a CSV file in output/;
+# if the file already exists, the results are appended.
+# Use --dynamic-method=bgrt to try our re-implementation for maximizing errors
+# from "Efficient Search for Inputs Causing High Floating-point Errors", PPoPP'14.
+#
+# Setting the dynamic-seed to 0 (default setting) will produce a random seed based
+# on current time. If you want to fix the seed (e.g. for reproducibility), set
+# the option to a non-zero number.
 
-# 'Standard' benchmark set
-declare -a files=("testcases/rosa/Bsplines.scala" \
-  "testcases/rosa/Doppler.scala" \
-  "testcases/real2float/Himmilbeau.scala" \
-  "testcases/control/InvertedPendulum.scala" \
-  "testcases/real2float/Kepler.scala" \
-  "testcases/rosa/RigidBody.scala" \
-  "testcases/misc/Sine.scala" \
-  "testcases/misc/Sqrt.scala" \
-  "testcases/control/Traincar4.scala" \
-  "testcases/rosa/Turbine.scala" \
-  "testcases/rosa/JetEngine.scala" \
-  "testcases/misc/Transcendentals.scala")
-
-# Make sure the code is compiled
+# make sure the code is compiled
 sbt compile
 
-# generate daisy script
-if [ ! -e daisy ]
-then
+# generate daisy script, if it doesn't exist
+if [ ! -e daisy ]; then
   sbt script
 fi
 
 
-# Run daisy on each testfile
-for file in "${files[@]}"
-do
-  ./daisy --dynamic --mpfr ${file}
+# run Daisy on each testfile
+for file in testcases/fpbench/*.scala; do
+  echo "*******"
+  echo ${file}
+  time ./daisy --dynamic --sampleSize=100000 --dynamic-seed=0 --dynamic-method=uniformMPFR \
+    --silent --results-csv=dynamic_results.csv ${file}
+
+  # time ./daisy --dynamic --sampleSize=10000 --dynamic-seed=0 --dynamic-method=bgrt \
+  #   --silent --results-csv=dynamic_results.csv ${file}
 done

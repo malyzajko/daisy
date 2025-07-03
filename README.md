@@ -1,50 +1,56 @@
 # Project Daisy
 
-<img src="https://people.mpi-sws.org/~eva/daisy_logo.jpg" width="150">
+<img src="https://github.com/malyzajko/daisy/daisy_logo.jpg" width="150">
+
 
 ## News
 
-  * The 'ds2l' branch has the code corresponding to the SAS'23 paper "Scaling up Roundoff Analysis of Functional Data Structure Programs"!
-  
-  * The 'regimes' branch has the code corresponding to the EMSOFT'21 paper "Regime Inference for Sound Floating-Point Optimizations"!
+* The newest features (modular analysis and analysis of array-like data structures) are now merged in master!
 
-  * The 'approx' branch is merged into master! You can now approximate transcendental functions in fixed-point arithmetic code. Check out the script `scripts/optimization_approx_fixed.sh` for the correct command-line options.
 
-  * Updated to Scala 2.13!
+## Getting started
 
-  * Roundoff error evaluation now available using interval and affine arithmetic with MPFR bounds with `--errorMethod=intervalMPFR` or `--errorMethod=affineMPFR`! The error bounds are sound (and slightly less tight), but the computation is faster for longer benchmarks.
+First make sure that you have the following:
 
-  * Daisy now has [documentation](doc/documentation.md)!
+* Java 8 or Java 11
 
-  * Mixed-precision tuning is now available through the `--mixed-tuning` flag!
+* (for most features) [MPFR](http://www.mpfr.org/): \[`apt-get install libmpfr4`\] or \[`brew install mpfr`\]. If you get a linking error mentioning MPFR at runtime, you may need to recompile the [Java bindings](https://github.com/kframework/mpfr-java) and place them in lib/.
 
-  * Polynomial approximation of floating-point elementary functions is available through the `--metalibm --codegen --lang=C` flags! Check out the script `scripts/optimization_metalibm.sh` for the correct command-line options.
+* (optionally) [Z3](https://github.com/Z3Prover/z3) and/or [dReal](https://github.com/dreal/dreal3)
 
-## First steps
 
-Note you need to have ***at most*** Java 8.
+### Compile
 
 Daisy is set up to work with the [simple build tool (sbt)](http://www.scala-sbt.org/).
-Once you have sbt, type in daisy's home directory:
+
+To compile Daisy type in Daisy's home directory:
+```
+$ sbt compile
+```
+(This may take a while the first time around.)
+
+### Run
+
+You can either create and run a standalone Daisy script:
+```
+$ sbt script
+$ ./daisy [command-line options] path/to/input/file
+```
+
+or you can start an interactive sbt session:
 ```
 $ sbt
-```
-This will run sbt in interactive mode. Note, if you run sbt for the first time,
-*this operation may take a substantial amount of time* (heaven knows why). SBT helpfully
-prints what it is doing in the process. If you feel like nothing has happened for an unreasonable
-amount of time, abort and retry. This usually fixes the problem, otherwise try the old trick: restart.
-
-To compile daisy:
-```bash
-> compile
+[...]
+> run [command-line options] path/to/input/file
 ```
 
-To Daisy run an example:
+**Note:** Daisy currently supports only one input file at a time.
+
+For example:
 ```
 > run testcases/rosa/Doppler.scala
 ```
-Note that Daisy currently supports only one input file at a time.
-The above command should produce an output such as (your own timing information will naturally vary):
+should produce an output such as (your own timing information will naturally vary):
 ```
 Extracting program
 [  Info  ]
@@ -63,96 +69,57 @@ Extracting program
 [  Info  ] info:      6 ms, rangeError:    360 ms, analysis:      6 ms, frontend:   2902 ms,
 ```
 
-
-To see all command-line options:
+### Test
 ```
-> run --help
+./regression/scripts/run_all.sh
 ```
+will run Daisy on a set of test cases and compare computed error bounds to
+reference results. Passes tests, if it prints `All results consistent` for all tests.
+Warning printed for Z3 analysis (Unexpected error from z3 solver) can be ignored.
 
-The `/scripts` folder contains a number of example scripts and command-line flag combinations.
+
+## Daisy Features
+
+Daisy is a framework that includes several different analyses of rounding errors
+and finite-precision optimizations; they are enabled using command-line options.
+
+The `scripts` folder has bash scripts that demonstrate the core features and the
+corresponding command-line options. Many of these will run Daisy on the standard
+[FPBench](https://fpbench.org/benchmarks.html) benchmarks.
+
+More details can be found in the (always work-in-progress) [documentation](doc/documentation.md)!
 
 
-If you don't want to run in interactive mode, you can also call all of the above
-commands simply with 'sbt' prefixed, e.g.
-```
-$ sbt compile
-```
+## Publications
 
-You can also run Daisy outside of sbt. For this use
-```
-$ sbt script
-```
-which will generate a script called 'daisy' which includes all the necessary files.
-You can then run Daisy on an input file as follows:
-```bash
-$ ./daisy testcases/rosa/Doppler.scala
-```
+Daisy's features have been described in a number of papers:
 
-## Additional Software
+  * [Modular Optimization-Based Roundoff Error Analysis of Floating-Point Programs](https://malyzajko.github.io/papers/sas2023a.pdf), SAS'23
 
-Some features of Daisy require additional software to be installed.
-Currently, this is
+  * [Scaling up Roundoff Analysis of Functional Data Structure Programs](https://malyzajko.github.io/papers/sas2023b.pdf), SAS'23
 
-* An SMT solver which can be used to improve ranges: [Z3](https://github.com/Z3Prover/z3) and/or [dReal](https://github.com/dreal/dreal3)
+  * [Regime Inference for Sound Floating-Point Optimizations](https://malyzajko.github.io/papers/emsoft2021.pdf), EMSOFT'21 - see the 'regimes' branch
 
-* [MPFR](http://www.mpfr.org/) for fast analysis, transcendental calculations and error under-approximation: \[`apt-get install libmpfr4`\]  \[`brew install mpfr`\].
-    (On macOS, if the library installed is not libmpfr.4.dylib, you may have to recompile the [Java bindings](https://github.com/kframework/mpfr-java) and place them in lib/. On Linux, you can also download libmpfr.so.4 and install it manually with dpkg -i.)
+  * [Sound Probabilistic Numerical Error Analysis](https://malyzajko.github.io/papers/iFM2019.pdf), iFM'19 - see the 'probabilistic' branch
 
-* Metalibm and all additional dependencies:
+  * [Synthesizing Efficient Low-Precision Kernels](https://malyzajko.github.io/papers/atva2019.pdf), ATVA'19 - see the 'approx' branch
 
-  1. Install/update dependencies (e.g. on Mac with Homebrew):
-    mpfr, mpfi, fplll, automake, libtool, flex, bison, boost
+  * [Sound Approximation of Programs with Elementary Functions](https://malyzajko.github.io/papers/cav2019b.pdf), CAV'19
 
-  2. Install Sollya (outside of Daisy home directory, known working commit ad49ac94b6d6632fd9076e7c618d830eeeca6d86)
-    ```
-    git clone https://gitlab.inria.fr/sollya/sollya.git
-    cd sollya
-    ./autogen.sh
-    ./configure
-    make
-    make install
-    ```
+  * [Discrete Choice in the Presence of Numerical Uncertainties](https://malyzajko.github.io/papers/emsoft2018.pdf), EMSOFT'18 - see the 'probabilistic' branch
 
-  3. Install Gappa (outside of Daisy home directory, known working commit b0d769e66dc907924c09f5b45970fd7059a1e03d)
-    ```
-    git clone https://gitlab.inria.fr/gappa/gappa.git
-    cd gappa
-    ./autogen.sh
-    ./configure
-    ./remake
-    ./remake install
-    ```
+  * [Sound Mixed-Precision Optimization with Rewriting](https://malyzajko.github.io/papers/iccps18_mixedtuning_rewriting.pdf), ICCPS'18
 
-  4. add Sollya and Gappa to your PATH
+  * [Daisy tool paper](https://malyzajko.github.io/papers/tacas18_daisy_toolpaper.pdf), TACAS'18
 
-  5. Setup Metalibm (provided as a submodule)
-   ```
-   git submodule init
-   git submodule update
-   cd metalibm-for-daisy; make
-   ```
+  * [On Sound Relative Error Bounds for Floating-Point Arithmetic](https://malyzajko.github.io/papers/fmcad17_relative.pdf), FMCAD'17
+
 
 ## Contributors
 
-In no particular order: Saksham Sharma, Einar Horn, Debasmita Lohar, Heiko Becker, Ezequiel Postan,
-Fabian Ritter, Anastasiia Izycheva, Raphael Monat, Fariha Nasir, Robert Bastian, Anastasia Volkova,
-Ramya Bankanal, Robert Rabe, Joachim Bard, Arpit Gupta.
+In alphabetic order: Anastasia Isychev (Anastasiia Izycheva), Anastasia Volkova, Arpit Gupta, Debasmita Lohar, Einar Horn, Ezequiel Postan, Fabian Ritter, Fariha Nasir, Heiko Becker, Joachim Bard, Jonas Kraemer, Ramya Bankanal, Raphael Monat, Robert Bastian, Robert Rabe, Rosa Abbasi, Saksham Sharma.
 
-## Intellij Idea Setup
-
-To run Daisy in Intellij Idea you first have to install the Scala Plugin: Settings (Ctrl + Alt + S) -> Plugins.
-Choose Scala in the list and select "Install JetBrains Plugin ...".
-Then let Idea know where is your Scala (or make sure Scala SDK is already there): Project Structure -> Global Libraries -> New Global Library -> Scala SDK -> select the source folder for the SDK on your machine.
-Also make sure the Java SDK is set up for Idea (Project Structure -> SDKs -> check that your JDK is here or add it here).
-
-Choose File -> New -> Project from Existing Source -> path-to-the-build.sbt-file
-or
-File -> New -> Project from Version Control -> Git -> and put git-rts@gitlab.mpi-sws.org:AVA/daisy.git into the URL field and
-select the destination folder for source files to be copied.
-
-After the setup run Daisy in the Terminal of Intellij Idea using sbt as described above.
-
-##Acknowledgements
+## Acknowledgements
 
 A big portion of the infrastructure has been inspired by and sometimes
 directly taken from the Leon project (see the LEON_LICENSE).
@@ -160,5 +127,3 @@ directly taken from the Leon project (see the LEON_LICENSE).
 Especially the files in frontend, lang, solvers and utils bear more than
 a passing resemblance to Leon's code.
 Leon version used: 978a08cab28d3aa6414a47997dde5d64b942cd3e
-
-

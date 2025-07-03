@@ -5,14 +5,15 @@ package analysis
 
 import scala.collection.immutable.{Map, Seq}
 import scala.util.parsing.combinator._
-
 import lang.Trees._
-import tools.{Interval, PartialInterval, Rational, FinitePrecision}
+import tools.{DSAbstraction, FinitePrecision, Index, Interval, MPFRInterval, MatrixIndex, PartialInterval, Rational, VectorIndex}
 import FinitePrecision._
+import daisy.lang.Types.{MatrixType, RealType, VectorType}
 import lang.Identifiers._
 import lang.Extractors._
 import lang.TreeOps.allVariablesOf
 import lang.Trees.Program
+import lang.Types._
 
 /**
   This phase extracts information from the specifications (requires, ensuring)
@@ -83,22 +84,29 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
 
     var allRanges: Map[Identifier, Map[Identifier, Interval]] = Map()
     var allErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
+    var allInitErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
     var resRanges: Map[Identifier, PartialInterval] = Map()
     var resErrors: Map[Identifier, Rational] = Map()
     var additionalConst: Map[Identifier, Expr] = Map()
     var resIds: Map[Identifier, Seq[Identifier]] = Map()
     // var requiredOutputRanges: Map[Identifier, Map[Identifier, PartialInterval]] = Map()
     // var requiredOutputErrors: Map[Identifier, Map[Identifier, Rational]] = Map()
+    var dsAbstractions: Map[Identifier, Map[Expr, DSAbstraction]] = Map()
 
     val newDefs = transformConsideredFunctions(ctx, prg){ fnc =>
       fnc.precondition match {
         case Some(pre) =>
           // TODO: additional constraints
-          val (ranges, errors, addConds) = extractPreCondition(pre)
+          val (ranges, errors, addConds, dsa) = extractPreCondition(pre)
 
           val missingKeys = fnc.params.map(_.id).diff(ranges.keys.toSeq)
-          if (!missingKeys.isEmpty) {
+          if (missingKeys.nonEmpty) {
             reporter.fatalError("Incomplete or missing range for " + missingKeys.mkString(", "))
+          }
+
+          dsa match {
+            case Some(dsas) => dsAbstractions += fnc.id -> dsas
+            case None => ;
           }
 
           allRanges += (fnc.id -> ranges.map(x => (x._1 -> Interval(x._2._1, x._2._2))))
@@ -113,7 +121,8 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
 
               val allIDs = fnc.params.map(_.id).toSet
               val missingIDs = allIDs -- errors.keySet
-              errors ++ missingIDs.map(id => (id -> precisionMap(id).absRoundoff(allRanges(fnc.id)(id))))
+              errors ++ missingIDs.map(id => if(id.getType == Int32Type) (id -> Rational.zero)
+                                                else (id -> precisionMap(id).absRoundoff(allRanges(fnc.id)(id))))
 
             } else if (trackInitialErrs) {
 
@@ -132,6 +141,11 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
               allIDs.map(id => (id -> Rational.zero)).toMap
 
             }}))
+          allInitErrors += (fnc.id -> ({
+            val allIDs = fnc.params.map(_.id).toSet
+            val missingIDs = allIDs -- errors.keySet
+            errors ++ missingIDs.map(id => (id -> Rational.zero))
+          }))
           addConds match {
             case Seq() => additionalConst += (fnc.id -> BooleanLiteral(true)) // no additional constraints
             case Seq(x) => additionalConst += (fnc.id -> x)
@@ -209,13 +223,15 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
     (ctx.copy(
       specInputRanges = allRanges,
       specInputErrors = allErrors,
+      specInitErrors  = allInitErrors,
       specResultRangeBounds = resRanges,
       specResultErrorBounds = resErrors,
       specInputPrecisions = inputPrecision,
       specResultPrecisions = resultPrecisions,
       specAdditionalConstraints = additionalConst,
       resultTupleIds = resIds,
-      originalProgram = Program(prg.id, newDefs)),
+      originalProgram = Program(prg.id, newDefs),
+      dsAbstractions = dsAbstractions),
       Program(prg.id, newDefs))
   }
 
@@ -232,21 +248,22 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
   }
 
   def extractPreCondition(expr: Expr): (Map[Identifier, (Rational, Rational)],
-    Map[Identifier, Rational], Seq[Expr]) = {
+    Map[Identifier, Rational], Seq[Expr], Option[Map[Expr, DSAbstraction]]) = {
 
-    val (lowerBound, upperBound, absError, addCond) = extractCondition(expr)
+    val (lowerBound, upperBound, absError, addCond, dsSizes, preAbstractions) = extractCondition(expr)
 
     // only return complete ranges, check for completeness is done later
     val bounds = (lowerBound.keySet.intersect(upperBound.keySet)).map(k =>
       (k, (lowerBound(k), upperBound(k)))).toMap
+    val dsAbstractions = extractAbstraction(lowerBound, upperBound, dsSizes, preAbstractions)
 
-    (bounds, absError, addCond)
+    (bounds, absError, addCond, dsAbstractions)
   }
 
   def extractPostCondition(expr: Expr): (Map[Identifier, (Option[Rational], Option[Rational])],
     Map[Identifier, Rational]) = {
 
-    val (lowerBound, upperBound, absError, _) = extractCondition(expr)
+    val (lowerBound, upperBound, absError, _, _, _) = extractCondition(expr)
 
     val lowerMap = lowerBound.map({
       case (x, r) => (x, (Some(r), upperBound.get(x)))
@@ -262,18 +279,20 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
   }
 
   def extractCondition(e: Expr): (Map[Identifier, Rational],
-    Map[Identifier, Rational], Map[Identifier, Rational], Seq[Expr]) = {
+    Map[Identifier, Rational], Map[Identifier, Rational], Seq[Expr], Map[Expr, Index], Map[Expr, DSAbstraction]) = {
 
     var lowerBound: Map[Identifier, Rational] = Map.empty
     var upperBound: Map[Identifier, Rational] = Map.empty
     var absError: Map[Identifier, Rational] = Map.empty
     var additionalCond: Seq[Expr] = Seq.empty
+    var dsSizes: Map[Expr, Index] = Map.empty
+    var preAbstractions: Map[Expr, DSAbstraction] = Map.empty
 
     def extract(e: Expr): Unit = e match {
-      case Lambda(args,body) => extract(body)
+      case Lambda(_,body) => extract(body)
       case AbsError(Variable(id), RealLiteral(r)) => absError += (id -> r)
 
-      case And(es) => es.foreach(extract(_))
+      case And(es) => es.foreach(extract)
       case GreaterThan(Variable(id), RealLiteral(r)) => lowerBound += (id -> r)
       case GreaterEquals(Variable(id), RealLiteral(r)) => lowerBound += (id -> r)
 
@@ -285,14 +304,116 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
 
       case GreaterThan(RealLiteral(r), Variable(id)) => upperBound += (id -> r)
       case GreaterEquals(RealLiteral(r), Variable(id)) => upperBound += (id -> r)
+      // DS ranges and size
+      case SizeLessEquals(ds, cols, rows) => ds.getType match {
+        case VectorType(_) => dsSizes += (ds -> VectorIndex(cols))
+        case MatrixType(_) => dsSizes += (ds -> MatrixIndex(cols, rows))
+      }
+      case VectorRange(v, fromI, toI, RealLiteral(lo), RealLiteral(up)) =>
+        val interval = MPFRInterval(Interval(lo, up))
+        // check that the indices are inside the main range
+        if (dsSizes.contains(v)) {
+          val max = dsSizes(v) match { case VectorIndex(i) => i}
+          val newIndices =
+            if (toI >= max)
+              if (fromI >= max)
+                Set[Index]()
+              else
+                Set.range(fromI,Math.max(max-1,fromI+1)).map(x=>VectorIndex(x).asInstanceOf[Index])
+            else
+              Set.range(fromI,toI+1).map(x=>VectorIndex(x).asInstanceOf[Index])
+          if (newIndices.nonEmpty)
+            if (preAbstractions.contains(v)) {
+              preAbstractions += v -> preAbstractions(v).addSpec(newIndices, interval)
+            } else {
+              preAbstractions += v -> DSAbstraction(Map(newIndices -> interval))
+            }
+          else
+            reporter.info(s"The specified range is for indices out of bounds: ($fromI, $toI) not in (0,${dsSizes(v).asInstanceOf[VectorIndex].i-1}.\n Ignoring the spec.")
+        } else {
+          // todo does this happen often? disallow?
+          val indices = Set.range(fromI,toI+1).map(x => VectorIndex(x).asInstanceOf[Index])
+          if (preAbstractions.contains(v)) {
+            preAbstractions += v -> preAbstractions(v).addSpec(indices, interval)
+          } else {
+            preAbstractions += v -> DSAbstraction(Map(indices -> interval))
+          }
+        }
 
+      case MatrixRange(m, indices, RealLiteral(lo), RealLiteral(up)) =>
+        if (dsSizes.contains(m)) {
+          // check that the indices are inside the main range
+          val bounds = dsSizes(m) match {
+            case MatrixIndex(i,j) => (i,j)
+          }
+          val inds = indices.filter({ case (i, j) => i < bounds._1 && j < bounds._2 })
+            .map({ case (i, j) => MatrixIndex(i, j).asInstanceOf[Index] }).toSet
+          if (inds.nonEmpty) {
+            val interval = MPFRInterval(Interval(lo, up))
+            if (preAbstractions.contains(m)) {
+              preAbstractions += m -> preAbstractions(m).addSpec(inds, interval)
+            } else {
+              preAbstractions += m -> DSAbstraction(Map(inds -> interval))
+            }
+          } else
+            reporter.info(s"The specified range is for indices out of bounds: ($indices) not in the matrix ${bounds._1}x${bounds._2}.\n Ignoring the spec.")
+        } else {
+          val inds = indices.map({ case (i, j) => MatrixIndex(i, j).asInstanceOf[Index] }).toSet
+          val interval = MPFRInterval(Interval(lo, up))
+          if (preAbstractions.contains(m)) {
+            preAbstractions += m -> preAbstractions(m).addSpec(inds, interval)
+          } else {
+            preAbstractions += m -> DSAbstraction(Map(inds -> interval))
+          }
+        }
       case _ => ;
         additionalCond = additionalCond :+ e
     }
 
     extract(e)
 
-    (lowerBound, upperBound, absError, additionalCond)
+    (lowerBound, upperBound, absError, additionalCond, dsSizes, preAbstractions)
+  }
+
+  def extractAbstraction(lowerBounds: Map[Identifier, Rational], upperBounds: Map[Identifier, Rational], sizes: Map[Expr, Index], preAbstractions: Map[Expr, DSAbstraction] ): Option[Map[Expr, DSAbstraction]] = {
+    val dsTypes = lowerBounds.filter({ case (id,_) => id.getType == VectorType(Seq(RealType)) || id.getType == MatrixType(Seq(RealType)) })
+    if (dsTypes.isEmpty)
+      return None
+
+    val testBounds = lowerBounds.keySet.diff(upperBounds.keySet)
+    assert(testBounds.isEmpty, s"Ranges for some input vectors/matrices are incomplete or ambiguous: $testBounds")
+    def crossProduct(xs:Seq[Int], ys:Seq[Int]): Seq[Index] = for {x <- xs; y <- ys} yield MatrixIndex(x,y)
+
+    val dsInputsLB = lowerBounds.filter({ case (dsId, _) => dsId.getType match {
+      case VectorType(_) => true
+      case MatrixType(_) => true
+      case _ => false
+    }})
+    val wholeAbstractions: Map[Expr, DSAbstraction] = dsInputsLB.map({ case (dsId, lb) => dsId.getType match {
+      case VectorType(_) =>
+        val ub = upperBounds(dsId)
+        val v = VectorLiteral(dsId)
+        val indexRange = if (sizes.contains(v)) {
+          sizes(v) match { case VectorIndex(i) => Set.from(0 until i).map(x => VectorIndex(x).asInstanceOf[Index]) }
+        } else
+          Set(VectorIndex(0).asInstanceOf[Index], VectorIndex(-1).asInstanceOf[Index]) // todo do we allow unspecified length of DS?
+
+        if (preAbstractions.contains(v))
+          v -> preAbstractions(v).addSpecNoUpdate(indexRange, MPFRInterval(Interval(lb,ub)), debug = reporter.isDebugEnabled)
+        else
+          v -> DSAbstraction(Map(indexRange -> MPFRInterval(Interval(lb,ub))))
+      case MatrixType(_) =>
+        val ub = upperBounds(dsId)
+        val m = MatrixLiteral(dsId)
+        val indexRange = if (sizes.contains(m)) {
+          sizes(m) match { case MatrixIndex(i,j) => crossProduct(Seq.from(0 until i), Seq.from(0 until j))}
+        } else Seq(MatrixIndex(0, 0), MatrixIndex(-1, -1)) // todo do we allow unspecified length of DS?
+        if (preAbstractions.contains(m))
+          m -> preAbstractions(m).addSpecNoUpdate(indexRange.toSet, MPFRInterval(Interval(lb,ub)), debug = reporter.isDebugEnabled)
+        else
+          m -> DSAbstraction(Map(indexRange.toSet -> MPFRInterval(Interval(lb,ub))))
+    }})
+    Some(wholeAbstractions)
   }
 
   private def parseMixedPrecisionFile(f: String, prg: Program): Map[Identifier, Map[Identifier, Precision]] = {
