@@ -92,6 +92,8 @@ class SatirePrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer
       case Log(expr) => ppMathFun(Seq(expr), "log")
       case Equals(l,r) => ppBinary(l, r, " == ")
       case RealLiteral(r) => sb.append(r.toString)
+      case x @ FinitePrecisionLiteral(r, Float8, stringValue) =>
+        sb.append(stringValue)
       case x @ FinitePrecisionLiteral(r, Float16, stringValue) =>
         sb.append(stringValue)
       case x @ FinitePrecisionLiteral(r, Float32, stringValue) =>

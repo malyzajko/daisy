@@ -329,6 +329,8 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case BooleanLiteral(v) => sb.append(v.toString)
       case UnitLiteral() => sb.append("()")
       case RealLiteral(r) => sb.append(r.toString)
+      case x @ FinitePrecisionLiteral(r, Float8, stringValue) =>
+        sb.append(stringValue + "float8")
       case x @ FinitePrecisionLiteral(r, Float16, stringValue) =>
         sb.append(stringValue + "hf")
       case x @ FinitePrecisionLiteral(r, Float32, stringValue) =>
@@ -519,6 +521,7 @@ class PrettyPrinter(val sb: Appendable = new StringBuffer, printUniqueIds: Boole
       case MatrixType(seq) =>
         sb.append(s"List[List[${seq.head}]]")
         //ppNary(seq, pre = "[",op = ",", post = "]]") // won't compile if seq has >1 element
+      case FinitePrecisionType(Float8) => sb.append("Float8")
       case FinitePrecisionType(Float16) => sb.append("Float16")
       case FinitePrecisionType(Float32) => sb.append("Float")
       case FinitePrecisionType(Float64) => sb.append("Double")

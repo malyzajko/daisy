@@ -147,6 +147,7 @@ class CPrinter(buffer: Appendable, ctx: Context) extends CodePrinter(buffer) {
         pp(expr,p)
         sb.append(")")
 
+      case FinitePrecisionType(Float8) => sb.append("char")
       case FinitePrecisionType(Float16) => sb.append("half")
       case FinitePrecisionType(Float32) => sb.append("float")
       case FinitePrecisionType(Float64) => sb.append("double")
