@@ -98,6 +98,19 @@ object FinitePrecision {
     }
   }
 
+  case object Float8 extends FloatPrecision(8) with DenormalCheck {
+
+    override val machineEpsilon: Rational = Rational.powerTwo(-5)
+
+    override val (mantissa_bits, exponent_bits): (Int, Int) = (4, 3)
+
+    override val range: Interval = Interval.+/-(Rational(112))
+
+    override val minNormal: Rational = Rational.powerTwo(-2)
+
+    override val denormalsError: Rational = Rational.powerTwo(-7)
+  }
+
   // IEEE half-precision
   case object Float16 extends FloatPrecision(16) with DenormalCheck {
 

@@ -82,7 +82,7 @@ object DataflowPhase extends DaisyPhase with RoundoffEvaluators with IntervalSub
               case _ => 32 // TODO put default elsewhere
             }
             (1 to maxBits).map(x => FixedPrecision(x))
-          case "float" => List(Float16, Float32, Float64, DoubleDouble, QuadDouble)
+          case "float" => List(Float8, Float16, Float32, Float64, DoubleDouble, QuadDouble)
           case s => throw new Exception(s"Unknown choice value for choosePrecision: $s. Stopping now")
         }
 
