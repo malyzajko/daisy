@@ -439,7 +439,7 @@ object SpecsProcessingPhase extends DaisyPhase with PrecisionsParser {
     }
 
 
-    val bufferedSource = io.Source.fromFile(f)
+    val bufferedSource = scala.io.Source.fromFile(f)
     val sourceText = bufferedSource.mkString
 
     bufferedSource.close

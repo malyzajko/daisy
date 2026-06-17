@@ -125,6 +125,7 @@ object Main {
     FlagOption("unroll", "unrolls all loops over DS [WARN] only used with --print-ast at the moment"),
     FlagOption("ds", "applies abstraction to data structures and computes ranges, errors"),
     FlagOption("ds-naive", "naive analysis of programs with data structures (ranges, errors)"),
+    FlagOption("treesitter", "Use Tree-sitter parsing option"),
 
     // Omelette settings
     NumOption(
@@ -174,6 +175,7 @@ object Main {
     backend.InfoPhase,
     frontend.ExtractionPhase,
     frontend.CExtractionPhase,
+    frontend.TreesitterPhase,
     opt.ApproxPhase,
     opt.MetalibmPhase,
     //transform.ReassignElemFuncPhase,
@@ -195,9 +197,9 @@ object Main {
         ctx.timers.total.start()
         val pipeline = computePipeline(ctx)
         ctx.reporter.info("\n************ Starting Daisy ************")
-        try { // for debugging it's better to have these off.
-          pipeline.run(ctx, Program(null, Nil))
-        } catch {
+        // try { // for debugging it's better to have these off.
+        pipeline.run(ctx, Program(null, Nil))
+        // } catch {
           //case tools.DivisionByZeroException(msg) =>
           //  ctx.reporter.warning(msg)
           //case tools.DenormalRangeException(msg) =>
@@ -212,21 +214,21 @@ object Main {
           //  ctx.reporter.warning(msg)
           // case e: DaisyFatalError =>
           //   ctx.reporter.info(f"Something really bad happened. Cannot continue.")
-          case e: Exception =>
-            val msg = f"${e.getClass.getSimpleName}: ${e.getMessage}"
-            ctx.reporter.info(f"Something really bad happened. Cannot continue: $msg")
-            if ((ctx.options.contains("ds") || ctx.options.contains("ds-naive")) && ctx.options.contains("results-csv")) {
-              val (_,prg) = frontend.ExtractionPhase.runPhase(ctx, ctx.originalProgram)
-              backend.InfoPhase.runPhase(ctx.copy(errMsg = Some(msg)), prg)
-            }
-          case t : Throwable =>
-            val msg = f"${t.getClass.getSimpleName}: ${t.getMessage}"
-            ctx.reporter.info(f"Something really bad happened. Cannot continue: $msg")
-            if ((ctx.options.contains("ds") || ctx.options.contains("ds-naive")) && ctx.options.contains("results-csv")) {
-              val (_,prg) = frontend.ExtractionPhase.runPhase(ctx, ctx.originalProgram)
-              backend.InfoPhase.runPhase(ctx.copy(errMsg = Some(msg)), prg)
-            }
-        }
+          // case e: Exception =>
+          //   val msg = f"${e.getClass.getSimpleName}: ${e.getMessage}"
+          //   ctx.reporter.info(f"Something really bad happened. Cannot continue: $msg")
+          //   if ((ctx.options.contains("ds") || ctx.options.contains("ds-naive")) && ctx.options.contains("results-csv")) {
+          //     val (_,prg) = frontend.TreesitterPhase.runPhase(ctx, ctx.originalProgram) //ExtractionPhase
+          //     backend.InfoPhase.runPhase(ctx.copy(errMsg = Some(msg)), prg)
+          //   }
+          // case t : Throwable =>
+          //   val msg = f"${t.getClass.getSimpleName}: ${t.getMessage}"
+          //   ctx.reporter.info(f"Something really bad happened. Cannot continue: $msg")
+          //   if ((ctx.options.contains("ds") || ctx.options.contains("ds-naive")) && ctx.options.contains("results-csv")) {
+          //     val (_,prg) = frontend.TreesitterPhase.runPhase(ctx, ctx.originalProgram) //ExtractionPhase
+          //     backend.InfoPhase.runPhase(ctx.copy(errMsg = Some(msg)), prg)
+          //   }
+        // }
         ctx.timers.get("total").stop()
         ctx.reporter.info("time: \n" + ctx.timers.toString)
         Option(ctx)
@@ -243,7 +245,7 @@ object Main {
   private def computePipeline(ctx: Context): Pipeline[Program, Program] = {
 
     var pipeline: Pipeline[Program, Program] =
-      if (ctx.lang == ProgramLanguage.ScalaProgram) frontend.ExtractionPhase else frontend.CExtractionPhase
+      if (ctx.hasFlag("treesitter")) frontend.TreesitterPhase else (if (ctx.lang == ProgramLanguage.ScalaProgram) frontend.ExtractionPhase else frontend.CExtractionPhase)
 
     if (ctx.hasFlag("ds-pre-c") || ctx.hasFlag("ds-pre-scala")) {
       pipeline >>= analysis.SpecsProcessingPhase
