@@ -4,7 +4,7 @@ version := "0.1"
 
 organization := "Uppsala universitet"
 
-scalaVersion := "2.13.3"
+scalaVersion := "2.13.16"
 
 scalacOptions ++= Seq(
     //"-deprecation",
@@ -35,13 +35,14 @@ resolvers += "Typesafe Repository" at "https://repo.typesafe.com/typesafe/releas
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/releases"
 
 libraryDependencies ++= Seq(
-    "org.scala-lang" % "scala-compiler" % "2.13.3",
+    "org.scala-lang" % "scala-compiler" % "2.13.16",
     "org.scalatest" % "scalatest_2.13" % "3.2.2", //% "test",
     "com.storm-enroute" %% "scalameter" % "0.19",
     "org.fusesource.hawtjni" % "hawtjni-runtime" % "1.9",  //for JNI
     "org.scala-lang.modules" %% "scala-parser-combinators" % "1.1.2",
     "org.scala-lang.modules" %% "scala-parallel-collections" % "0.2.0",
-    "com.regblanc" %% "scala-smtlib" % "0.2.1-42-gc68dbaa"
+    "com.regblanc" %% "scala-smtlib" % "0.2.1-42-gc68dbaa",
+    "io.github.tree-sitter" % "jtreesitter" % "0.25.6"
 )
 
 envVars := Map("LC_NUMERIC" -> "en_US.UTF-8")
