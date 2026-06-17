@@ -58,7 +58,7 @@ object Main {
     ),
     ChoiceOption(
       "precision",
-      Map("Float16" -> Float16, "Float32" -> Float32, "Float64" -> Float64,
+      Map("Float8" -> Float8, "Float16" -> Float16, "Float32" -> Float32, "Float64" -> Float64,
         "Quad" -> DoubleDouble, "QuadDouble" -> QuadDouble) ++
         (1 to 64).map(x => ("Fixed" + x -> FixedPrecision(x))),
       "Float64",
