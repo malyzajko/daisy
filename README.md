@@ -142,7 +142,7 @@ Daisy's features have been described in a number of papers:
 
 ## Contributors
 
-In alphabetic order: Anastasia Isychev (Anastasiia Izycheva), Anastasia Volkova, Arpit Gupta, Debasmita Lohar, Einar Horn, Ezequiel Postan, Fabian Ritter, Fariha Nasir, Heiko Becker, Joachim Bard, Jonas Kraemer, Ramya Bankanal, Raphael Monat, Robert Bastian, Robert Rabe, Rosa Abbasi, Saksham Sharma.
+In alphabetic order: Anastasia Isychev (Anastasiia Izycheva), Anastasia Volkova, Andrea Gilot, Arpit Gupta, Debasmita Lohar, Einar Horn, Ezequiel Postan, Fabian Ritter, Fariha Nasir, Heiko Becker, Joachim Bard, Jonas Kraemer, Ramya Bankanal, Raphael Monat, Robert Bastian, Robert Rabe, Rosa Abbasi, Saksham Sharma.
 
 ## Acknowledgements
 

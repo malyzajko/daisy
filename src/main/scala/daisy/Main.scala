@@ -511,6 +511,7 @@ object Main {
     def inputInfo: (String, ProgramLanguage.Value) = args.filterNot(_.startsWith("-")) match {
       case Seq() => initReporter.fatalError("No input file")
       case Seq(f) if new File(f).exists && f.endsWith(".c") => (f, ProgramLanguage.CProgram)
+      case Seq(f) if new File(f).exists && f.endsWith(".fpcore") => (f, ProgramLanguage.FPCoreProgram)
       case Seq(f) if new File(f).exists => (f, ProgramLanguage.ScalaProgram)
       case Seq(f) => initReporter.fatalError(s"File $f does not exist")
       case fs => initReporter.fatalError("More than one input file: " + fs.mkString(", "))
@@ -526,7 +527,7 @@ object Main {
   }
 
   object ProgramLanguage extends Enumeration {
-    val CProgram, ScalaProgram = Value
+    val CProgram, ScalaProgram, FPCoreProgram = Value
   }
 
 }
