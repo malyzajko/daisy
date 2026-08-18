@@ -11,7 +11,9 @@
 
 First make sure that you have the following:
 
-* Java 8 or Java 11
+* Java 22 to 25
+
+* a C compiler (`cc`)
 
 * (for most features) [MPFR](http://www.mpfr.org/): \[`apt-get install libmpfr4`\] or \[`brew install mpfr`\]. If you get a linking error mentioning MPFR at runtime, you may need to recompile the [Java bindings](https://github.com/kframework/mpfr-java) and place them in lib/.
 
@@ -51,28 +53,52 @@ For example:
 ```
 should produce an output such as (your own timing information will naturally vary):
 ```
-Extracting program
-[  Info  ]
-[  Info  ] Starting specs preprocessing phase
-[  Info  ] Finished specs preprocessing phase
-[  Info  ]
-[  Info  ]
-[  Info  ] Starting range-error phase
-[  Info  ] Finished range-error phase
-[  Info  ]
-[  Info  ] Starting info phase
+[  Info  ] ************ Starting Daisy ************
+[  Info  ] Starting Scala extraction phase
+[  Info  ] Starting Specs processing phase
+[  Info  ] Starting functions phase
+[  Info  ] Starting Dataflow error phase
+[  Info  ] using interval for ranges, affine for errors
+[  Info  ] analyzing fnc: doppler
+[  Info  ] error analysis for uniform Double precision
+[  Info  ] Starting Info phase
 [  Info  ] doppler
-[  Info  ] error: 4.1911988101104756e-13, range: [-158.7191444098274, -0.02944244059231351]
-[  Info  ] Finished info phase
+[  Info  ]   Absolute error: 4.1911988101104756e-13
+[  Info  ]   Real range:     [-158.7191444098274, -0.02944244059231351]
+[  Info  ]   Relative error: 1.4235228893370562e-11
 [  Info  ] time:
-[  Info  ] info:      6 ms, rangeError:    360 ms, analysis:      6 ms, frontend:   2902 ms,
+[  Info  ] Info: 5 ms, Dataflow error: 36 ms, functions: 1 ms, Specs processing: 3 ms, Scala extraction: 706 ms, total: 752 ms
+```
+
+### Input languages
+
+By default Daisy reads Scala programs DSL, using the
+Scala compiler as a frontend. Passing `--treesitter` selects the Tree-sitter frontend instead, which reads
+Scala, C and FPCore. The language is chosen from the file extension:
+
+| Extension | Language |
+| --------- | -------- |
+| `.scala`  | Scala|
+| `.c`      | C |
+| `.fpcore` | [FPCore 2.0](https://fpbench.org/spec/fpcore-2.0.html) |
+
+```
+$ ./daisy --treesitter testcases/fpbench-c-individual/doppler1.c
+$ ./daisy --treesitter testcases/fpbench-fpcore/daisy.fpcore
 ```
 
 ### Test
 ```
+$ sbt test
+```
+runs the regression suites, which check computed error bounds against reference
+results, and the frontend suites, which check that every benchmark under
+`testcases/` still parses.
+
+```
 ./regression/scripts/run_all.sh
 ```
-will run Daisy on a set of test cases and compare computed error bounds to
+runs Daisy over a set of test cases and compares computed error bounds to
 reference results. Passes tests, if it prints `All results consistent` for all tests.
 Warning printed for Z3 analysis (Unexpected error from z3 solver) can be ignored.
 
@@ -116,7 +142,7 @@ Daisy's features have been described in a number of papers:
 
 ## Contributors
 
-In alphabetic order: Anastasia Isychev (Anastasiia Izycheva), Anastasia Volkova, Arpit Gupta, Debasmita Lohar, Einar Horn, Ezequiel Postan, Fabian Ritter, Fariha Nasir, Heiko Becker, Joachim Bard, Jonas Kraemer, Ramya Bankanal, Raphael Monat, Robert Bastian, Robert Rabe, Rosa Abbasi, Saksham Sharma.
+In alphabetic order: Anastasia Isychev (Anastasiia Izycheva), Anastasia Volkova, Andrea Gilot, Arpit Gupta, Debasmita Lohar, Einar Horn, Ezequiel Postan, Fabian Ritter, Fariha Nasir, Heiko Becker, Joachim Bard, Jonas Kraemer, Ramya Bankanal, Raphael Monat, Robert Bastian, Robert Rabe, Rosa Abbasi, Saksham Sharma.
 
 ## Acknowledgements
 

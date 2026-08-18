@@ -51,10 +51,19 @@ To note about the input language:
 
   * The notation `x +/- e` defines an absolute roundoff error of magnitude 'e' on the variable 'x'.
 
+The above describes Daisy's default input language. With `--treesitter`, Daisy
+also reads C and FPCore.
+
 
 ### Command-line Options
 
 These are the main command-line options. For a full list, use `--help`.
+
+`--treesitter`
+
+Parse the input with Tree-sitter rather than the Scala compiler. This is what
+allows C (`.c`) and FPCore (`.fpcore`) input in addition to Scala; the language
+is chosen from the file extension.
 
 `--analysis=[dataflow:opt:relative] {--subdiv}`
 
@@ -170,7 +179,7 @@ modified program.
 
   Here are the most notable components of the Daisy repository:
 
-  * lib/: jar files that Daisy requires
+  * lib/: jar files that Daisy requires and the native Tree-sitter parsers
 
   * library/: definition of the 'Real' data type used in the specification language
 
@@ -190,7 +199,7 @@ modified program.
 
     * experiments/: phases performing experiments which were needed for some subproject
 
-    * frontend/: parsing of the input program is performed by calling the normal Scala compiler and extracting the Scala AST's to Daisy AST's
+    * frontend/: parsing of the input program. By default this calls the normal Scala compiler and extracts the Scala AST's to Daisy AST's. With `--treesitter` it instead parses with [Tree-sitter](https://tree-sitter.github.io), to also support C and FPCore input.
 
     * lang/: definition of Daisy's internal representation of programs, e.g. Trees.scala defines the AST
 

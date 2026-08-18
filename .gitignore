@@ -1,8 +1,31 @@
+# Mac OS
 .DS_STORE
+
+# Output files
 output/*.scala
 output/*.csv
+output/*.rise
+
+/daisy
+
 target/
+*.log
+
+# SBT
 project/project/
 project/target/
-*.log
-/daisy
+project/.bloop/
+project/metals.sbt
+
+# IDE
+.idea/
+.bsp/
+.metals/
+.vscode/
+.bloop/
+
+# tree-sitter grammars
+lib/*.so
+lib/*.dylib
+lib/*.dll
+lib/.grammars/

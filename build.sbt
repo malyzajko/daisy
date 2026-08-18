@@ -4,7 +4,7 @@ version := "0.1"
 
 organization := "Uppsala universitet"
 
-scalaVersion := "2.13.16"
+scalaVersion := "2.13.17"
 
 scalacOptions ++= Seq(
     //"-deprecation",
@@ -35,7 +35,7 @@ resolvers += "Typesafe Repository" at "https://repo.typesafe.com/typesafe/releas
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/releases"
 
 libraryDependencies ++= Seq(
-    "org.scala-lang" % "scala-compiler" % "2.13.16",
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value,
     "org.scalatest" % "scalatest_2.13" % "3.2.2", //% "test",
     "com.storm-enroute" %% "scalameter" % "0.19",
     "org.fusesource.hawtjni" % "hawtjni-runtime" % "1.9",  //for JNI
@@ -51,13 +51,26 @@ Keys.fork in run := true
 
 Keys.fork in Test := true   //for native libraries to be on correct path
 
-javaOptions in run ++= Seq(
-    "-Xms2048M", "-Xmx8G", "-XX:+UseConcMarkSweepGC")
+Test / javaOptions ++= Seq("-Duser.language=en", "-Duser.country=US")
+run  / javaOptions ++= Seq("-Xms2048M", "-Xmx8G", "-Duser.language=en", "-Duser.country=US")
 
 parallelExecution in Test := false
 
 // ivyLoggingLevel in clean := UpdateLogging.Quiet
 // ivyLoggingLevel in Test := UpdateLogging.Quiet
+
+lazy val grammars = taskKey[Seq[File]]("Build the tree-sitter parsers the frontend loads")
+
+// Build the native tree-sitter libraries the Treesitter frontend loads.  
+// See project/TreeSitter.scala.
+grammars := TreeSitter.buildAll(baseDirectory.value / "lib", streams.value.log)
+
+Compile / compile := (Compile / compile).dependsOn(grammars).value
+
+// Output the name of the libraries as Scala code, so that the source files can access them without guessing. 
+Compile / sourceGenerators += Def.task {
+  Seq(TreeSitter.generateBuildInfo((Compile / sourceManaged).value))
+}.taskValue
 
 lazy val scriptFile = file(".") / "daisy"
 
@@ -82,14 +95,11 @@ script := {
     //val base = baseDirectory.value.getAbsolutePath
     IO.write(f, s"""|#!/bin/bash --posix
                     |
+                    |set -o pipefail
+                    |
                     |SCALACLASSPATH="$paths"
                     |
-                    |TMP=$$LC_NUMERIC
-                    |LC_NUMERIC=en_US.UTF-8
-                    |
-                    |java -Xmx2G -Xms1G -Xss1G -classpath "$${SCALACLASSPATH}" -Dscala.usejavacp=false scala.tools.nsc.MainGenericRunner -classpath "$${SCALACLASSPATH}" daisy.Main $$@ 2>&1 | tee -i last.log
-                    |
-                    |LC_NUMERIC=$$TMP
+                    |LC_NUMERIC=en_US.UTF-8 java -Xmx2G -Xms1G -Xss1G -Duser.language=en -Duser.country=US -classpath "$${SCALACLASSPATH}" -Dscala.usejavacp=false scala.tools.nsc.MainGenericRunner -classpath "$${SCALACLASSPATH}" daisy.Main "$$@" 2>&1 | tee -i last.log
                     |""".stripMargin)
     f.setExecutable(true)
   } catch {
