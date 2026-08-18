@@ -2,172 +2,175 @@ package daisy
 package frontend
 
 import io.github.treesitter.jtreesitter.Node
-import daisy.lang.Identifiers._
-import daisy.lang.Trees.{Expr => DaisyExpr, FunDef => DaisyFunDef, Program => DaisyProgram, ValDef => DaisyValDef, _}
+import daisy.lang.Trees.{Expr => DaisyExpr, FunDef => DaisyFunDef, Program => DaisyProgram, _}
 import daisy.lang.Constructors._
 import daisy.tools.Rational
 
-trait TreesitterC extends TreesitterCommon {
-  protected final def convertCNode(raw: Node): DaisyExpr =
-    {
-      val node = unwrapExpr(raw)
-      node.getType match {
-        case "binary_expression" | "logical_expression" =>
-          val (leftNodeOpt, opTokenOpt, rightNodeOpt) = findOperatorTripletFromAllChildren(node)
-          convertBinaryByParts(
-            node = node,
-            leftNodeOpt = leftNodeOpt,
-            opTokenOpt = opTokenOpt,
-            rightNodeOpt = rightNodeOpt,
-            contextLabel = node.getType,
-            allowRawArithmeticFallback = true
-          )
+class TreesitterC(ctx: Context) extends TreesitterCommon(ctx) {
 
-        case "compound_statement" =>
-          def isGuardedLetAsVar(e: DaisyExpr): Option[(Identifier, DaisyExpr)] = e match {
-            case Let(id, value, Variable(v)) if id == v => Some((id, value))
-            case _ => None
-          }
+  protected override val grammar = "c"
+  protected override val languageSymbol = "tree_sitter_c"
 
-          val stmts = allNamedChildren(node).map(convertNode).filter(_ != null).toList
-          val initialAcc: DaisyExpr =
-            stmts.lastOption.flatMap(isGuardedLetAsVar).map { case (id, _) => Variable(id) }
-              .getOrElse(RealLiteral(Rational.zero))
+  protected override val preconditionName = "__PRECOND"
 
-          val result: DaisyExpr = stmts match {
-            case decl :: (ie @ IfExpr(_, thenB, elseB)) :: tail =>
-              isGuardedLetAsVar(decl) match {
-                case Some((declId, _)) =>
-                  (isGuardedLetAsVar(thenB), isGuardedLetAsVar(elseB)) match {
-                    // We want to find if the collection of children from the node
-                    // have the following structure: let x = if (cond) tVal else eVal
-                    case (Some((tid, tVal)), Some((eid, eVal)))
-                        if tid == declId && eid == declId =>
+  protected override val constants = Map(
+    "M_PI" -> Math.PI,
+    "M_E"  -> Math.E
+  )
 
-                      val combinedIf = IfExpr(ie.cond, tVal, eVal)
-                      val tailExpr   = foldBlock(tail, Variable(declId), dropNonLet = false)
-                      Let(declId, combinedIf, tailExpr)
-                    case _ =>
-                      foldBlock(stmts, initialAcc, dropNonLet = false)
-                  }
-                case None =>
-                  foldBlock(stmts, initialAcc, dropNonLet = false)
-              }
-            case _ =>
-              foldBlock(stmts, initialAcc, dropNonLet = false)
-          }
+  protected override val binaryOps = Map[String, (DaisyExpr, DaisyExpr) => DaisyExpr](
+    "+"  -> Plus,        
+    "-"  -> Minus,
+    "*"  -> Times,       
+    "/"  -> Division,
+    ">"  -> GreaterThan, 
+    ">=" -> GreaterEquals,
+    "<"  -> LessThan,
+    "<=" -> LessEquals,
+    "==" -> Equals,
+    "!=" -> ((l, r) => Not(Equals(l, r))),
+    "&&" -> ((l, r) => and(l, r)),
+    "||" -> ((l, r) => or(l, r))
+  )
 
-          result
+  protected override val unaryOps = Map[String, DaisyExpr => DaisyExpr](
+    "-" -> UMinus,
+    "!" -> Not,
+    "+" -> identity
+  )
 
-        // case "type_descriptor" | "abstract_pointer_declarator" | "abstract_function_declarator" =>
-        //   val rawText = extractText(node, src)
-        //   ctx.reporter.debug(s"[TS DEBUG] Reinterpreting fake pointer node '${node.getType}' as expression: '$rawText'")
+  protected override val builtins = Map[String, PartialFunction[List[DaisyExpr], DaisyExpr]](
+    "sqrt"  -> { case a :: Nil => Sqrt(a) },
+    "sqrtf" -> { case a :: Nil => Sqrt(a) },
+    "sin"   -> { case a :: Nil => Sin(a)  }, 
+    "sinf"  -> { case a :: Nil => Sin(a)  },
+    "cos"   -> { case a :: Nil => Cos(a)  }, 
+    "cosf"  -> { case a :: Nil => Cos(a)  },
+    "tan"   -> { case a :: Nil => Tan(a)  }, 
+    "tanf"  -> { case a :: Nil => Tan(a)  },
+    "asin"  -> { case a :: Nil => Asin(a) }, 
+    "asinf" -> { case a :: Nil => Asin(a) },
+    "acos"  -> { case a :: Nil => Acos(a) }, 
+    "acosf" -> { case a :: Nil => Acos(a) },
+    "atan"  -> { case a :: Nil => Atan(a) }, 
+    "atanf" -> { case a :: Nil => Atan(a) },
+    "exp"   -> { case a :: Nil => Exp(a)  }, 
+    "expf"  -> { case a :: Nil => Exp(a)  },
+    "log"   -> { case a :: Nil => Log(a)  }, 
+    "logf"  -> { case a :: Nil => Log(a)  },
+    "fma"  -> { case a :: b :: c :: Nil => FMA(a, b, c) },
+    "pow"  -> powCases, "powf" -> powCases
+  )
 
-        //   val children = (0 until node.getNamedChildCount)
-        //     .flatMap(i => optToScala(node.getNamedChild(i)))
-        //     .toList
-
-        //   if (children.isEmpty) {
-        //     RealLiteral(Rational.zero)
-        //   } else {
-        //     val exprChildren: List[DaisyExpr] = children.map(convertNode)
-        //     val raw = extractText(node, src)
-        //     val opCandidates = List("+", "-", "*", "/").filter(raw.contains)
-        //     val op = opCandidates.headOption.getOrElse("*")
-
-        //     ctx.reporter.debug(s"[TS DEBUG] Treating '${node.getType}' as ${exprChildren.size}-ary expr with op '$op'")
-
-        //     exprChildren.reduceLeft { (acc: DaisyExpr, next: DaisyExpr) =>
-        //       op match {
-        //         case "+" => Plus(acc, next)
-        //         case "-" => Minus(acc, next)
-        //         case "*" => Times(acc, next)
-        //         case "/" => Division(acc, next)
-        //         case _   => Times(acc, next)
-        //       }
-        //     }
-        //   }
-
-        // case "function_definition" =>
-        //   ctx.reporter.debug("[TS DEBUG] function_definition")
-
-        //   val decl = node.getNamedChild(1).get() // function_declarator
-        //   val body = node.getNamedChild(2).get() // compound_statement
-
-        //   val declExpr = convertNode(decl)
-        //   val bodyExpr = convertNode(body)
-
-        //   Lambda(Seq.empty, bodyExpr) // or whatever Daisy expects
-
-
-        // case "parameter_list" =>
-        //   ctx.reporter.debug(s"[TS DEBUG] Unwrapping parameter_list: '${extractText(node, src)}'")
-
-        //   val children = (0 until node.getNamedChildCount)
-        //     .flatMap(i => optToScala(node.getNamedChild(i)))
-        //     .toList
-
-        //   if (children.isEmpty) {
-        //     ctx.reporter.debug("[TS DEBUG] parameter_list empty; returning 0")
-        //     RealLiteral(Rational.zero)
-        //   } else if (children.size == 1) {
-        //     ctx.reporter.debug("[TS DEBUG] parameter_list single child; recursing")
-        //     convertNode(children.head)
-        //   } else {
-        //     ctx.reporter.debug("[TS DEBUG] parameter_list multiple children; treating as binary expression")
-        //     val left = convertNode(children.head)
-        //     val right = convertNode(children.last)
-
-        //     val raw = extractText(node, src)
-        //     val op =
-        //       if (raw.contains("+")) "+"
-        //       else if (raw.contains("-")) "-"
-        //       else if (raw.contains("*")) "*"
-        //       else if (raw.contains("/")) "/"
-        //       else "*"
-
-        //     ctx.reporter.debug(s"[TS DEBUG] parameter_list treated as op '$op'")
-        //     op match {
-        //       case "+" => Plus(left, right)
-        //       case "-" => Minus(left, right)
-        //       case "*" => Times(left, right)
-        //       case "/" => Division(left, right)
-        //       case _   => Times(left, right)
-        //     }
-        //   }
-        
-        // case "parameter_declaration" =>
-        //   val idNodeOpt = findIdent(node)
-        //   val idText = idNodeOpt.map(extractText(_, src)).getOrElse("unnamed")
-
-        //   Variable(varId(idText))
-
-
-        case _ =>
-          super.convertNode(raw)
-    }
+  private def powCases: PartialFunction[List[DaisyExpr], DaisyExpr] = {
+    case base :: RealLiteral(r) :: Nil if r.isValidInt => IntPow(base, r.toInt)
+    case base :: e :: Nil                              => Exp(Times(e, Log(base)))
   }
 
-  protected final def runCTreesitter(ctx: Context, prg: DaisyProgram): (Context, DaisyProgram) = {
-    runTreesitterPhase(ctx, "libtree-sitter-c.so", "tree_sitter_c")(
-      findFunctions = root => allNamedChildren(root).filter(_.getType == "function_definition"),
-      convertFunction = convertCFunction
-    )
-  }
+  protected override def convertNode(node: Node): DaisyExpr = node.getType match {
 
-  protected final def convertCFunction(ctx: Context, node: Node, src: String): DaisyFunDef = {
-      convertFunctionCommon(ctx, node, src)(
-      extractName = { n =>
-        val decl = safeAnyChild(n, 1).getOrElse(n)
-        textOr(src, safeAnyChild(decl, 0), "anon_fun")
-      },
-      extractParams = { n =>
-        val decl = safeAnyChild(n, 1)
-        extractParamsCommon(
-          paramsNodeOpt = decl.flatMap(d => safeAnyChild(d, 1)),
-          keepParamNodeIfNoIdentifier = false
-        )
+    case "binary_expression" =>
+      convertBinary(
+        text(field(node, "operator")),
+        convertNode(field(node, "left")),
+        convertNode(field(node, "right")),
+        node)
+
+    case "unary_expression" =>
+      convertUnary(text(field(node, "operator")), convertNode(field(node, "argument")), node)
+
+    case "conditional_expression" =>
+      IfExpr(
+        convertNode(field(node, "condition")),
+        convertNode(field(node, "consequence")),
+        convertNode(field(node, "alternative")))
+
+    case "call_expression" =>
+      val name = text(field(node, "function"))
+      val args = allNamedChildren(field(node, "arguments")).map(convertNode).toList
+      convertCall(name, args, node)
+
+    case "identifier" => lookup(text(node))
+
+    // C literals carry type suffixes: 3.5f, 10L, 1e3F.
+    case "number_literal" =>
+      val raw = text(node)
+      raw.reverse.dropWhile(c => "fFlLuU".contains(c)).reverse.toDoubleOption match {
+        case Some(d) => RealLiteral(Rational.fromReal(d))
+        case None    => fail(node, s"cannot read '$raw' as a number")
       }
-      )
+
+    case "parenthesized_expression" =>
+      allNamedChildren(node).headOption
+        .map(convertNode)
+        .getOrElse(fail(node, "empty parentheses"))
+
+    case "compound_statement" =>
+      convertBlock(node)
+
+    // `(b * c)` following an identifier parses as a cast when `b` is not a known
+    // type.
+    case "cast_expression" =>
+      fail(node, s"'${text(node)}' was parsed as a cast, not a product")
+
+    case other =>
+      fail(node, s"C construct '$other' is not supported")
+  }
+
+  protected override def convertStmt(node: Node): Stmt = node.getType match {
+    case "declaration" =>
+      val decl = field(node, "declarator")
+      if (decl.getType != "init_declarator")
+        fail(node, s"'${text(node)}' declares a variable without a value")
+      Bind(varId(text(field(decl, "declarator"))), convertNode(field(decl, "value")))
+
+    case "expression_statement" =>
+      allNamedChildren(node).headOption match {
+        case None => fail(node, "empty statement")
+        case Some(e) => e.getType match {
+          case "assignment_expression" =>
+            Bind(varId(text(field(e, "left"))), convertNode(field(e, "right")))
+          case "call_expression" if text(field(e, "function")) == preconditionName =>
+            allNamedChildren(field(e, "arguments")).map(convertNode).toList match {
+              case cond :: Nil => Pre(cond)
+              case args => fail(e, s"$preconditionName takes 1 argument, got ${args.length}")
+            }
+          case _ => Result(convertNode(e))
+        }
+      }
+
+    case "return_statement" =>
+      allNamedChildren(node).headOption
+        .map(e => Result(convertNode(e)))
+        .getOrElse(fail(node, "return without a value"))
+
+    // C's `if` is a statement, not an expression. Daisy can represent one only
+    // when both branches assign the same variable: `if (c) t = a; else t = b;`
+    case "if_statement" =>
+      val cond = convertNode(field(node, "condition"))
+      val thenB = convertStmt(field(node, "consequence"))
+      val elseB = fieldOpt(node, "alternative")
+        .map(convertStmt)
+        .getOrElse(fail(node, "if without an else branch has no value"))
+      (thenB, elseB) match {
+        case (Bind(t, tv), Bind(e, ev)) if t == e => Bind(t, IfExpr(cond, tv, ev))
+        case _ => fail(node,
+          "only an if whose branches both assign the same variable is supported")
+      }
+
+    case _ => Result(convertNode(node))
+  }
+
+
+  protected override def findFunctions(root: Node): Seq[Node] =
+    allNamedChildren(root).filter(_.getType == "function_definition")
+
+  protected override def convertFunction(node: Node): DaisyFunDef = {
+    val decl = field(node, "declarator")
+    val paramNames = allNamedChildren(field(decl, "parameters"))
+      .filter(_.getType == "parameter_declaration")
+      .map(p => text(field(p, "declarator")))
+      .toList
+    makeFunDef(text(field(decl, "declarator")), paramNames, field(node, "body"))
   }
 }

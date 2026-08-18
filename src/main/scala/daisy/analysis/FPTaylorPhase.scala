@@ -47,6 +47,8 @@ object FPTaylorPhase extends DaisyPhase with IntervalBranchAndBound {
   override def runPhase(ctx: Context, prog: Trees.Program): (Context, Trees.Program) = {
 
     val rangeMethod = ctx.option[String]("taylorRange")
+    ctx.reporter.info(s"using $rangeMethod for range evaluation")
+    // TODO: omelette does not work with atan, it should handle this gracefully
 
     // TODO: revisit
     // for saving function derivatives for reuse
@@ -54,8 +56,7 @@ object FPTaylorPhase extends DaisyPhase with IntervalBranchAndBound {
 
     val res: Map[Identifier, Rational] = analyzeConsideredFunctions(ctx, prog) { fnc =>
 
-      ctx.reporter.info(s"using $rangeMethod for range evaluation")
-
+      ctx.reporter.info(s"processing function ${fnc.id}")
       val inputVarsRanges = ctx.specInputRanges(fnc.id).mapValues(MPFRInterval(_)).toMap
 
       // TODO: is this needed if we have the FunctionCallPhase already before this?
@@ -77,6 +78,7 @@ object FPTaylorPhase extends DaisyPhase with IntervalBranchAndBound {
            absErrVarsMap: Map[Variable, Variable], _) =
         epsilonDeltaAbstract(body, specInitErrors, denormals = true, abstractVars = true)
 
+      // TODO: write as "proper" function
       val evalDerivRanges = (wrtIter: Iterator[Variable]) => {
         val derivs = wrtIter.map((wrt: Variable) => {
           val deriv = getPartialDerivativeWrtExp(deltaEpsAbstract, wrt)
@@ -123,7 +125,7 @@ object FPTaylorPhase extends DaisyPhase with IntervalBranchAndBound {
       // partial derivatives with respect to absolute initial errors (absErrs)
       val absErrVars = absErrVarsMap.values
 
-      val propagatedInputErrors = evalDerivRanges(absErrVars.iterator)
+      val propagatedInputErrors = if (absErrVars.isEmpty) Rational.zero else evalDerivRanges(absErrVars.iterator)
         .zip(absErrVarsMap.keys)
         .map({ case (interval, v) => {
           val maxAbs = Interval.maxAbs(interval.toInterval)
