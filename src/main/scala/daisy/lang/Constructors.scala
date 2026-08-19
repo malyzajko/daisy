@@ -58,8 +58,8 @@ object Constructors {
     }
 
     simpler match {
-      case collection.mutable.Seq()  => BooleanLiteral(false)
-      case collection.mutable.Seq(x) => simpler(0)
+      case Seq()  => BooleanLiteral(false)
+      case Seq(x) => simpler(0)
       case _      => Or(Seq(simpler: _*)) // make immutable Seq
     }
   }
@@ -120,12 +120,12 @@ object Constructors {
   def times(lhs: Expr, rhs: Expr): Expr = (lhs, rhs) match {
     case (IntegerLiteral(bi), _) if bi == 1 => rhs
     case (_, IntegerLiteral(bi)) if bi == 1 => lhs
-    case (IntegerLiteral(bi), _) if bi == 0 => IntegerLiteral(0)
-    case (_, IntegerLiteral(bi)) if bi == 0 => IntegerLiteral(0)
+    // case (IntegerLiteral(bi), _) if bi == 0 => IntegerLiteral(0)
+    // case (_, IntegerLiteral(bi)) if bi == 0 => IntegerLiteral(0)
     case (Int32Literal(1), _) => rhs
     case (_, Int32Literal(1)) => lhs
-    case (Int32Literal(0), _) => Int32Literal(0)
-    case (_, Int32Literal(0)) => Int32Literal(0)
+    // case (Int32Literal(0), _) => Int32Literal(0)
+    // case (_, Int32Literal(0)) => Int32Literal(0)
     // case (IsTyped(_, Int32Type), IsTyped(_, Int32Type)) => BVTimes(lhs, rhs)
     // case (IsTyped(_, RealType), IsTyped(_, RealType)) => RealTimes(lhs, rhs)
     case _ => Times(lhs, rhs)
