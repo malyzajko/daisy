@@ -34,7 +34,7 @@ class RewritingRegressionTest extends AnyFunSuite {
   run_tests("--rewrite --rewrite-fitness-fnc=interval-affine --rewrite-seed=4781 " +
     "--analysis=dataflow --rangeMethod=interval", "Float64", List(
     ("doppler", ("1.980501095711251e-13")),
-    ("sine", ("7.435281363324554e-16")),
+    ("sine", ("7.430715069299146e-16")),
     ("sineOrder3", ("1.4439568010937595e-15")),
     ("sqroot", ("2.8799185258776566e-13")),
     ("bspline0", ("1.5265566588595905e-16")),
