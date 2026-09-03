@@ -281,8 +281,8 @@ trait RewritingOps {
     { case (a Division c) Minus (b Division c1) if c =~= c1 => (a Minus b) Division c },
     // (a / b) + (c / d) => ((a * d) + (b * c)) / (b * d)
     { case (a Division b) Plus (c Division d) => (a Times d) Plus (b Times c) Division (b Times d) },
-    // (a / b) - (c / d) => ((a * d) - (c * c)) / (b * d)
-    { case (a Division b) Minus (c Division d) => ((a Times d) Division (b Times c)) Minus (b Times d) },
+    // (a / b) - (c / d) => ((a * d) - (c * b)) / (b * d)
+    { case (a Division b) Minus (c Division d) => ((a Times d) Minus (b Times c)) Division (b Times d) },
     // (a / b) * (c / d) => (a * c) / (b * d)
     { case (a Division b) Times (c Division d) => (a Times c) Division (b Times d) },
     // a / b => -a / -b
